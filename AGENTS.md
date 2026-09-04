@@ -1,31 +1,33 @@
-## Project Configuration
+## Svelte MCP tools
 
-- **Language**: TypeScript
-- **Package Manager**: npm
-- **Add-ons**: prettier, eslint, vitest, ai-tools
-
----
-
-You are able to use the Svelte MCP server, where you have access to comprehensive Svelte 5 and SvelteKit documentation. Here's how to use the available tools effectively:
-
-## Available Svelte MCP Tools:
+Comprehensive Svelte 5 and SvelteKit documentation via the Svelte MCP server.
 
 ### 1. list-sections
 
-Use this FIRST to discover all available documentation sections. Returns a structured list with titles, use_cases, and paths.
-When asked about Svelte or SvelteKit topics, ALWAYS use this tool at the start of the chat to find relevant sections.
+Call first, always, when asked about Svelte or SvelteKit topics. Returns a structured list of sections (titles, use_cases, paths).
 
 ### 2. get-documentation
 
-Retrieves full documentation content for specific sections. Accepts single or multiple sections.
-After calling the list-sections tool, you MUST analyze the returned documentation sections (especially the use_cases field) and then use the get-documentation tool to fetch ALL documentation sections that are relevant for the user's task.
+Fetches full documentation for one or more sections. After `list-sections`, fetch every section whose `use_cases` matches the task — partial coverage is not done.
 
 ### 3. svelte-autofixer
 
-Analyzes Svelte code and returns issues and suggestions.
-You MUST use this tool whenever writing Svelte code before sending it to the user. Keep calling it until no issues or suggestions are returned.
+Analyzes Svelte code, returns issues and suggestions. Run on every piece of Svelte code before sending it to the user; keep calling until it returns clean.
 
 ### 4. playground-link
 
-Generates a Svelte Playground link with the provided code.
-After completing the code, ask the user if they want a playground link. Only call this tool after user confirmation and NEVER if code was written to files in their project.
+Generates a Svelte Playground link. Offer it once code lives purely in the response; call it only after the user confirms.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues in `edrobertsrayne/QLA`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
