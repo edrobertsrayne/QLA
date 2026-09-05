@@ -1,4 +1,5 @@
-// Stubbed model transport for the parse contract skeleton (issue #8).
+// Stubbed model transport for the parse contract skeleton (issue #8),
+// now carrying the hybrid PDF ingestion payload (issue #9).
 //
 // The real OpenRouter call (with guardrails, retry-once and usage) arrives in
 // #11. Until then, the route calls through this seam so the contract —
@@ -8,6 +9,16 @@
 
 import type { Breakdown, ParseUsage } from './schema';
 
+/** One ingested PDF forwarded to the model transport (hybrid dual-input). */
+export interface IngestedDocument {
+	filename: string;
+	pageCount: number;
+	/** Per-page extracted text joined with `[p.N]` markers (ordering ground truth). */
+	text: string;
+	/** Raw PDF as base64 (the route attaches it natively when the model supports it). */
+	pdfBase64: string;
+}
+
 /** Inputs the route forwards to the model transport. */
 export interface ModelInput {
 	board: string;
@@ -15,6 +26,12 @@ export interface ModelInput {
 	tier: string;
 	specUrl: string;
 	modelOverride?: string;
+	/** Effective model id (override or Gemini Flash default). */
+	modelId: string;
+	/** False when the override lacks native PDF support → text-only + warning. */
+	useNativePdf: boolean;
+	paper: IngestedDocument;
+	markscheme: IngestedDocument;
 }
 
 /** Raw model result: unparsed JSON plus usage for the response. */

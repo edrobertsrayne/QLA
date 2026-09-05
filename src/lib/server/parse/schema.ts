@@ -96,6 +96,9 @@ export const MODEL_OVERRIDE_FIELD = 'modelOverride';
 /** Per-file cap for assessment paper / markscheme PDFs. Fatal (413) when exceeded. */
 export const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
+/** Total page ceiling across both PDFs. Fatal (413) when exceeded. */
+export const MAX_TOTAL_PAGES = 100;
+
 /** Dotted content-code shape, e.g. `4.6`, `4.6.1`, `4.6.1.1`. */
 export const SPEC_CODE_PATTERN = /^\d+\.\d+(\.\d+(\.\d+)?)?$/;
 
