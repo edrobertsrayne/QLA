@@ -137,7 +137,11 @@
 								minItems: 1,
 								items: { type: 'string', pattern: '^\\d+\\.\\d+(\\.\\d+(\\.\\d+)?)?$' }
 							},
-							questionText: { type: 'string', description: 'Short stem, not full paper text' },
+							questionText: {
+								type: 'string',
+								description:
+									'Brief summary of what the question asked the student to do (task summary, not a shortened stem or quote)'
+							},
 							ao: { type: 'array', items: { enum: ['AO1', 'AO2', 'AO3'] } },
 							commandWord: {
 								type: 'string',
