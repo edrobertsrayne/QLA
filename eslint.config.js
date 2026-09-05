@@ -34,6 +34,12 @@ export default defineConfig(
 		}
 	},
 	{
+		// Vendored shadcn primitives accept arbitrary hrefs (including external
+		// URLs that resolve() cannot type), so the navigation rule doesn't apply.
+		files: ['src/lib/components/ui/**/*.svelte'],
+		rules: { 'svelte/no-navigation-without-resolve': 'off' }
+	},
+	{
 		// Override or add rule settings here, such as:
 		// 'svelte/button-has-type': 'error'
 		rules: {}

@@ -1,15 +1,16 @@
-// Validator for the lean v0.2 breakdown (issue #8).
+// Validator for the v1 prototype breakdown.
 //
 // Warns but never blocks: every finding becomes a `ParseWarning` entry and the
 // breakdown is returned intact. Only unparseable model output fails the run —
 // that is handled at the route seam, not here.
+//
+// Rules: id non-empty + unique, marks positive int or null, summary 3–8
+// words, specPoint string-or-null (exact lift, never validated), commandWord
+// string-or-null, ao AO1/AO2/AO3-or-null.
 
-import {
-	SPEC_CODE_PATTERN,
-	STUB_SPEC_CATALOGUE,
-	type Breakdown,
-	type ParseWarning
-} from './schema';
+import { ASSESSMENT_OBJECTIVES, type Breakdown, type ParseWarning } from './schema';
+
+const AO_SET: ReadonlySet<string> = new Set(ASSESSMENT_OBJECTIVES);
 
 function countWords(text: string): number {
 	return text.trim().split(/\s+/).filter(Boolean).length;
@@ -20,35 +21,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Check a parsed model-output breakdown against the lean v0.2 rules and the
- * (currently fixture) exam-specification catalogue.
+ * Check a parsed model-output breakdown against the v1 rules.
  * Never throws for shape problems — it reports them as warnings.
  */
-export function validateBreakdown(
-	breakdown: unknown,
-	catalogue: ReadonlySet<string> = STUB_SPEC_CATALOGUE
-): ParseWarning[] {
+export function validateBreakdown(breakdown: unknown): ParseWarning[] {
 	const warnings: ParseWarning[] = [];
-	const warn = (questionNumber: string | null, code: string, message: string): void => {
-		warnings.push({ questionNumber, code, message });
+	const warn = (questionId: string | null, code: string, message: string): void => {
+		warnings.push({ questionId, code, message });
 	};
 
 	if (!isRecord(breakdown)) {
 		warn(null, 'INVALID_BREAKDOWN', 'Model output is not a JSON object.');
 		return warnings;
-	}
-
-	if (typeof breakdown['paperId'] !== 'string' || breakdown['paperId'].trim() === '') {
-		warn(null, 'MISSING_FIELD', 'paperId is missing or empty.');
-	}
-	if (typeof breakdown['paperTitle'] !== 'string' || breakdown['paperTitle'].trim() === '') {
-		warn(null, 'MISSING_FIELD', 'paperTitle is missing or empty.');
-	}
-	if (!Number.isInteger(breakdown['year'])) {
-		warn(null, 'MISSING_FIELD', 'year is missing or not an integer.');
-	}
-	if (!Number.isInteger(breakdown['totalMarks'])) {
-		warn(null, 'MISSING_FIELD', 'totalMarks is missing or not an integer.');
 	}
 
 	const questions = breakdown['questions'];
@@ -58,110 +42,65 @@ export function validateBreakdown(
 	}
 
 	const seen = new Set<string>();
-	let sum = 0;
-	let sumIsClean = true;
 
 	for (let index = 0; index < questions.length; index++) {
 		const question = questions[index];
 		const label =
-			isRecord(question) && typeof question['number'] === 'string'
-				? question['number']
+			isRecord(question) && typeof question['id'] === 'string' && question['id'].trim() !== ''
+				? question['id']
 				: `q[${index}]`;
 
 		if (!isRecord(question)) {
 			warn(null, 'INVALID_QUESTION', `Entry ${label} is not an object.`);
-			sumIsClean = false;
 			continue;
 		}
 
-		// number: free string, non-empty, unique within the paper.
-		const number = question['number'];
-		if (typeof number !== 'string' || number.trim() === '') {
-			warn(null, 'EMPTY_NUMBER', `Entry ${label} has an empty question number.`);
+		// id: non-empty, unique within the run.
+		const id = question['id'];
+		if (typeof id !== 'string' || id.trim() === '') {
+			warn(null, 'EMPTY_ID', `Entry ${label} has an empty question id.`);
 		} else {
-			if (seen.has(number)) {
-				warn(number, 'DUPLICATE_NUMBER', `Duplicate question number '${number}'.`);
+			if (seen.has(id)) {
+				warn(id, 'DUPLICATE_ID', `Duplicate question id '${id}'.`);
 			}
-			seen.add(number);
+			seen.add(id);
 		}
 
-		// marks: positive integer.
+		// marks: positive integer or null (null = unknowable from inputs).
 		const marks = question['marks'];
-		if (!Number.isInteger(marks) || (marks as number) < 1) {
-			warn(label, 'INVALID_MARKS', `Question '${label}' marks must be a positive integer.`);
-			if (typeof marks === 'number' && Number.isFinite(marks)) {
-				sum += marks;
-			} else {
-				sumIsClean = false;
-			}
-		} else {
-			sum += marks as number;
+		if (marks !== null && (!Number.isInteger(marks) || (marks as number) < 1)) {
+			warn(label, 'INVALID_MARKS', `Question '${label}' marks must be a positive integer or null.`);
 		}
 
-		// specCodes: non-empty, dotted shape, known to the catalogue.
-		const specCodes = question['specCodes'];
-		if (!Array.isArray(specCodes) || specCodes.length === 0) {
-			warn(label, 'EMPTY_SPEC_CODES', `Question '${label}' has no spec codes.`);
+		// summary: 3–8 words.
+		const summary = question['summary'];
+		if (typeof summary !== 'string' || summary.trim() === '') {
+			warn(label, 'SUMMARY_MISSING', `Question '${label}' has no summary.`);
 		} else {
-			for (const code of specCodes) {
-				if (typeof code !== 'string' || !SPEC_CODE_PATTERN.test(code)) {
-					warn(
-						label,
-						'MALFORMED_SPEC_CODE',
-						`Question '${label}' spec code '${String(code)}' is not a dotted content code.`
-					);
-				} else if (!catalogue.has(code)) {
-					warn(
-						label,
-						'UNKNOWN_SPEC_CODE',
-						`Question '${label}' spec code '${code}' is not in the pinned exam specification.`
-					);
-				}
-			}
-		}
-
-		// ao: required, non-empty.
-		const ao = question['ao'];
-		if (!Array.isArray(ao) || ao.length === 0) {
-			warn(label, 'EMPTY_AO', `Question '${label}' has no assessment objectives.`);
-		}
-
-		// questionText: brief 3–8 word paraphrase task label.
-		const questionText = question['questionText'];
-		if (typeof questionText !== 'string' || questionText.trim() === '') {
-			warn(label, 'QUESTION_TEXT_MISSING', `Question '${label}' has no task label.`);
-		} else {
-			const words = countWords(questionText);
+			const words = countWords(summary);
 			if (words < 3 || words > 8) {
 				warn(
 					label,
-					'TASK_LABEL_LENGTH',
-					`Question '${label}' task label is ${words} words; expected a 3–8 word paraphrase.`
+					'SUMMARY_LENGTH',
+					`Question '${label}' summary is ${words} words; expected 3–8 words.`
 				);
 			}
 		}
 
-		// commandWord: present as a string (empty when the paper gives none).
-		if (typeof question['commandWord'] !== 'string') {
-			warn(label, 'INVALID_FIELD', `Question '${label}' commandWord is missing or not a string.`);
+		// specPoint: string or null. Exact lift — never shape-checked.
+		if (typeof question['specPoint'] !== 'string' && question['specPoint'] !== null) {
+			warn(label, 'INVALID_FIELD', `Question '${label}' specPoint must be a string or null.`);
 		}
 
-		// isCalculation / isWorkingScientifically: required booleans.
-		for (const flag of ['isCalculation', 'isWorkingScientifically'] as const) {
-			if (typeof question[flag] !== 'boolean') {
-				warn(label, 'INVALID_FIELD', `Question '${label}' ${flag} is missing or not a boolean.`);
-			}
+		// commandWord: string or null (verbatim, no normalisation).
+		if (typeof question['commandWord'] !== 'string' && question['commandWord'] !== null) {
+			warn(label, 'INVALID_FIELD', `Question '${label}' commandWord must be a string or null.`);
 		}
-	}
 
-	// totalMarks is read off the paper, never summed — a mismatch warns.
-	if (Number.isInteger(breakdown['totalMarks']) && sumIsClean) {
-		if (sum !== (breakdown['totalMarks'] as number)) {
-			warn(
-				null,
-				'TOTAL_MARKS_MISMATCH',
-				`totalMarks ${breakdown['totalMarks'] as number} does not match the sum of question marks (${sum}).`
-			);
+		// ao: AO1/AO2/AO3 or null.
+		const ao = question['ao'];
+		if (ao !== null && (typeof ao !== 'string' || !AO_SET.has(ao))) {
+			warn(label, 'INVALID_AO', `Question '${label}' ao must be AO1, AO2, AO3 or null.`);
 		}
 	}
 
@@ -171,11 +110,5 @@ export function validateBreakdown(
 /** Type-guard for a structurally complete breakdown (warnings may still apply). */
 export function isBreakdown(value: unknown): value is Breakdown {
 	if (!isRecord(value)) return false;
-	return (
-		typeof value['paperId'] === 'string' &&
-		typeof value['paperTitle'] === 'string' &&
-		Number.isInteger(value['year']) &&
-		Number.isInteger(value['totalMarks']) &&
-		Array.isArray(value['questions'])
-	);
+	return Array.isArray(value['questions']);
 }

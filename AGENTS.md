@@ -31,7 +31,3 @@ Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `
 ### Domain docs
 
 Single-context layout: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
-
-## Commits
-
-Commits follow the same conventional-commit type/scope rules and changelog updates as `omp commit` — run `omp commit` itself rather than hand-writing messages.

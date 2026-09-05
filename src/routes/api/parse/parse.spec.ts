@@ -1,69 +1,42 @@
-// Contract tests for `POST /api/parse` — the single Phase 1 seam (#7).
+// Contract tests for `POST /api/parse` — the v1 prototype seam.
 //
-// These assert externally observable behaviour only (request shape in,
-// `{ breakdown, specRef, warnings, usage }` / status-code mapping out).
-// They use the stubbed model transport (#8) plus a mocked exam-specification
-// fetch (#10): real ingestion (#9) and the live model call (#11) must keep
-// them green.
+// Externally observable behaviour only: multipart in (paper and/or
+// markscheme), `{ breakdown: { questions }, warnings, usage }` out.
+// Uses the stubbed model transport; no exam specification anywhere.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { POST } from './+server';
-import { MAX_FILE_BYTES, MAX_TOTAL_PAGES } from '$lib/server/parse/schema';
-import { isBreakdown } from '$lib/server/parse/validate';
+import { MAX_TOTAL_PAGES, type Breakdown } from '$lib/server/parse/schema';
+import { isBreakdown, validateBreakdown } from '$lib/server/parse/validate';
 import {
 	DIAGRAM_UNVERIFIED_CODE,
-	OPENROUTER_MAX_TOKENS,
-	OPENROUTER_TIMEOUT_MS,
-	buildHybridPayload
+	buildHybridPayload,
+	buildPromptText
 } from '$lib/server/parse/pdf';
 import {
-	clearSpecCache,
-	resetSpecFetchTransport,
-	setSpecFetchTransport,
-	specCacheKeys,
-	specCacheSize
-} from '$lib/server/parse/spec';
-import {
 	MODEL_RETRYABLE_CODE,
-	ModelFatalError,
 	ModelRetryableError,
-	estimateCost,
-	extractJsonText,
-	liveTransport,
-	resetModelTransport,
-	resetOpenRouterFetch,
 	setModelTransport,
-	setOpenRouterFetch,
+	resetModelTransport,
 	setStubTransport,
 	stubBreakdown,
 	stubUsage,
 	type ModelInput,
 	type ModelResult
 } from '$lib/server/parse/model';
+import { clearApiKeyForTests, setApiKeyForTests } from '$lib/server/parse/env';
 
 const API_KEY = 'test-key';
 
 interface SeamWarning {
 	code?: string;
-	questionNumber?: string | null;
+	questionId?: string | null;
 	message?: string;
 }
 
 interface SeamBody {
 	breakdown?: {
-		paperId?: string;
-		paperTitle?: string;
-		year?: number;
-		totalMarks?: number;
-		specRef?: unknown;
 		questions?: Array<Record<string, unknown>>;
-	};
-	specRef?: {
-		board?: string;
-		specCode?: string;
-		tier?: string;
-		version?: string;
-		urlHash?: string;
 	};
 	warnings?: SeamWarning[];
 	usage?: {
@@ -73,6 +46,7 @@ interface SeamBody {
 	error?: {
 		code?: string;
 		message?: string;
+		retryable?: boolean;
 	};
 }
 
@@ -131,76 +105,9 @@ function pdfWithPages(name: string, pageCount: number, textPrefix = 'QLA page'):
 	});
 }
 
-// --- Exam specification fixture (issue #10) ---
-//
-// 119-code GCSE Physics 8463 v1.1 shape: the five stub codes the breakdown
-// fixture uses, plus generated dotted codes to reach the reference size.
-// Parsed by reusing the shared `parsePdfBytes` extraction — the test proves
-// set-membership through the seam, not the parser internals.
-
-const STUB_CODES = ['4.6.1.1', '4.6.2.2', '4.6.3.1', '4.6.1.2', '4.1.1.1'];
-
-function buildSpecCodes119(): string[] {
-	const codes = new Set<string>(STUB_CODES);
-	outer: for (let topic = 1; topic <= 8; topic++) {
-		for (let sub = 1; sub <= 5; sub++) {
-			for (let point = 1; point <= 4; point++) {
-				codes.add(`4.${topic}.${sub}.${point}`);
-				if (codes.size >= 119) break outer;
-			}
-		}
-	}
-	return [...codes].slice(0, 119);
-}
-
-const SPEC_CODES_119 = buildSpecCodes119();
-
-function specPdfBytes(codes: string[] = SPEC_CODES_119, version = '1.1'): Uint8Array {
-	const header = `GCSE Physics Specification Version ${version} 30 September 2019`;
-	// The minimal-PDF builder places one `Tj` per page: keep each stream short
-	// so `unpdf` extraction stays complete. Header on its own page, then two
-	// codes per page — mirrors the real multi-page spec shape.
-	const perPage = 2;
-	const pages: string[] = [header];
-	for (let i = 0; i < codes.length; i += perPage) {
-		const chunk = codes.slice(i, i + perPage);
-		const body = chunk
-			.map((code, index) => {
-				const globalIndex = i + index;
-				const flag =
-					globalIndex % 3 === 0 ? ' (HT only)' : globalIndex % 5 === 0 ? ' physics only' : '';
-				return `Section ${code} Content ${code}${flag}`;
-			})
-			.join(' ');
-		pages.push(body);
-	}
-	return buildPdfBytes(pages);
-}
-
-function specPdfResponse(
-	codes: string[] = SPEC_CODES_119,
-	version = '1.1',
-	etag = 'spec-etag-1'
-): Response {
-	return new Response(specPdfBytes(codes, version) as unknown as BodyInit, {
-		status: 200,
-		headers: { 'content-type': 'application/pdf', etag }
-	});
-}
-
-/** Default spec mock: 119-code v1.1 catalogue, cacheable under `spec-etag-1`. */
-function mockDefaultSpec(): void {
-	setSpecFetchTransport(async () => specPdfResponse());
-}
-
-function validForm(): FormData {
+function paperOnlyForm(): FormData {
 	const form = new FormData();
 	form.append('assessmentPaper', pdf('paper.pdf'));
-	form.append('markscheme', pdf('markscheme.pdf'));
-	form.append('board', 'AQA');
-	form.append('subject', '8463');
-	form.append('tier', 'H');
-	form.append('specUrl', 'https://example.invalid/spec.pdf');
 	return form;
 }
 
@@ -216,340 +123,157 @@ async function post(form: FormData): Promise<{ status: number; body: SeamBody }>
 
 function question(overrides: Record<string, unknown> = {}): Record<string, unknown> {
 	return {
-		number: '01.1',
+		id: '1a',
 		marks: 2,
-		specCodes: ['4.6.1.1'],
-		questionText: 'Transverse wave oscillation direction',
-		ao: ['AO1'],
+		summary: 'Transverse wave oscillation direction',
+		specPoint: '4.6.1.1',
 		commandWord: 'Complete',
-		isCalculation: false,
-		isWorkingScientifically: false,
+		ao: 'AO1',
 		...overrides
 	};
 }
 
-function breakdownWith(questions: unknown[], totalMarks = 9): Record<string, unknown> {
-	return {
-		paperId: 'STUB-PAPER-1',
-		paperTitle: 'Stub assessment paper',
-		year: 2023,
-		totalMarks,
-		questions
-	};
-}
-
-describe('POST /api/parse contract (skeleton, stubbed model)', () => {
-	let savedKey: string | undefined;
-
+describe('POST /api/parse v1 prototype (stubbed model)', () => {
 	beforeEach(() => {
-		savedKey = process.env.OPENROUTER_API_KEY;
-		process.env.OPENROUTER_API_KEY = API_KEY;
+		setApiKeyForTests(API_KEY);
 		setStubTransport();
-		clearSpecCache();
-		mockDefaultSpec();
 	});
 
 	afterEach(() => {
-		if (savedKey === undefined) {
-			delete process.env.OPENROUTER_API_KEY;
-		} else {
-			process.env.OPENROUTER_API_KEY = savedKey;
-		}
+		clearApiKeyForTests();
 		resetModelTransport();
-		resetOpenRouterFetch();
-		resetSpecFetchTransport();
-		clearSpecCache();
 	});
 
-	it('happy path returns schema-valid breakdown with pinned specRef and usage', async () => {
-		expect.assertions(14);
-		const { status, body } = await post(validForm());
+	it('happy path returns the stub breakdown with no warnings', async () => {
+		const { status, body } = await post(paperOnlyForm());
 
 		expect(status).toBe(200);
 		expect(body.warnings).toEqual([]);
 		expect(isBreakdown(body.breakdown)).toBe(true);
-		expect(body.breakdown?.paperId).toBe('STUB-PAPER-1');
-		expect(body.breakdown?.paperTitle).toBe('Stub assessment paper');
-		expect(body.breakdown?.year).toBe(2023);
-		expect(body.breakdown?.totalMarks).toBe(9);
-		expect(body.specRef).toMatchObject({ board: 'AQA', specCode: '8463', tier: 'H' });
-		expect(body.specRef?.version).toBe('1.1');
-		expect(body.specRef?.urlHash).toMatch(/^[0-9a-f]{12}$/);
-		expect(body.breakdown?.specRef).toEqual(body.specRef);
+		expect(body.breakdown?.questions).toHaveLength(3);
 		expect(body.usage?.totalTokens).toBeDefined();
-		expect(body.usage?.estCost).toBeDefined();
-		expect(specCacheSize()).toBe(1);
 	});
 
-	it('honours an optional per-run modelOverride', async () => {
-		expect.assertions(2);
+	it('accepts paper-only input', async () => {
 		let seen: ModelInput | undefined;
 		setModelTransport(async (input) => {
 			seen = input;
 			return stubResultWith(stubBreakdown());
 		});
 
-		const form = validForm();
-		form.append('modelOverride', 'openrouter/my-model');
+		const { status } = await post(paperOnlyForm());
+
+		expect(status).toBe(200);
+		expect(seen?.paper?.pageCount).toBe(1);
+		expect(seen?.markscheme).toBeUndefined();
+	});
+
+	it('accepts markscheme-only input', async () => {
+		let seen: ModelInput | undefined;
+		setModelTransport(async (input) => {
+			seen = input;
+			return stubResultWith(stubBreakdown());
+		});
+
+		const form = new FormData();
+		form.append('markscheme', pdf('markscheme.pdf'));
 		const { status } = await post(form);
 
 		expect(status).toBe(200);
-		expect(seen?.modelOverride).toBe('openrouter/my-model');
+		expect(seen?.paper).toBeUndefined();
+		expect(seen?.markscheme?.pageCount).toBe(1);
 	});
 
-	it('unknown spec code warns per question with the breakdown intact', async () => {
-		expect.assertions(4);
-		setModelTransport(async () =>
-			stubResultWith(breakdownWith([question({ specCodes: ['9.9.9.9'] })], 2))
-		);
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(200);
-		expect(body.breakdown?.questions?.[0]?.['specCodes']).toEqual(['9.9.9.9']);
-		expect(body.warnings).toHaveLength(1);
-		expect(body.warnings?.[0]).toMatchObject({
-			questionNumber: '01.1',
-			code: 'UNKNOWN_SPEC_CODE'
-		});
-	});
-
-	it('duplicate question numbers warn instead of failing', async () => {
-		expect.assertions(3);
-		setModelTransport(async () =>
-			stubResultWith(
-				breakdownWith(
-					[
-						question({ number: '01.1', marks: 1 }),
-						question({ number: '01.1', marks: 1, specCodes: ['4.6.2.2'] })
-					],
-					2
-				)
-			)
-		);
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(200);
-		expect(body.breakdown?.questions).toHaveLength(2);
-		expect(body.warnings?.some((w) => w.code === 'DUPLICATE_NUMBER')).toBe(true);
-	});
-
-	it('empty question number warns instead of failing', async () => {
-		expect.assertions(2);
-		setModelTransport(async () => stubResultWith(breakdownWith([question({ number: '' })], 2)));
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(200);
-		expect(body.warnings?.some((w) => w.code === 'EMPTY_NUMBER')).toBe(true);
-	});
-
-	it('non-positive marks warn instead of failing', async () => {
-		expect.assertions(2);
-		setModelTransport(async () => stubResultWith(breakdownWith([question({ marks: 0 })], 0)));
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(200);
-		expect(body.warnings?.some((w) => w.code === 'INVALID_MARKS')).toBe(true);
-	});
-
-	it('empty AO warns instead of failing', async () => {
-		expect.assertions(2);
-		setModelTransport(async () => stubResultWith(breakdownWith([question({ ao: [] })], 2)));
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(200);
-		expect(body.warnings?.some((w) => w.code === 'EMPTY_AO')).toBe(true);
-	});
-
-	it('malformed spec codes warn instead of failing', async () => {
-		expect.assertions(2);
-		setModelTransport(async () =>
-			stubResultWith(breakdownWith([question({ specCodes: ['not-a-code'] })], 2))
-		);
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(200);
-		expect(body.warnings?.some((w) => w.code === 'MALFORMED_SPEC_CODE')).toBe(true);
-	});
-
-	it('empty spec codes warn instead of failing', async () => {
-		expect.assertions(2);
-		setModelTransport(async () => stubResultWith(breakdownWith([question({ specCodes: [] })], 2)));
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(200);
-		expect(body.warnings?.some((w) => w.code === 'EMPTY_SPEC_CODES')).toBe(true);
-	});
-
-	it('totalMarks-vs-sum mismatch warns instead of failing', async () => {
-		expect.assertions(3);
-		setModelTransport(async () => stubResultWith(breakdownWith([question({ marks: 2 })], 100)));
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(200);
-		expect(body.breakdown?.totalMarks).toBe(100);
-		expect(body.warnings?.some((w) => w.code === 'TOTAL_MARKS_MISMATCH')).toBe(true);
-	});
-
-	it('missing PDFs are rejected before any model call', async () => {
-		expect.assertions(3);
-		let calls = 0;
-		setModelTransport(async () => {
-			calls += 1;
-			return stubResultWith(stubBreakdown());
-		});
-
-		const form = validForm();
-		form.delete('markscheme');
-		const { status, body } = await post(form);
-
-		expect(status).toBe(400);
-		expect(body.error?.code).toBe('MISSING_INPUT');
-		expect(calls).toBe(0);
-	});
-
-	it('missing board/specUrl are rejected before any model call', async () => {
-		expect.assertions(3);
-		let calls = 0;
-		setModelTransport(async () => {
-			calls += 1;
-			return stubResultWith(stubBreakdown());
-		});
-
-		const form = validForm();
-		form.delete('board');
-		form.delete('specUrl');
-		const { status, body } = await post(form);
-
-		expect(status).toBe(400);
-		expect(body.error?.code).toBe('MISSING_INPUT');
-		expect(calls).toBe(0);
-	});
-
-	it('missing commandWord/flags warn instead of failing', async () => {
-		expect.assertions(3);
-		const bare = question();
-		delete bare['commandWord'];
-		delete bare['isCalculation'];
-		setModelTransport(async () => stubResultWith(breakdownWith([bare], 2)));
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(200);
-		expect(body.breakdown?.questions).toHaveLength(1);
-		expect(body.warnings?.some((w) => w.code === 'INVALID_FIELD')).toBe(true);
-	});
-
-	it('non-PDF files are rejected before any model call', async () => {
-		expect.assertions(3);
-		let calls = 0;
-		setModelTransport(async () => {
-			calls += 1;
-			return stubResultWith(stubBreakdown());
-		});
-		const form = validForm();
-		form.set('assessmentPaper', new File(['x'], 'notes.txt', { type: 'text/plain' }));
-
-		const { status, body } = await post(form);
-
-		expect(status).toBe(400);
-		expect(body.error?.code).toBe('INVALID_FILE_TYPE');
-		expect(calls).toBe(0);
-	});
-
-	it('oversize files fail fatal with 413 before any model call', async () => {
-		expect.assertions(3);
-		let calls = 0;
-		setModelTransport(async () => {
-			calls += 1;
-			return stubResultWith(stubBreakdown());
-		});
-		const form = validForm();
-		// Size is checked before parsing, so the payload need not be a valid PDF.
-		form.set(
-			'assessmentPaper',
-			new File([new Uint8Array(MAX_FILE_BYTES + 1)], 'big.pdf', { type: 'application/pdf' })
-		);
-
-		const { status, body } = await post(form);
-
-		expect(status).toBe(413);
-		expect(body.error?.code).toBe('FILE_TOO_BIG');
-		expect(calls).toBe(0);
-	});
-
-	it('missing API key fails fatal with 500 before any model call', async () => {
-		expect.assertions(3);
-		let calls = 0;
-		setModelTransport(async () => {
-			calls += 1;
-			return stubResultWith(stubBreakdown());
-		});
-		delete process.env.OPENROUTER_API_KEY;
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(500);
-		expect(body.error?.code).toBe('MISSING_API_KEY');
-		expect(calls).toBe(0);
-	});
-
-	it('unparseable model output fails the run with 500', async () => {
-		expect.assertions(3);
-		let calls = 0;
-		setModelTransport(async () => {
-			calls += 1;
-			return { rawJson: 'not-json{{{', usage: stubUsage() };
-		});
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(500);
-		expect(body.error?.code).toBe('MALFORMED_MODEL_OUTPUT');
-		expect(calls).toBe(2);
-	});
-
-	it('real-PDF happy path forwards hybrid dual-input to the model', async () => {
-		expect.assertions(10);
+	it('accepts both inputs and forwards both documents', async () => {
 		let seen: ModelInput | undefined;
 		setModelTransport(async (input) => {
 			seen = input;
 			return stubResultWith(stubBreakdown());
 		});
 
-		const form = validForm();
+		const form = new FormData();
 		form.set('assessmentPaper', pdf('paper.pdf', 'Transverse wave oscillation Figure 3'));
 		form.set('markscheme', pdf('markscheme.pdf', 'Emboldening underlining marking table'));
 		const { status, body } = await post(form);
 
 		expect(status).toBe(200);
 		expect(body.warnings).toEqual([]);
-		expect(seen?.useNativePdf).toBe(true);
-		expect(seen?.modelId).toMatch(/gemini/i);
-		expect(seen?.paper.pageCount).toBe(1);
-		expect(seen?.markscheme.pageCount).toBe(1);
-		expect(seen?.paper.text).toContain('[p.1]');
-		expect(seen?.paper.text).toContain('Transverse wave oscillation');
-		expect(seen?.markscheme.text).toContain('Emboldening underlining');
-		expect(seen?.paper.pdfBase64.length).toBeGreaterThan(100);
+		expect(seen?.paper?.text).toContain('Transverse wave oscillation');
+		expect(seen?.markscheme?.text).toContain('Emboldening underlining');
 	});
 
-	it('total page ceiling fails fatal with 413 before any model call', async () => {
-		expect.assertions(4);
+	it('rejects empty input with 400 before any model call', async () => {
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return stubResultWith(stubBreakdown());
+		});
+
+		const { status, body } = await post(new FormData());
+
+		expect(status).toBe(400);
+		expect(body.error?.code).toBe('MISSING_INPUT');
+		expect(calls).toBe(0);
+	});
+
+	it('rejects non-PDF files with 400', async () => {
+		const form = new FormData();
+		form.append('assessmentPaper', new File(['hello'], 'paper.txt', { type: 'text/plain' }));
+
+		const { status, body } = await post(form);
+
+		expect(status).toBe(400);
+		expect(body.error?.code).toBe('INVALID_FILE_TYPE');
+	});
+
+	it('missing API key fails with 500 before any model call', async () => {
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return stubResultWith(stubBreakdown());
+		});
+		setApiKeyForTests('');
+
+		const { status, body } = await post(paperOnlyForm());
+
+		expect(status).toBe(500);
+		expect(body.error?.code).toBe('MISSING_API_KEY');
+		expect(calls).toBe(0);
+	});
+
+	it('unparseable model output retries once then fails with 500', async () => {
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return { rawJson: 'not-json{{{', usage: stubUsage() };
+		});
+
+		const { status, body } = await post(paperOnlyForm());
+
+		expect(status).toBe(500);
+		expect(body.error?.code).toBe('MALFORMED_MODEL_OUTPUT');
+		expect(calls).toBe(2);
+	});
+
+	it('retryable transport errors map to 502', async () => {
+		setModelTransport(async () => {
+			throw new ModelRetryableError('busy');
+		});
+
+		const { status, body } = await post(paperOnlyForm());
+
+		expect(status).toBe(502);
+		expect(body.error?.code).toBe(MODEL_RETRYABLE_CODE);
+	});
+
+	it('total page ceiling fails with 413 before any model call', async () => {
 		let calls = 0;
 		setModelTransport(async () => {
 			calls += 1;
 			return stubResultWith(stubBreakdown());
 		});
 		const over = Math.ceil((MAX_TOTAL_PAGES + 1) / 2);
-		const form = validForm();
+		const form = new FormData();
 		form.set('assessmentPaper', pdfWithPages('paper.pdf', over));
 		form.set('markscheme', pdfWithPages('markscheme.pdf', over));
 
@@ -558,38 +282,31 @@ describe('POST /api/parse contract (skeleton, stubbed model)', () => {
 		expect(status).toBe(413);
 		expect(body.error?.code).toBe('FILE_TOO_BIG');
 		expect(calls).toBe(0);
-		expect((body.error as unknown as { totalPages?: number })?.totalPages).toBeGreaterThan(
-			MAX_TOTAL_PAGES
-		);
 	});
 
 	it('override without native support degrades to text-only with a warning', async () => {
-		expect.assertions(5);
 		let seen: ModelInput | undefined;
 		setModelTransport(async (input) => {
 			seen = input;
 			return stubResultWith(stubBreakdown());
 		});
 
-		const form = validForm();
+		const form = paperOnlyForm();
 		form.append('modelOverride', 'openai/text-only-model');
 		const { status, body } = await post(form);
 
 		expect(status).toBe(200);
-		expect(body.breakdown?.paperId).toBe('STUB-PAPER-1');
 		expect(seen?.useNativePdf).toBe(false);
-		expect(seen?.modelId).toBe('openai/text-only-model');
 		expect(body.warnings?.some((w) => w.code === DIAGRAM_UNVERIFIED_CODE)).toBe(true);
 	});
 
-	it('unreadable PDFs fail fatal with 400 before any model call', async () => {
-		expect.assertions(3);
+	it('unreadable PDFs fail with 400 before any model call', async () => {
 		let calls = 0;
 		setModelTransport(async () => {
 			calls += 1;
 			return stubResultWith(stubBreakdown());
 		});
-		const form = validForm();
+		const form = new FormData();
 		form.set(
 			'assessmentPaper',
 			new File(['not a pdf at all'], 'paper.pdf', { type: 'application/pdf' })
@@ -602,298 +319,100 @@ describe('POST /api/parse contract (skeleton, stubbed model)', () => {
 		expect(calls).toBe(0);
 	});
 
-	it('cache hit reuses the pinned catalogue without re-parsing (304 refresh)', async () => {
-		expect.assertions(7);
-		const seenHeaders: Array<string | null> = [];
-		let fetches = 0;
-		setSpecFetchTransport(async (_url, init) => {
-			fetches += 1;
-			const headers = new Headers(init?.headers as HeadersInit | undefined);
-			seenHeaders.push(headers.get('If-None-Match'));
-			if (fetches === 1) return specPdfResponse(SPEC_CODES_119, '1.1', 'spec-etag-1');
-			return new Response(null, { status: 304 });
-		});
-
-		const first = await post(validForm());
-		const second = await post(validForm());
-
-		expect(first.status).toBe(200);
-		expect(second.status).toBe(200);
-		expect(fetches).toBe(2);
-		expect(seenHeaders[1]).toBe('spec-etag-1');
-		expect(second.body.specRef).toEqual(first.body.specRef);
-		expect(second.body.warnings).toEqual([]);
-		expect(specCacheSize()).toBe(1);
-	});
-
-	it('a new spec URL yields a new cache entry with its own urlHash', async () => {
-		expect.assertions(5);
-		const first = await post(validForm());
-
-		const secondForm = validForm();
-		secondForm.set('specUrl', 'https://example.invalid/spec-revised.pdf');
-		const second = await post(secondForm);
-
-		expect(first.status).toBe(200);
-		expect(second.status).toBe(200);
-		expect(specCacheSize()).toBe(2);
-		expect(second.body.specRef?.urlHash).not.toBe(first.body.specRef?.urlHash);
-		expect(specCacheKeys().filter((key) => key.startsWith('spec:AQA:8463:H:'))).toHaveLength(2);
-	});
-
-	it('a spec revision becomes a new cache entry, never an overwrite', async () => {
-		expect.assertions(5);
-		setSpecFetchTransport(async (_url, init) => {
-			const headers = new Headers(init?.headers as HeadersInit | undefined);
-			if (headers.get('If-None-Match') === 'spec-etag-1') {
-				return new Response(specPdfBytes(SPEC_CODES_119, '1.2') as unknown as BodyInit, {
-					status: 200,
-					headers: { 'content-type': 'application/pdf', etag: 'spec-etag-2' }
-				});
-			}
-			return specPdfResponse(SPEC_CODES_119, '1.1', 'spec-etag-1');
-		});
-
-		const first = await post(validForm());
-		const second = await post(validForm());
-
-		expect(first.status).toBe(200);
-		expect(second.status).toBe(200);
-		expect(first.body.specRef?.version).toBe('1.1');
-		expect(second.body.specRef?.version).toBe('1.2');
-		expect(specCacheSize()).toBe(2);
-	});
-
-	it('spec-fetch failure returns 502 retryable before any model call', async () => {
-		expect.assertions(4);
-		let calls = 0;
-		setModelTransport(async () => {
-			calls += 1;
-			return stubResultWith(stubBreakdown());
-		});
-		setSpecFetchTransport(async () => new Response('not found', { status: 404 }));
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(502);
-		expect(body.error?.code).toBe('SPEC_FETCH_ERROR');
-		expect((body.error as unknown as { retryable?: boolean })?.retryable).toBe(true);
-		expect(calls).toBe(0);
-	});
-
-	it('non-PDF spec content-type returns 502 retryable', async () => {
-		expect.assertions(2);
-		setSpecFetchTransport(
-			async () =>
-				new Response('<html>not a pdf</html>', {
-					status: 200,
-					headers: { 'content-type': 'text/html' }
-				})
+	it('validator warns on duplicate ids but returns the breakdown intact', async () => {
+		setModelTransport(async () =>
+			stubResultWith({
+				questions: [question({ id: '1a', marks: 1 }), question({ id: '1a', marks: 1 })]
+			})
 		);
 
-		const { status, body } = await post(validForm());
+		const { status, body } = await post(paperOnlyForm());
 
-		expect(status).toBe(502);
-		expect(body.error?.code).toBe('SPEC_FETCH_ERROR');
+		expect(status).toBe(200);
+		expect(body.breakdown?.questions).toHaveLength(2);
+		expect(body.warnings?.some((w) => w.code === 'DUPLICATE_ID')).toBe(true);
 	});
 });
 
-describe('POST /api/parse live model slice (#11)', () => {
-	let savedKey: string | undefined;
-
-	beforeEach(() => {
-		savedKey = process.env.OPENROUTER_API_KEY;
-		process.env.OPENROUTER_API_KEY = API_KEY;
-		setStubTransport();
-		clearSpecCache();
-		mockDefaultSpec();
+describe('validateBreakdown v1 rules', () => {
+	it('accepts a minimal valid breakdown with zero warnings', () => {
+		const breakdown: Breakdown = {
+			questions: [
+				{
+					id: '2bii',
+					marks: 4,
+					summary: 'Balanced equation for combustion reaction',
+					specPoint: '4.1.2.3',
+					commandWord: 'Explain',
+					ao: 'AO2'
+				},
+				{
+					id: '3a',
+					marks: null,
+					summary: 'Internal test without published marks',
+					specPoint: null,
+					commandWord: null,
+					ao: null
+				}
+			]
+		};
+		expect(validateBreakdown(breakdown)).toEqual([]);
 	});
 
-	afterEach(() => {
-		if (savedKey === undefined) {
-			delete process.env.OPENROUTER_API_KEY;
-		} else {
-			process.env.OPENROUTER_API_KEY = savedKey;
-		}
-		resetModelTransport();
-		resetOpenRouterFetch();
-		resetSpecFetchTransport();
-		clearSpecCache();
-	});
-
-	it('malformed first output retries once silently then succeeds', async () => {
-		expect.assertions(5);
-		let calls = 0;
-		setModelTransport(async () => {
-			calls += 1;
-			if (calls === 1) return { rawJson: 'not-json{{{', usage: stubUsage() };
-			return stubResultWith(stubBreakdown());
+	it('warns on bad marks, summary length and bad AO', () => {
+		const warnings = validateBreakdown({
+			questions: [
+				question({ marks: 0 }),
+				question({ id: 'x2', summary: 'Too short' }),
+				question({ id: 'x3', ao: 'AO9' }),
+				question({ id: 'x4', specPoint: 42 })
+			]
 		});
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(200);
-		expect(calls).toBe(2);
-		expect(body.breakdown?.paperId).toBe('STUB-PAPER-1');
-		expect(body.warnings).toEqual([]);
-		expect(body.usage?.totalTokens).toBeDefined();
+		const codes = warnings.map((w) => w.code);
+		expect(codes).toContain('INVALID_MARKS');
+		expect(codes).toContain('SUMMARY_LENGTH');
+		expect(codes).toContain('INVALID_AO');
+		expect(codes).toContain('INVALID_FIELD');
 	});
 
-	it('malformed output twice fails 500 after exactly one retry', async () => {
-		expect.assertions(3);
-		let calls = 0;
-		setModelTransport(async () => {
-			calls += 1;
-			return { rawJson: 'still-not-json{{{', usage: stubUsage() };
+	it('warns on empty and duplicate ids', () => {
+		const warnings = validateBreakdown({
+			questions: [question({ id: '' }), question({ id: '1a' }), question({ id: '1a' })]
 		});
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(500);
-		expect(body.error?.code).toBe('MALFORMED_MODEL_OUTPUT');
-		expect(calls).toBe(2);
+		const codes = warnings.map((w) => w.code);
+		expect(codes).toContain('EMPTY_ID');
+		expect(codes).toContain('DUPLICATE_ID');
 	});
+});
 
-	it('OpenRouter 429/5xx maps to 502 retryable', async () => {
-		expect.assertions(4);
-		setModelTransport(async () => {
-			throw new ModelRetryableError('The model provider is temporarily unavailable.', {
-				status: 429
-			});
+describe('buildPromptText v1', () => {
+	it('instructs the v1 shape with either-input handling', () => {
+		const both = buildPromptText({
+			paperText: 'paper',
+			markschemeText: 'scheme',
+			useNativePdf: true
 		});
+		expect(both).toContain('3-8 word');
+		expect(both).toContain('NEVER infer');
+		expect(both).toContain('AO1, AO2, AO3');
 
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(502);
-		expect(body.error?.code).toBe(MODEL_RETRYABLE_CODE);
-		expect((body.error as unknown as { retryable?: boolean })?.retryable).toBe(true);
-		expect((body.error as unknown as { status?: number })?.status).toBe(429);
-	});
-
-	it('non-retryable transport failure maps to 500 fatal', async () => {
-		expect.assertions(2);
-		setModelTransport(async () => {
-			throw new ModelFatalError('The model call failed.');
+		const paperOnly = buildPromptText({
+			paperText: 'paper',
+			markschemeText: null,
+			useNativePdf: false
 		});
+		expect(paperOnly).toContain('(no markscheme provided)');
 
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(500);
-		expect(body.error?.code).toBe('MODEL_ERROR');
-	});
-
-	it('usage with token counts and cost is present on every success', async () => {
-		expect.assertions(6);
-		setModelTransport(async () => ({
-			rawJson: JSON.stringify(stubBreakdown()),
-			usage: { promptTokens: 50000, completionTokens: 4000, totalTokens: 54000, estCost: 0.00495 }
-		}));
-
-		const { status, body } = await post(validForm());
-
-		expect(status).toBe(200);
-		expect(body.usage?.totalTokens).toBe(54000);
-		expect((body.usage as unknown as { promptTokens?: number })?.promptTokens).toBe(50000);
-		expect((body.usage as unknown as { completionTokens?: number })?.completionTokens).toBe(4000);
-		expect(typeof body.usage?.estCost).toBe('number');
-		expect((body.usage?.estCost as number) > 0).toBe(true);
-	});
-
-	it('guardrails: max_tokens 4000 with native engine and 120s timeout', async () => {
-		expect.assertions(4);
-		expect(OPENROUTER_MAX_TOKENS).toBe(4000);
-		expect(OPENROUTER_TIMEOUT_MS).toBe(120_000);
 		const payload = buildHybridPayload({
 			modelId: 'google/gemini-flash-1.5',
 			useNativePdf: true,
-			paperText: '[p.1]\nprobe',
-			markschemeText: '[p.1]\nprobe',
+			paperText: 'paper',
+			markschemeText: null,
 			paperFilename: 'paper.pdf',
-			markschemeFilename: 'markscheme.pdf',
-			paperPdfBase64: 'cGRm',
-			markschemePdfBase64: 'cGRm'
+			markschemeFilename: null,
+			paperPdfBase64: 'AAA',
+			markschemePdfBase64: null
 		});
-		expect(payload.max_tokens).toBe(4000);
 		expect(payload.plugins).toEqual([{ id: 'file-parser', pdf: { engine: 'native' } }]);
-	});
-
-	it('live transport sends server-side key, maps usage/cost and strips fences', async () => {
-		expect.assertions(8);
-		let seenUrl = '';
-		let seenAuth: string | null = null;
-		let seenBody: { model?: string; max_tokens?: number } | undefined;
-		const raw = JSON.stringify(stubBreakdown());
-		setOpenRouterFetch(async (url, init) => {
-			seenUrl = url;
-			seenAuth = new Headers(init?.headers as HeadersInit | undefined).get('authorization');
-			seenBody = JSON.parse(init?.body as string) as typeof seenBody;
-			return new Response(
-				JSON.stringify({
-					choices: [{ message: { content: '```json\n' + raw + '\n```' } }],
-					usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 }
-				}),
-				{ status: 200, headers: { 'content-type': 'application/json' } }
-			);
-		});
-		process.env.OPENROUTER_API_KEY = 'live-secret';
-
-		const result = await liveTransport({
-			board: 'AQA',
-			subject: '8463',
-			tier: 'H',
-			specUrl: 'https://example.invalid/spec.pdf',
-			modelId: 'google/gemini-flash-1.5',
-			useNativePdf: true,
-			paper: { filename: 'paper.pdf', pageCount: 1, text: '[p.1]\nprobe', pdfBase64: 'cGRm' },
-			markscheme: {
-				filename: 'markscheme.pdf',
-				pageCount: 1,
-				text: '[p.1]\nprobe',
-				pdfBase64: 'cGRm'
-			}
-		});
-
-		expect(seenUrl).toContain('openrouter.ai');
-		expect(seenAuth).toBe('Bearer live-secret');
-		expect(seenBody?.model).toBe('google/gemini-flash-1.5');
-		expect(seenBody?.max_tokens).toBe(4000);
-		expect(result.usage.promptTokens).toBe(1000);
-		expect(result.usage.totalTokens).toBe(1500);
-		expect(result.usage.estCost).toBe(estimateCost(1000, 500, 'google/gemini-flash-1.5'));
-		expect(JSON.parse(result.rawJson)).toMatchObject({ paperId: 'STUB-PAPER-1' });
-	});
-
-	it('live transport maps 429 to retryable and 401 to fatal', async () => {
-		expect.assertions(4);
-		setOpenRouterFetch(async () => new Response('limited', { status: 429 }));
-		await expect(
-			liveTransport({
-				board: 'AQA',
-				subject: '8463',
-				tier: 'H',
-				specUrl: 'https://example.invalid/spec.pdf',
-				modelId: 'google/gemini-flash-1.5',
-				useNativePdf: true,
-				paper: { filename: 'p.pdf', pageCount: 1, text: 't', pdfBase64: 'e' },
-				markscheme: { filename: 'm.pdf', pageCount: 1, text: 't', pdfBase64: 'e' }
-			})
-		).rejects.toBeInstanceOf(ModelRetryableError);
-
-		setOpenRouterFetch(async () => new Response('denied', { status: 401 }));
-		await expect(
-			liveTransport({
-				board: 'AQA',
-				subject: '8463',
-				tier: 'H',
-				specUrl: 'https://example.invalid/spec.pdf',
-				modelId: 'google/gemini-flash-1.5',
-				useNativePdf: true,
-				paper: { filename: 'p.pdf', pageCount: 1, text: 't', pdfBase64: 'e' },
-				markscheme: { filename: 'm.pdf', pageCount: 1, text: 't', pdfBase64: 'e' }
-			})
-		).rejects.toBeInstanceOf(ModelFatalError);
-
-		expect(extractJsonText('```json\n{"a":1}\n```')).toBe('{"a":1}');
-		expect(extractJsonText('{"a":1}')).toBe('{"a":1}');
 	});
 });

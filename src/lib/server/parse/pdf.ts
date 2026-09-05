@@ -15,6 +15,7 @@
 
 import { extractText } from 'unpdf';
 import type { ParseWarning } from './schema';
+import { getEnvDefaultModel } from './env';
 
 /** Default model when no per-run override is given (Gemini Flash via OpenRouter). */
 export const DEFAULT_MODEL_ID = 'google/gemini-flash-1.5';
@@ -32,7 +33,7 @@ export const DIAGRAM_UNVERIFIED_CODE = 'DIAGRAM_UNVERIFIED';
 export function resolveModelId(modelOverride?: string): string {
 	const trimmed = modelOverride?.trim();
 	if (trimmed) return trimmed;
-	const envDefault = process.env.OPENROUTER_MODEL?.trim();
+	const envDefault = getEnvDefaultModel();
 	return envDefault ? envDefault : DEFAULT_MODEL_ID;
 }
 
@@ -90,7 +91,7 @@ export async function parsePdfBytes(bytes: Uint8Array): Promise<ParsedPdf> {
 /** Visible warning for the text-only degradation path (HTTP 200, breakdown intact). */
 export function buildDiagramUnverifiedWarning(): ParseWarning {
 	return {
-		questionNumber: null,
+		questionId: null,
 		code: DIAGRAM_UNVERIFIED_CODE,
 		message:
 			'Override model lacks native PDF support — breakdown is text-only; diagram and table-heavy questions are unverified.'
@@ -105,14 +106,12 @@ export function toPdfDataUrl(base64: string): string {
 export interface HybridPayloadInput {
 	modelId: string;
 	useNativePdf: boolean;
-	paperText: string;
-	markschemeText: string;
-	paperFilename: string;
-	markschemeFilename: string;
-	paperPdfBase64: string;
-	markschemePdfBase64: string;
-	/** Pinned catalogue codes the breakdown is validated against (optional prompt hint). */
-	specCodes?: string[];
+	paperText: string | null;
+	markschemeText: string | null;
+	paperFilename: string | null;
+	markschemeFilename: string | null;
+	paperPdfBase64: string | null;
+	markschemePdfBase64: string | null;
 }
 
 export interface HybridPayload {
@@ -123,59 +122,50 @@ export interface HybridPayload {
 }
 
 /**
- * Prompt wording is builder detail derived from the locked lean v0.2 schema
- * plus the validation rules in #7 (never asserted in tests). It instructs the
+ * Prompt wording is builder detail derived from the locked v1 schema
+ * (never asserted in tests beyond key phrases). It instructs the
  * model to return ONLY the breakdown JSON — no markdown, no explanation.
  */
 export function buildPromptText(input: {
-	paperText: string;
-	markschemeText: string;
+	paperText: string | null;
+	markschemeText: string | null;
 	useNativePdf: boolean;
-	specCodes?: string[];
 }): string {
-	const specHint =
-		input.specCodes && input.specCodes.length > 0
-			? [
-					'',
-					`Valid spec codes (dotted content identifiers from the pinned exam specification): ${[...input.specCodes].sort().join(', ')}.`,
-					'Emit only codes from this list; when none fits, emit your best dotted guess — the server will warn, never block.'
-				].join('\n')
-			: '';
 	const nativeHint = input.useNativePdf
-		? 'The extracted text below is the ordering ground truth; the attached PDFs are authoritative for figures, tables, bold/underline emphasis and diagram questions.'
+		? 'The extracted text below is the ordering ground truth; attached PDFs are authoritative for figures, tables, bold/underline emphasis and diagram questions.'
 		: 'No native PDF is attached — work from the extracted text only; diagram and table-heavy questions are unverified.';
+	const paperSection = input.paperText ?? '(no assessment paper provided)';
+	const markschemeSection = input.markschemeText ?? '(no markscheme provided)';
 	return [
-		'Parse the assessment paper and markscheme into the lean v0.2 per-question JSON breakdown.',
+		'Parse the assessment paper and/or markscheme into the v1 per-question JSON breakdown.',
 		'Return ONLY a single JSON object — no markdown fences, no commentary.',
 		nativeHint,
 		'',
-		'Top level: paperId (string) + paperTitle (string, e.g. GCSE Physics Higher Tier Paper 2) + year (int, e.g. 2023) + totalMarks (int read off the paper Information section, NEVER summed from questions) + questions array.',
-		'Per question: number (free non-empty string unique within the paper, e.g. 01.1 or 16(a)(ii)) / marks (positive int) / specCodes (non-empty array of dotted codes, e.g. 4.6.1.1) / questionText (very brief 3-8 word task-label paraphrase of what the student was asked to do, never a stem quote, e.g. Method for infrared RPA) / ao (non-empty array, e.g. AO1) / commandWord (string) / isCalculation (true only if the student must perform a numerical calculation, not merely recall an equation) / isWorkingScientifically (true for experimental method, investigation design, RPA skills, or interpreting investigation data).',
-		'Sub-points holding two moves (e.g. tick+reason) stay a SINGLE entry, not split.',
-		specHint,
+		'Top level: questions array, one entry per smallest marked leaf (e.g. 1a, 2bii).',
+		'Per question: id (verbatim leaf label, non-empty, unique, e.g. 1a) / marks (positive int, or null when unknowable from the inputs; marks from the markscheme win when both inputs present) / summary (3-8 word summary of what the leaf asks, from the paper stem when present else the markscheme answer) / specPoint (exact spec reference lifted verbatim from the markscheme, or null when the markscheme gives none — NEVER infer or guess) / commandWord (verbatim instruction verb from the paper, or null when absent — no normalisation) / ao (one of AO1, AO2, AO3, or null when unknowable).',
 		'',
 		'--- assessment paper text ---',
-		input.paperText,
+		paperSection,
 		'',
 		'--- markscheme text ---',
-		input.markschemeText
+		markschemeSection
 	].join('\n');
 }
 
 /**
- * Build the OpenRouter chat payload for #11 (live model + retry).
- * Hybrid path: deterministic extracted text (ordering ground truth) plus both
- * PDFs attached natively with an explicit `engine: 'native'` — the engine is
- * always set explicitly so OpenRouter never silently falls back to the paid
- * `mistral-ocr` path. Text-only path: no file parts and no plugins at all, so
- * there is nothing for the file-parser to bill.
+ * Build the OpenRouter chat payload (live model + retry).
+ * Hybrid path: deterministic extracted text (ordering ground truth) plus
+ * whichever PDFs were provided, attached natively with an explicit
+ * `engine: 'native'` — the engine is always set explicitly so OpenRouter
+ * never silently falls back to the paid `mistral-ocr` path. Text-only path:
+ * no file parts and no plugins at all, so there is nothing for the
+ * file-parser to bill.
  */
 export function buildHybridPayload(input: HybridPayloadInput): HybridPayload {
 	const promptText = buildPromptText({
 		paperText: input.paperText,
 		markschemeText: input.markschemeText,
-		useNativePdf: input.useNativePdf,
-		specCodes: input.specCodes
+		useNativePdf: input.useNativePdf
 	});
 
 	if (!input.useNativePdf) {
@@ -186,29 +176,30 @@ export function buildHybridPayload(input: HybridPayloadInput): HybridPayload {
 		};
 	}
 
+	const files: Array<{ type: string; file: { filename: string; file_data: string } }> = [];
+	if (input.paperFilename && input.paperPdfBase64) {
+		files.push({
+			type: 'file',
+			file: { filename: input.paperFilename, file_data: toPdfDataUrl(input.paperPdfBase64) }
+		});
+	}
+	if (input.markschemeFilename && input.markschemePdfBase64) {
+		files.push({
+			type: 'file',
+			file: {
+				filename: input.markschemeFilename,
+				file_data: toPdfDataUrl(input.markschemePdfBase64)
+			}
+		});
+	}
+
 	return {
 		model: input.modelId,
 		max_tokens: OPENROUTER_MAX_TOKENS,
 		messages: [
 			{
 				role: 'user',
-				content: [
-					{ type: 'text', text: promptText },
-					{
-						type: 'file',
-						file: {
-							filename: input.paperFilename,
-							file_data: toPdfDataUrl(input.paperPdfBase64)
-						}
-					},
-					{
-						type: 'file',
-						file: {
-							filename: input.markschemeFilename,
-							file_data: toPdfDataUrl(input.markschemePdfBase64)
-						}
-					}
-				]
+				content: [{ type: 'text', text: promptText }, ...files]
 			}
 		],
 		plugins: [{ id: 'file-parser', pdf: { engine: 'native' } }]
