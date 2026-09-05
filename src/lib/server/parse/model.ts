@@ -13,6 +13,7 @@
 
 import type { Breakdown, ParseUsage } from './schema';
 import { OPENROUTER_MAX_TOKENS, OPENROUTER_TIMEOUT_MS, buildHybridPayload } from './pdf';
+import { getApiKey } from './env';
 
 /** One ingested PDF forwarded to the model transport (hybrid dual-input). */
 export interface IngestedDocument {
@@ -26,19 +27,13 @@ export interface IngestedDocument {
 
 /** Inputs the route forwards to the model transport. */
 export interface ModelInput {
-	board: string;
-	subject: string;
-	tier: string;
-	specUrl: string;
 	modelOverride?: string;
 	/** Effective model id (override or Gemini Flash default). */
 	modelId: string;
 	/** False when the override lacks native PDF support → text-only + warning. */
 	useNativePdf: boolean;
-	paper: IngestedDocument;
-	markscheme: IngestedDocument;
-	/** Pinned catalogue codes the breakdown is validated against (prompt hint). */
-	specCodes?: string[];
+	paper?: IngestedDocument;
+	markscheme?: IngestedDocument;
 }
 
 /** Raw model result: unparsed JSON plus usage for the response. */
@@ -100,46 +95,35 @@ export function stubUsage(): ParseUsage {
 }
 
 /**
- * Deterministic fixture breakdown for the skeleton slice.
- * Schema-valid with zero warnings: totalMarks equals the sum of marks and
- * every spec code is in `STUB_SPEC_CATALOGUE`. The route pins `specRef`.
+ * Deterministic fixture breakdown for the prototype slice.
+ * Schema-valid with zero warnings.
  */
-export function stubBreakdown(): Omit<Breakdown, 'specRef'> {
+export function stubBreakdown(): Breakdown {
 	return {
-		paperId: 'STUB-PAPER-1',
-		paperTitle: 'Stub assessment paper',
-		year: 2023,
-		totalMarks: 9,
 		questions: [
 			{
-				number: '01.1',
+				id: '1a',
 				marks: 1,
-				specCodes: ['4.6.1.1'],
-				questionText: 'Transverse wave oscillation direction',
-				ao: ['AO1'],
+				summary: 'Transverse wave oscillation direction',
+				specPoint: '4.6.1.1',
 				commandWord: 'Complete',
-				isCalculation: false,
-				isWorkingScientifically: false
+				ao: 'AO1'
 			},
 			{
-				number: '01.2',
+				id: '1b',
 				marks: 6,
-				specCodes: ['4.6.2.2'],
-				questionText: 'Method for infrared RPA',
-				ao: ['AO1', 'AO3'],
+				summary: 'Method for infrared investigation task',
+				specPoint: null,
 				commandWord: 'Describe',
-				isCalculation: false,
-				isWorkingScientifically: true
+				ao: 'AO3'
 			},
 			{
-				number: '01.3',
+				id: '2a',
 				marks: 2,
-				specCodes: ['4.6.3.1'],
-				questionText: 'Tick box plus reason',
-				ao: ['AO2', 'AO1'],
-				commandWord: 'Tick + reason',
-				isCalculation: false,
-				isWorkingScientifically: true
+				summary: 'Tick box plus give reason',
+				specPoint: null,
+				commandWord: null,
+				ao: 'AO2'
 			}
 		]
 	};
@@ -206,7 +190,7 @@ function contentToText(content: unknown): string {
  * non-OK becomes `ModelFatalError` (route → 500).
  */
 export async function liveTransport(input: ModelInput): Promise<ModelResult> {
-	const apiKey = process.env.OPENROUTER_API_KEY;
+	const apiKey = getApiKey();
 	if (!apiKey) {
 		throw new ModelFatalError(
 			'Server is missing its OpenRouter API key. The problem is server-side, not with your inputs.'
@@ -216,13 +200,12 @@ export async function liveTransport(input: ModelInput): Promise<ModelResult> {
 	const payload = buildHybridPayload({
 		modelId: input.modelId,
 		useNativePdf: input.useNativePdf,
-		paperText: input.paper.text,
-		markschemeText: input.markscheme.text,
-		paperFilename: input.paper.filename,
-		markschemeFilename: input.markscheme.filename,
-		paperPdfBase64: input.paper.pdfBase64,
-		markschemePdfBase64: input.markscheme.pdfBase64,
-		specCodes: input.specCodes
+		paperText: input.paper?.text ?? null,
+		markschemeText: input.markscheme?.text ?? null,
+		paperFilename: input.paper?.filename ?? null,
+		markschemeFilename: input.markscheme?.filename ?? null,
+		paperPdfBase64: input.paper?.pdfBase64 ?? null,
+		markschemePdfBase64: input.markscheme?.pdfBase64 ?? null
 	});
 
 	// Guardrail: max_tokens lives in the payload (asserted in tests);
