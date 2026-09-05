@@ -19,6 +19,12 @@ import type { ParseWarning } from './schema';
 /** Default model when no per-run override is given (Gemini Flash via OpenRouter). */
 export const DEFAULT_MODEL_ID = 'google/gemini-flash-1.5';
 
+/** Guardrail: cap completion so a full GCSE paper completes in one run. */
+export const OPENROUTER_MAX_TOKENS = 4000;
+
+/** Guardrail: server timeout so a full GCSE paper completes in one run. */
+export const OPENROUTER_TIMEOUT_MS = 120_000;
+
 /** Warning code for the text-only degradation path. */
 export const DIAGRAM_UNVERIFIED_CODE = 'DIAGRAM_UNVERIFIED';
 
@@ -105,12 +111,55 @@ export interface HybridPayloadInput {
 	markschemeFilename: string;
 	paperPdfBase64: string;
 	markschemePdfBase64: string;
+	/** Pinned catalogue codes the breakdown is validated against (optional prompt hint). */
+	specCodes?: string[];
 }
 
 export interface HybridPayload {
 	model: string;
+	max_tokens: number;
 	messages: unknown[];
 	plugins?: Array<{ id: string; pdf: { engine: string } }>;
+}
+
+/**
+ * Prompt wording is builder detail derived from the locked lean v0.2 schema
+ * plus the validation rules in #7 (never asserted in tests). It instructs the
+ * model to return ONLY the breakdown JSON — no markdown, no explanation.
+ */
+export function buildPromptText(input: {
+	paperText: string;
+	markschemeText: string;
+	useNativePdf: boolean;
+	specCodes?: string[];
+}): string {
+	const specHint =
+		input.specCodes && input.specCodes.length > 0
+			? [
+					'',
+					`Valid spec codes (dotted content identifiers from the pinned exam specification): ${[...input.specCodes].sort().join(', ')}.`,
+					'Emit only codes from this list; when none fits, emit your best dotted guess — the server will warn, never block.'
+				].join('\n')
+			: '';
+	const nativeHint = input.useNativePdf
+		? 'The extracted text below is the ordering ground truth; the attached PDFs are authoritative for figures, tables, bold/underline emphasis and diagram questions.'
+		: 'No native PDF is attached — work from the extracted text only; diagram and table-heavy questions are unverified.';
+	return [
+		'Parse the assessment paper and markscheme into the lean v0.2 per-question JSON breakdown.',
+		'Return ONLY a single JSON object — no markdown fences, no commentary.',
+		nativeHint,
+		'',
+		'Top level: paperId (string) + paperTitle (string, e.g. GCSE Physics Higher Tier Paper 2) + year (int, e.g. 2023) + totalMarks (int read off the paper Information section, NEVER summed from questions) + questions array.',
+		'Per question: number (free non-empty string unique within the paper, e.g. 01.1 or 16(a)(ii)) / marks (positive int) / specCodes (non-empty array of dotted codes, e.g. 4.6.1.1) / questionText (very brief 3-8 word task-label paraphrase of what the student was asked to do, never a stem quote, e.g. Method for infrared RPA) / ao (non-empty array, e.g. AO1) / commandWord (string) / isCalculation (true only if the student must perform a numerical calculation, not merely recall an equation) / isWorkingScientifically (true for experimental method, investigation design, RPA skills, or interpreting investigation data).',
+		'Sub-points holding two moves (e.g. tick+reason) stay a SINGLE entry, not split.',
+		specHint,
+		'',
+		'--- assessment paper text ---',
+		input.paperText,
+		'',
+		'--- markscheme text ---',
+		input.markschemeText
+	].join('\n');
 }
 
 /**
@@ -122,26 +171,24 @@ export interface HybridPayload {
  * there is nothing for the file-parser to bill.
  */
 export function buildHybridPayload(input: HybridPayloadInput): HybridPayload {
-	const promptText = [
-		'Parse the assessment paper and markscheme into the lean v0.2 per-question JSON breakdown.',
-		'The extracted text below is the ordering ground truth; the attached PDFs are authoritative for figures, tables, bold/underline emphasis and diagram questions.',
-		'',
-		'--- assessment paper text ---',
-		input.paperText,
-		'',
-		'--- markscheme text ---',
-		input.markschemeText
-	].join('\n');
+	const promptText = buildPromptText({
+		paperText: input.paperText,
+		markschemeText: input.markschemeText,
+		useNativePdf: input.useNativePdf,
+		specCodes: input.specCodes
+	});
 
 	if (!input.useNativePdf) {
 		return {
 			model: input.modelId,
+			max_tokens: OPENROUTER_MAX_TOKENS,
 			messages: [{ role: 'user', content: [{ type: 'text', text: promptText }] }]
 		};
 	}
 
 	return {
 		model: input.modelId,
+		max_tokens: OPENROUTER_MAX_TOKENS,
 		messages: [
 			{
 				role: 'user',
