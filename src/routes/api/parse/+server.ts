@@ -1,10 +1,11 @@
 // `POST /api/parse` — single stateless server proxy for Phase 1 Parse (#7).
-// Skeleton slice (#8): multipart in, `{ breakdown, specRef, warnings, usage }`
-// out, with the model transport stubbed. Hybrid PDF ingestion (#9) plugs real
-// per-page text extraction plus native PDF attach behind the same seam; the
+// Multipart in, `{ breakdown, specRef, warnings, usage }` out. Hybrid PDF
+// ingestion (#9) provides per-page text plus native PDF attach; the
 // exam-specification fetch-parse-cache (#10) pins the catalogue version the
-// breakdown is validated against. The live model call (#11) plugs in next
-// without changing the contract.
+// breakdown is validated against. The live model call (#11) goes through the
+// real configurable OpenRouter model (Gemini Flash default, per-run override)
+// with max_tokens 4000, a 120s timeout, usage on every response, one silent
+// retry on malformed JSON, and 429/5xx → 502 retryable mapping.
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -20,7 +21,12 @@ import {
 	TIER_FIELD
 } from '$lib/server/parse/schema';
 import { validateBreakdown } from '$lib/server/parse/validate';
-import { callModel } from '$lib/server/parse/model';
+import {
+	MODEL_ERROR_CODE,
+	MODEL_RETRYABLE_CODE,
+	ModelRetryableError,
+	callModel
+} from '$lib/server/parse/model';
 import {
 	buildDiagramUnverifiedWarning,
 	parsePdfBytes,
@@ -47,10 +53,12 @@ function statusFor(code: string): number {
 		case 'FILE_TOO_BIG':
 			return 413;
 		case 'SPEC_FETCH_ERROR':
+		case MODEL_RETRYABLE_CODE:
 			return 502;
 		case 'MISSING_API_KEY':
 		case 'MALFORMED_MODEL_OUTPUT':
 		case 'MODEL_ERROR':
+		case MODEL_ERROR_CODE:
 			return 500;
 		default:
 			return 500;
@@ -206,41 +214,76 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 	const specRef = specRefFor(specEntry);
 
-	let rawJson: string;
+	let rawJson: string | undefined;
 	let usage;
-	try {
-		const result = await callModel({
-			board: specRef.board,
-			subject: specRef.specCode,
-			tier: specRef.tier,
-			specUrl: specUrlValue,
-			modelOverride: override,
-			modelId,
-			useNativePdf,
-			paper: {
-				filename: paperFile.name,
-				pageCount: paperPages,
-				text: paperText,
-				pdfBase64: paperPdfBase64
-			},
-			markscheme: {
-				filename: markschemeFile.name,
-				pageCount: markschemePages,
-				text: markschemeText,
-				pdfBase64: markschemePdfBase64
+	// Live model call (#11): exactly one silent server-side retry on malformed
+	// JSON. Upstream 429/5xx (or timeout/blip) maps to 502 retryable so
+	// transient outages are distinguishable from fatal misconfiguration.
+	const modelBase = {
+		board: specRef.board,
+		subject: specRef.specCode,
+		tier: specRef.tier,
+		specUrl: specUrlValue,
+		modelOverride: override,
+		modelId,
+		useNativePdf,
+		specCodes: [...specEntry.codes],
+		paper: {
+			filename: paperFile.name,
+			pageCount: paperPages,
+			text: paperText,
+			pdfBase64: paperPdfBase64
+		},
+		markscheme: {
+			filename: markschemeFile.name,
+			pageCount: markschemePages,
+			text: markschemeText,
+			pdfBase64: markschemePdfBase64
+		}
+	};
+	for (let attempt = 1; attempt <= 2; attempt++) {
+		let result;
+		try {
+			result = await callModel(modelBase);
+		} catch (transportError) {
+			if (
+				transportError instanceof ModelRetryableError ||
+				(transportError !== null &&
+					typeof transportError === 'object' &&
+					(transportError as { retryable?: unknown }).retryable === true) ||
+				(transportError !== null &&
+					typeof transportError === 'object' &&
+					(transportError as { code?: unknown }).code === MODEL_RETRYABLE_CODE)
+			) {
+				const status =
+					transportError instanceof ModelRetryableError ? transportError.status : undefined;
+				return error(
+					MODEL_RETRYABLE_CODE,
+					'The model provider is temporarily unavailable. Please try again.',
+					{ retryable: true, ...(status !== undefined ? { status } : {}) }
+				);
 			}
-		});
-		rawJson = result.rawJson;
-		usage = result.usage;
-	} catch {
-		// Skeleton mapping: any transport failure is fatal. #11 refines
-		// transient (429/5xx) failures into retryable 502s with one silent retry.
-		return error('MODEL_ERROR', 'The model call failed. Please try again.');
+			return error(MODEL_ERROR_CODE, 'The model call failed. Please try again.');
+		}
+		try {
+			JSON.parse(result.rawJson);
+			rawJson = result.rawJson;
+			usage = result.usage;
+			break;
+		} catch {
+			if (attempt === 2) {
+				return error(
+					'MALFORMED_MODEL_OUTPUT',
+					'The model returned output that could not be parsed. Please try again.'
+				);
+			}
+			// Silent single retry: fall through to the second attempt.
+		}
 	}
 
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(rawJson);
+		parsed = JSON.parse(rawJson as string);
 	} catch {
 		return error(
 			'MALFORMED_MODEL_OUTPUT',

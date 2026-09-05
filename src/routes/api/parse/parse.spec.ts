@@ -10,7 +10,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { POST } from './+server';
 import { MAX_FILE_BYTES, MAX_TOTAL_PAGES } from '$lib/server/parse/schema';
 import { isBreakdown } from '$lib/server/parse/validate';
-import { DIAGRAM_UNVERIFIED_CODE } from '$lib/server/parse/pdf';
+import {
+	DIAGRAM_UNVERIFIED_CODE,
+	OPENROUTER_MAX_TOKENS,
+	OPENROUTER_TIMEOUT_MS,
+	buildHybridPayload
+} from '$lib/server/parse/pdf';
 import {
 	clearSpecCache,
 	resetSpecFetchTransport,
@@ -19,8 +24,17 @@ import {
 	specCacheSize
 } from '$lib/server/parse/spec';
 import {
+	MODEL_RETRYABLE_CODE,
+	ModelFatalError,
+	ModelRetryableError,
+	estimateCost,
+	extractJsonText,
+	liveTransport,
 	resetModelTransport,
+	resetOpenRouterFetch,
 	setModelTransport,
+	setOpenRouterFetch,
+	setStubTransport,
 	stubBreakdown,
 	stubUsage,
 	type ModelInput,
@@ -230,7 +244,7 @@ describe('POST /api/parse contract (skeleton, stubbed model)', () => {
 	beforeEach(() => {
 		savedKey = process.env.OPENROUTER_API_KEY;
 		process.env.OPENROUTER_API_KEY = API_KEY;
-		resetModelTransport();
+		setStubTransport();
 		clearSpecCache();
 		mockDefaultSpec();
 	});
@@ -242,6 +256,7 @@ describe('POST /api/parse contract (skeleton, stubbed model)', () => {
 			process.env.OPENROUTER_API_KEY = savedKey;
 		}
 		resetModelTransport();
+		resetOpenRouterFetch();
 		resetSpecFetchTransport();
 		clearSpecCache();
 	});
@@ -487,13 +502,18 @@ describe('POST /api/parse contract (skeleton, stubbed model)', () => {
 	});
 
 	it('unparseable model output fails the run with 500', async () => {
-		expect.assertions(2);
-		setModelTransport(async () => ({ rawJson: 'not-json{{{', usage: stubUsage() }));
+		expect.assertions(3);
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return { rawJson: 'not-json{{{', usage: stubUsage() };
+		});
 
 		const { status, body } = await post(validForm());
 
 		expect(status).toBe(500);
 		expect(body.error?.code).toBe('MALFORMED_MODEL_OUTPUT');
+		expect(calls).toBe(2);
 	});
 
 	it('real-PDF happy path forwards hybrid dual-input to the model', async () => {
@@ -675,5 +695,205 @@ describe('POST /api/parse contract (skeleton, stubbed model)', () => {
 
 		expect(status).toBe(502);
 		expect(body.error?.code).toBe('SPEC_FETCH_ERROR');
+	});
+});
+
+describe('POST /api/parse live model slice (#11)', () => {
+	let savedKey: string | undefined;
+
+	beforeEach(() => {
+		savedKey = process.env.OPENROUTER_API_KEY;
+		process.env.OPENROUTER_API_KEY = API_KEY;
+		setStubTransport();
+		clearSpecCache();
+		mockDefaultSpec();
+	});
+
+	afterEach(() => {
+		if (savedKey === undefined) {
+			delete process.env.OPENROUTER_API_KEY;
+		} else {
+			process.env.OPENROUTER_API_KEY = savedKey;
+		}
+		resetModelTransport();
+		resetOpenRouterFetch();
+		resetSpecFetchTransport();
+		clearSpecCache();
+	});
+
+	it('malformed first output retries once silently then succeeds', async () => {
+		expect.assertions(5);
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			if (calls === 1) return { rawJson: 'not-json{{{', usage: stubUsage() };
+			return stubResultWith(stubBreakdown());
+		});
+
+		const { status, body } = await post(validForm());
+
+		expect(status).toBe(200);
+		expect(calls).toBe(2);
+		expect(body.breakdown?.paperId).toBe('STUB-PAPER-1');
+		expect(body.warnings).toEqual([]);
+		expect(body.usage?.totalTokens).toBeDefined();
+	});
+
+	it('malformed output twice fails 500 after exactly one retry', async () => {
+		expect.assertions(3);
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return { rawJson: 'still-not-json{{{', usage: stubUsage() };
+		});
+
+		const { status, body } = await post(validForm());
+
+		expect(status).toBe(500);
+		expect(body.error?.code).toBe('MALFORMED_MODEL_OUTPUT');
+		expect(calls).toBe(2);
+	});
+
+	it('OpenRouter 429/5xx maps to 502 retryable', async () => {
+		expect.assertions(4);
+		setModelTransport(async () => {
+			throw new ModelRetryableError('The model provider is temporarily unavailable.', {
+				status: 429
+			});
+		});
+
+		const { status, body } = await post(validForm());
+
+		expect(status).toBe(502);
+		expect(body.error?.code).toBe(MODEL_RETRYABLE_CODE);
+		expect((body.error as unknown as { retryable?: boolean })?.retryable).toBe(true);
+		expect((body.error as unknown as { status?: number })?.status).toBe(429);
+	});
+
+	it('non-retryable transport failure maps to 500 fatal', async () => {
+		expect.assertions(2);
+		setModelTransport(async () => {
+			throw new ModelFatalError('The model call failed.');
+		});
+
+		const { status, body } = await post(validForm());
+
+		expect(status).toBe(500);
+		expect(body.error?.code).toBe('MODEL_ERROR');
+	});
+
+	it('usage with token counts and cost is present on every success', async () => {
+		expect.assertions(6);
+		setModelTransport(async () => ({
+			rawJson: JSON.stringify(stubBreakdown()),
+			usage: { promptTokens: 50000, completionTokens: 4000, totalTokens: 54000, estCost: 0.00495 }
+		}));
+
+		const { status, body } = await post(validForm());
+
+		expect(status).toBe(200);
+		expect(body.usage?.totalTokens).toBe(54000);
+		expect((body.usage as unknown as { promptTokens?: number })?.promptTokens).toBe(50000);
+		expect((body.usage as unknown as { completionTokens?: number })?.completionTokens).toBe(4000);
+		expect(typeof body.usage?.estCost).toBe('number');
+		expect((body.usage?.estCost as number) > 0).toBe(true);
+	});
+
+	it('guardrails: max_tokens 4000 with native engine and 120s timeout', async () => {
+		expect.assertions(4);
+		expect(OPENROUTER_MAX_TOKENS).toBe(4000);
+		expect(OPENROUTER_TIMEOUT_MS).toBe(120_000);
+		const payload = buildHybridPayload({
+			modelId: 'google/gemini-flash-1.5',
+			useNativePdf: true,
+			paperText: '[p.1]\nprobe',
+			markschemeText: '[p.1]\nprobe',
+			paperFilename: 'paper.pdf',
+			markschemeFilename: 'markscheme.pdf',
+			paperPdfBase64: 'cGRm',
+			markschemePdfBase64: 'cGRm'
+		});
+		expect(payload.max_tokens).toBe(4000);
+		expect(payload.plugins).toEqual([{ id: 'file-parser', pdf: { engine: 'native' } }]);
+	});
+
+	it('live transport sends server-side key, maps usage/cost and strips fences', async () => {
+		expect.assertions(8);
+		let seenUrl = '';
+		let seenAuth: string | null = null;
+		let seenBody: { model?: string; max_tokens?: number } | undefined;
+		const raw = JSON.stringify(stubBreakdown());
+		setOpenRouterFetch(async (url, init) => {
+			seenUrl = url;
+			seenAuth = new Headers(init?.headers as HeadersInit | undefined).get('authorization');
+			seenBody = JSON.parse(init?.body as string) as typeof seenBody;
+			return new Response(
+				JSON.stringify({
+					choices: [{ message: { content: '```json\n' + raw + '\n```' } }],
+					usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 }
+				}),
+				{ status: 200, headers: { 'content-type': 'application/json' } }
+			);
+		});
+		process.env.OPENROUTER_API_KEY = 'live-secret';
+
+		const result = await liveTransport({
+			board: 'AQA',
+			subject: '8463',
+			tier: 'H',
+			specUrl: 'https://example.invalid/spec.pdf',
+			modelId: 'google/gemini-flash-1.5',
+			useNativePdf: true,
+			paper: { filename: 'paper.pdf', pageCount: 1, text: '[p.1]\nprobe', pdfBase64: 'cGRm' },
+			markscheme: {
+				filename: 'markscheme.pdf',
+				pageCount: 1,
+				text: '[p.1]\nprobe',
+				pdfBase64: 'cGRm'
+			}
+		});
+
+		expect(seenUrl).toContain('openrouter.ai');
+		expect(seenAuth).toBe('Bearer live-secret');
+		expect(seenBody?.model).toBe('google/gemini-flash-1.5');
+		expect(seenBody?.max_tokens).toBe(4000);
+		expect(result.usage.promptTokens).toBe(1000);
+		expect(result.usage.totalTokens).toBe(1500);
+		expect(result.usage.estCost).toBe(estimateCost(1000, 500, 'google/gemini-flash-1.5'));
+		expect(JSON.parse(result.rawJson)).toMatchObject({ paperId: 'STUB-PAPER-1' });
+	});
+
+	it('live transport maps 429 to retryable and 401 to fatal', async () => {
+		expect.assertions(4);
+		setOpenRouterFetch(async () => new Response('limited', { status: 429 }));
+		await expect(
+			liveTransport({
+				board: 'AQA',
+				subject: '8463',
+				tier: 'H',
+				specUrl: 'https://example.invalid/spec.pdf',
+				modelId: 'google/gemini-flash-1.5',
+				useNativePdf: true,
+				paper: { filename: 'p.pdf', pageCount: 1, text: 't', pdfBase64: 'e' },
+				markscheme: { filename: 'm.pdf', pageCount: 1, text: 't', pdfBase64: 'e' }
+			})
+		).rejects.toBeInstanceOf(ModelRetryableError);
+
+		setOpenRouterFetch(async () => new Response('denied', { status: 401 }));
+		await expect(
+			liveTransport({
+				board: 'AQA',
+				subject: '8463',
+				tier: 'H',
+				specUrl: 'https://example.invalid/spec.pdf',
+				modelId: 'google/gemini-flash-1.5',
+				useNativePdf: true,
+				paper: { filename: 'p.pdf', pageCount: 1, text: 't', pdfBase64: 'e' },
+				markscheme: { filename: 'm.pdf', pageCount: 1, text: 't', pdfBase64: 'e' }
+			})
+		).rejects.toBeInstanceOf(ModelFatalError);
+
+		expect(extractJsonText('```json\n{"a":1}\n```')).toBe('{"a":1}');
+		expect(extractJsonText('{"a":1}')).toBe('{"a":1}');
 	});
 });
