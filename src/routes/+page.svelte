@@ -1,8 +1,11 @@
 <script lang="ts">
-	// Skeleton page shell (#8): posts the assessment paper + markscheme PDFs and
-	// run fields to POST /api/parse and renders the returned JSON plus usage.
-	// Copy/download buttons, polished viewer and distinct warning panel arrive
-	// with the minimal page completion (#12).
+	// Minimal page completion (#12): classroom teacher runs a full parse
+	// unaided — two PDFs + board/subject/tier/spec-URL + optional model
+	// override + Run, then views, copies and downloads the breakdown JSON.
+	// The breakdown lives in browser memory only (`result` state, cleared on
+	// reload — no localStorage/IndexedDB, no server copy, no auth/history)
+	// with a warning panel (amber, success-with-warnings) distinct from the
+	// fatal error panel (red, with retry guidance).
 
 	// Mirrors the server per-file cap (src/lib/server/parse/schema.ts).
 	const MAX_FILE_BYTES = 15 * 1024 * 1024;
@@ -23,7 +26,18 @@
 	interface FatalError {
 		code: string;
 		message: string;
+		retryable?: boolean;
 	}
+
+	// Error codes where a plain retry may succeed (transient upstream or
+	// output slip). Anything else is an input or configuration problem.
+	const RETRYABLE_CODES = new Set([
+		'SPEC_FETCH_ERROR',
+		'MODEL_RETRYABLE',
+		'MODEL_ERROR',
+		'MALFORMED_MODEL_OUTPUT',
+		'REQUEST_FAILED'
+	]);
 
 	let assessmentPaper: File | null = $state(null);
 	let markscheme: File | null = $state(null);
@@ -37,6 +51,20 @@
 	let running = $state(false);
 	let result: RunResult | null = $state(null);
 	let fatal: FatalError | null = $state(null);
+	let copied = $state(false);
+	let copyFailed = $state(false);
+
+	const breakdownJson = $derived.by(() => {
+		const current = result;
+		if (!current) return '';
+		return JSON.stringify({ breakdown: current.breakdown, specRef: current.specRef }, null, 2);
+	});
+
+	const fatalIsRetryable = $derived.by(() => {
+		const current = fatal;
+		if (!current) return false;
+		return current.retryable === true || RETRYABLE_CODES.has(current.code);
+	});
 
 	const canRun = $derived(
 		assessmentPaper !== null &&
@@ -74,6 +102,8 @@
 		running = true;
 		result = null;
 		fatal = null;
+		copied = false;
+		copyFailed = false;
 		try {
 			const form = new FormData();
 			form.append('assessmentPaper', assessmentPaper);
@@ -99,6 +129,38 @@
 		} finally {
 			running = false;
 		}
+	}
+
+	async function copyBreakdown(): Promise<void> {
+		if (!result) return;
+		copyFailed = false;
+		try {
+			await navigator.clipboard.writeText(breakdownJson);
+			copied = true;
+		} catch {
+			copyFailed = true;
+		}
+	}
+
+	function downloadBreakdown(): void {
+		if (!result) return;
+		const blob = new Blob([breakdownJson], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const anchor = document.createElement('a');
+		const paperId =
+			result.breakdown !== null &&
+			typeof result.breakdown === 'object' &&
+			'paperId' in result.breakdown &&
+			typeof (result.breakdown as { paperId: unknown }).paperId === 'string' &&
+			(result.breakdown as { paperId: string }).paperId !== ''
+				? (result.breakdown as { paperId: string }).paperId
+				: 'breakdown';
+		anchor.href = url;
+		anchor.download = `${paperId}.json`;
+		document.body.appendChild(anchor);
+		anchor.click();
+		anchor.remove();
+		URL.revokeObjectURL(url);
 	}
 </script>
 
@@ -205,9 +267,25 @@
 	</section>
 
 	{#if fatal}
-		<section class="rounded border border-red-300 bg-red-50 p-4" aria-live="polite">
+		<section
+			class="rounded border border-red-300 bg-red-50 p-4"
+			aria-live="polite"
+			data-testid="fatal-panel"
+		>
 			<h2 class="text-sm font-bold text-red-800">Run failed ({fatal.code})</h2>
 			<p class="mt-1 text-sm text-red-700">{fatal.message}</p>
+			{#if fatalIsRetryable}
+				<p class="mt-1 text-sm text-red-700">This looks temporary — please try again.</p>
+			{:else if fatal.code === 'MISSING_API_KEY'}
+				<p class="mt-1 text-sm text-red-700">
+					The problem is server-side, not with your inputs. Contact whoever runs this page.
+				</p>
+			{:else}
+				<p class="mt-1 text-sm text-red-700">
+					Check your inputs — the assessment paper, markscheme and exam specification details — then
+					try again.
+				</p>
+			{/if}
 		</section>
 	{/if}
 
@@ -215,7 +293,7 @@
 		<section class="space-y-3" aria-live="polite">
 			<h2 class="text-lg font-bold">Breakdown</h2>
 			{#if result.warnings.length > 0}
-				<div class="rounded border border-amber-300 bg-amber-50 p-4">
+				<div class="rounded border border-amber-300 bg-amber-50 p-4" data-testid="warning-panel">
 					<h3 class="text-sm font-bold text-amber-800">
 						{result.warnings.length} warning{result.warnings.length === 1 ? '' : 's'} — breakdown returned
 						intact
@@ -234,12 +312,32 @@
 			<p class="text-sm text-zinc-600">
 				Usage: {result.usage.totalTokens} tokens · estimated cost ${result.usage.estCost.toFixed(4)}
 			</p>
+			<div class="flex gap-2">
+				<button
+					class="rounded border px-3 py-1 text-sm font-medium disabled:opacity-40"
+					type="button"
+					disabled={running || breakdownJson === ''}
+					onclick={copyBreakdown}
+				>
+					{copied ? 'Copied' : 'Copy JSON'}
+				</button>
+				<button
+					class="rounded border px-3 py-1 text-sm font-medium disabled:opacity-40"
+					type="button"
+					disabled={running || breakdownJson === ''}
+					onclick={downloadBreakdown}
+				>
+					Download JSON
+				</button>
+			</div>
+			{#if copyFailed}
+				<p class="text-sm text-red-700">
+					Copy failed — select the breakdown below and copy it manually.
+				</p>
+			{/if}
 			<pre
-				class="max-h-[480px] overflow-auto rounded border bg-zinc-50 p-4 text-xs">{JSON.stringify(
-					{ breakdown: result.breakdown, specRef: result.specRef },
-					null,
-					2
-				)}</pre>
+				class="max-h-[480px] overflow-auto rounded border bg-zinc-50 p-4 text-xs"
+				data-testid="breakdown-viewer">{breakdownJson}</pre>
 		</section>
 	{/if}
 </main>
