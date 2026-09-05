@@ -124,7 +124,16 @@
 				$defs: {
 					question: {
 						type: 'object',
-						required: ['number', 'marks', 'specCodes', 'questionText', 'ao', 'commandWord'],
+						required: [
+							'number',
+							'marks',
+							'specCodes',
+							'questionText',
+							'ao',
+							'commandWord',
+							'isCalculation',
+							'isWorkingScientifically'
+						],
 						properties: {
 							number: {
 								type: 'string',
@@ -146,6 +155,16 @@
 							commandWord: {
 								type: 'string',
 								description: 'e.g. Complete, Describe, Tick+reason; empty string if none'
+							},
+							isCalculation: {
+								type: 'boolean',
+								description:
+									'True only if the student must perform a numerical calculation (not merely recalling an equation)'
+							},
+							isWorkingScientifically: {
+								type: 'boolean',
+								description:
+									'True if experimental method, investigation design, RPA skills, or interpreting investigation data'
 							}
 						}
 					}
@@ -163,7 +182,9 @@
 						questionText:
 							'In a transverse wave, the direction of oscillation is ___ to energy transfer.',
 						ao: ['AO1'],
-						commandWord: 'Complete'
+						commandWord: 'Complete',
+						isCalculation: false,
+						isWorkingScientifically: false
 					},
 					{
 						number: '01.2',
@@ -172,7 +193,9 @@
 						questionText:
 							'Describe a method to test: black flask emits more infrared than silver flask over 10 min cooling.',
 						ao: ['AO1', 'AO3'],
-						commandWord: 'Describe'
+						commandWord: 'Describe',
+						isCalculation: false,
+						isWorkingScientifically: true
 					},
 					{
 						number: '01.3',
@@ -180,7 +203,9 @@
 						specCodes: ['4.6.3.1'],
 						questionText: 'When will flasks emit at greatest rate? Tick one box + reason.',
 						ao: ['AO2', 'AO1'],
-						commandWord: 'Tick + reason'
+						commandWord: 'Tick + reason',
+						isCalculation: false,
+						isWorkingScientifically: true
 					},
 					{
 						number: '16(a)(ii)',
@@ -189,7 +214,9 @@
 						questionText:
 							'A-level shape probe (OCR H556/01): Use the graph to show acceleration at t = 12 s is about 1.5 m s-2.',
 						ao: ['AO2'],
-						commandWord: 'Show'
+						commandWord: 'Show',
+						isCalculation: true,
+						isWorkingScientifically: false
 					}
 				]
 			};
@@ -216,6 +243,10 @@
 					if (!q.ao || !q.ao.length) errs.push(`${q.number}: AO missing (required)`);
 					if (!q.questionText || !q.questionText.trim())
 						errs.push(`${q.number}: questionText missing`);
+					if (typeof q.isCalculation !== 'boolean')
+						errs.push(`${q.number}: isCalculation not boolean`);
+					if (typeof q.isWorkingScientifically !== 'boolean')
+						errs.push(`${q.number}: isWorkingScientifically not boolean`);
 				});
 				const seen = {};
 				(b.questions || []).forEach((q) => {
