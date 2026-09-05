@@ -1,0 +1,396 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway, not production. Answers issue #4: per-question JSON schema. -->
+<!-- Run: double-click this file. No build, no server. -->
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>PROTOTYPE #4 — Phase 1 per-question breakdown schema</title>
+		<style>
+			body {
+				font-family: system-ui, sans-serif;
+				max-width: 900px;
+				margin: 2rem auto;
+				padding: 0 1rem;
+				line-height: 1.5;
+				color: #1a1a1a;
+			}
+			.proto {
+				background: #fff3cd;
+				border: 2px dashed #b58900;
+				padding: 0.75rem 1rem;
+				font-weight: 700;
+			}
+			.state {
+				background: #f6f8fa;
+				border: 1px solid #ddd;
+				padding: 1rem;
+				white-space: pre-wrap;
+				font-family: ui-monospace, monospace;
+				font-size: 0.82rem;
+				max-height: 420px;
+				overflow: auto;
+			}
+			.render {
+				background: #fff;
+				border: 1px solid #ddd;
+				padding: 1rem;
+				margin: 0.5rem 0;
+			}
+			button {
+				margin: 0.25rem 0.25rem 0.25rem 0;
+				padding: 0.5rem 0.8rem;
+				cursor: pointer;
+			}
+			.tabs button[aria-selected='true'] {
+				background: #1a1a1a;
+				color: #fff;
+			}
+			.ok {
+				color: #0a7d2c;
+				font-weight: 700;
+			}
+			.bad {
+				color: #b00020;
+				font-weight: 700;
+			}
+			h2 {
+				margin-top: 2rem;
+				border-top: 2px solid #eee;
+				padding-top: 1rem;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="proto">
+			PROTOTYPE — throwaway decision aid for
+			<a href="https://github.com/edrobertsrayne/QLA/issues/4"
+				>Per-question JSON schema with worked example (#4)</a
+			>. Not shipped.
+		</div>
+
+		<h1>Phase 1 Parse: per-question breakdown schema?</h1>
+		<p>
+			<strong>Question being prototyped:</strong> what is the exact per-question JSON shape for the
+			Phase 1 breakdown (beyond number / marks / spec code) — which of question text, AO / command
+			word, sub-point breakdown, and other fields are in, and with what shapes? Worked from AQA
+			84632H June 2023 Q01.1–01.3 only.
+		</p>
+		<p>
+			Glossary: <em>assessment paper</em> = the questions, <em>markscheme</em> = the rubric,
+			<em>exam specification</em> = syllabus doc, <em>spec code</em> = e.g. 4.6.1.1.
+		</p>
+
+		<h2>1. Proposed schema (v0.1 — react to this)</h2>
+		<div class="state" id="schemaView"></div>
+
+		<h2>2. Current breakdown state (rendered, not raw dump)</h2>
+		<div class="render" id="renderView"></div>
+		<div class="state" id="stateView"></div>
+		<div id="verdict"></div>
+
+		<h2>3. Free play — poke the model</h2>
+		<p>
+			Each button runs the pure <code>validateBreakdown()</code> module below and re-renders. Watch
+			the verdict.
+		</p>
+		<div id="freeplay"></div>
+
+		<h2>4. Guided walkthroughs — the awkward cases</h2>
+		<div class="tabs" id="tabs"></div>
+		<div class="render" id="walkDesc"></div>
+		<div id="walkSteps"></div>
+
+		<script>
+			// ---- Pure logic module (liftable; no DOM in here) ----
+			const SCHEMA = {
+				$id: 'qla/phase1-breakdown-v0.1',
+				type: 'object',
+				required: ['paperId', 'specRef', 'questions'],
+				properties: {
+					paperId: { type: 'string', example: 'AQA-84632H-JUN23' },
+					specRef: {
+						type: 'object',
+						required: ['board', 'specCode', 'tier', 'version'],
+						properties: {
+							board: { type: 'string' },
+							specCode: { type: 'string' },
+							tier: { enum: ['F', 'H'] },
+							version: { type: 'string' }
+						}
+					},
+					questions: { type: 'array', items: { $ref: '#/$defs/question' } }
+				},
+				$defs: {
+					question: {
+						type: 'object',
+						required: [
+							'number',
+							'marks',
+							'specCodes',
+							'questionText',
+							'ao',
+							'commandWord',
+							'markPoints',
+							'source'
+						],
+						properties: {
+							number: { type: 'string', description: "As printed, e.g. '01.1'" },
+							marks: { type: 'integer', minimum: 1 },
+							specCodes: {
+								type: 'array',
+								minItems: 1,
+								items: { type: 'string', pattern: '^\\d+\\.\\d+(\\.\\d+(\\.\\d+)?)?$' }
+							},
+							questionText: { type: 'string', description: 'Short stem, not full paper text' },
+							ao: { type: 'array', items: { enum: ['AO1', 'AO2', 'AO3'] } },
+							commandWord: {
+								type: 'string',
+								description: 'e.g. Complete, Describe, Tick+reason; empty string if none'
+							},
+							levelsBased: { type: 'boolean' },
+							markPoints: {
+								type: 'array',
+								items: {
+									type: 'object',
+									required: ['point', 'marks'],
+									properties: {
+										point: { type: 'string' },
+										marks: { type: 'integer', minimum: 1 },
+										levels: { type: 'array', items: { type: 'string' } }
+									}
+								}
+							},
+							diagramRef: {
+								type: ['string', 'null'],
+								description: 'Figure caption if diagram-dependent, else null'
+							},
+							source: {
+								type: 'object',
+								required: ['qpPage', 'msPage'],
+								properties: { qpPage: { type: 'integer' }, msPage: { type: 'integer' } }
+							}
+						}
+					}
+				}
+			};
+
+			const EXAMPLE = {
+				paperId: 'AQA-84632H-JUN23',
+				specRef: { board: 'AQA', specCode: '8463', tier: 'H', version: '1.1 30 September 2019' },
+				questions: [
+					{
+						number: '01.1',
+						marks: 1,
+						specCodes: ['4.6.1.1'],
+						questionText:
+							'In a transverse wave, the direction of oscillation is ___ to energy transfer.',
+						ao: ['AO1'],
+						commandWord: 'Complete',
+						levelsBased: false,
+						markPoints: [{ point: 'perpendicular', marks: 1 }],
+						diagramRef: null,
+						source: { qpPage: 2, msPage: 7 }
+					},
+					{
+						number: '01.2',
+						marks: 6,
+						specCodes: ['4.6.2.2'],
+						questionText:
+							'Describe a method to test: black flask emits more infrared than silver flask over 10 min cooling.',
+						ao: ['AO1', 'AO3'],
+						commandWord: 'Describe',
+						levelsBased: true,
+						markPoints: [
+							{
+								point: 'Level 3: valid outcome, key steps logically sequenced',
+								marks: 6,
+								levels: ['L3 5-6', 'L2 3-4', 'L1 1-2']
+							},
+							{
+								point:
+									'Indicative content: heat water; equal volumes; thermometers/IR detectors equidistant; t=0 and t=10min readings; change; compare. L3 must show decrease-for-both or IR comparison.',
+								marks: 6
+							}
+						],
+						diagramRef: 'Figure 1 (equipment photo)',
+						source: { qpPage: 3, msPage: 7 }
+					},
+					{
+						number: '01.3',
+						marks: 2,
+						specCodes: ['4.6.3.1'],
+						questionText: 'When will flasks emit at greatest rate? Tick one box + reason.',
+						ao: ['AO2', 'AO1'],
+						commandWord: 'Tick + reason',
+						levelsBased: false,
+						markPoints: [
+							{ point: 'during the 1st minute', marks: 1 },
+							{
+								point: 'greatest temperature difference to surroundings (MP2 depends on MP1)',
+								marks: 1
+							}
+						],
+						diagramRef: null,
+						source: { qpPage: 4, msPage: 8 }
+					}
+				]
+			};
+
+			function validateBreakdown(b) {
+				const errs = [];
+				if (!b.paperId) errs.push('paperId missing');
+				if (!b.specRef || !b.specRef.specCode) errs.push('specRef.specCode missing');
+				let total = 0;
+				(b.questions || []).forEach((q, i) => {
+					total += q.marks || 0;
+					if (!q.number) errs.push(`q[${i}]: number missing`);
+					if (!/^\d+\.\d+$/.test(q.number || ''))
+						errs.push(`q[${i}] (${q.number}): number not NN.N shape`);
+					(q.specCodes || []).forEach((c) => {
+						if (!/^\d+\.\d+(\.\d+(\.\d+)?)?$/.test(c))
+							errs.push(`${q.number}: specCode '${c}' bad shape`);
+						if (c.startsWith('8463') || c.startsWith('8464'))
+							errs.push(
+								`${q.number}: specCode '${c}' looks like a spec number, not a dotted content code`
+							);
+					});
+					const mpSum = (q.markPoints || []).reduce((a, m) => a + (m.marks || 0), 0);
+					if (!q.levelsBased && mpSum !== q.marks)
+						errs.push(`${q.number}: markPoints sum ${mpSum} != marks ${q.marks}`);
+					if (q.levelsBased && !q.markPoints.some((m) => m.levels))
+						errs.push(`${q.number}: levelsBased but no levels bands recorded`);
+					if (!q.ao || !q.ao.length)
+						errs.push(`${q.number}: AO missing (needed for Phase 2 analysis?)`);
+					if (!q.source || q.source.qpPage == null || q.source.msPage == null)
+						errs.push(`${q.number}: source pages missing (uncheckable)`);
+				});
+				return { ok: errs.length === 0, errs, total, count: (b.questions || []).length };
+			}
+			// ---- End pure module ----
+
+			// ---- Thin page shell (throwaway) ----
+			const $ = (id) => document.getElementById(id);
+			$('schemaView').textContent =
+				JSON.stringify(SCHEMA, null, 1).slice(0, 4000) + '…\n(full SCHEMA const in page source)';
+			let current = JSON.parse(JSON.stringify(EXAMPLE));
+			function render() {
+				const v = validateBreakdown(current);
+				$('renderView').innerHTML = current.questions
+					.map(
+						(q) =>
+							`<div><strong>Q${q.number}</strong> [${q.marks}m, ${q.ao.join('/')}, ${q.levelsBased ? 'levels' : 'points'}] → specCodes ${q.specCodes.join(', ')}<br><em>${q.questionText}</em><br>markPoints: ${q.markPoints.map((m) => m.point + ' (' + m.marks + 'm)').slice(0, 110)}. ` +
+							(q.diagramRef ? `diagram: ${q.diagramRef}` : 'no diagram') +
+							` <small>QP p${q.source.qpPage} / MS p${q.source.msPage}</small></div><hr>`
+					)
+					.join('');
+				$('stateView').textContent = JSON.stringify(current, null, 1);
+				$('verdict').innerHTML = v.ok
+					? `<p class="ok">VALID — ${v.count} questions, ${v.total} marks in this slice.</p>`
+					: `<p class="bad">INVALID (${v.errs.length}):</p><ul>${v.errs.map((e) => `<li>${e}</li>`).join('')}</ul>`;
+			}
+			const cases = {
+				'Reset to worked example': () => JSON.parse(JSON.stringify(EXAMPLE)),
+				'Drop AO from 01.1 (is AO required?)': () => {
+					const b = JSON.parse(JSON.stringify(EXAMPLE));
+					b.questions[0].ao = [];
+					return b;
+				},
+				'Unknown spec code 9.9.9.9 on 01.3': () => {
+					const b = JSON.parse(JSON.stringify(EXAMPLE));
+					b.questions[2].specCodes = ['9.9.9.9'];
+					return b;
+				},
+				'Spec number instead of content code': () => {
+					const b = JSON.parse(JSON.stringify(EXAMPLE));
+					b.questions[0].specCodes = ['8463'];
+					return b;
+				},
+				'Split 01.3 into sub-points (tick vs reason)': () => {
+					const b = JSON.parse(JSON.stringify(EXAMPLE));
+					b.questions[2].markPoints = [
+						{ point: 'tick: 1st minute', marks: 1 },
+						{ point: 'reason: greatest temp difference', marks: 1 }
+					];
+					return b;
+				},
+				'Flatten 01.2 levels into 6 points (wrong?)': () => {
+					const b = JSON.parse(JSON.stringify(EXAMPLE));
+					b.questions[2 - 1].levelsBased = false;
+					b.questions[1].markPoints = [
+						{ point: 'p1', marks: 1 },
+						{ point: 'p2', marks: 1 },
+						{ point: 'p3', marks: 1 },
+						{ point: 'p4', marks: 1 },
+						{ point: 'p5', marks: 1 },
+						{ point: 'p6', marks: 1 }
+					];
+					return b;
+				}
+			};
+			Object.entries(cases).forEach(([label, fn]) => {
+				const btn = document.createElement('button');
+				btn.textContent = label;
+				btn.onclick = () => {
+					current = fn();
+					render();
+				};
+				$('freeplay').appendChild(btn);
+			});
+			const walks = [
+				{
+					name: 'Happy path',
+					desc: 'Valid slice Q01.1–01.3 as the Parse call should emit. Expect VALID.',
+					steps: [['Load valid slice', 'Reset to worked example']]
+				},
+				{
+					name: 'Tricky: 6-mark levels',
+					desc: 'Q01.2 is levels-marked (L3/L2/L1), not 6×1pt. Flattening it to points should feel wrong — levelsBased + bands must survive. Try the flatten button.',
+					steps: [
+						['Reset', 'Reset to worked example'],
+						['Flatten levels', 'Flatten 01.2 levels into 6 points (wrong?)']
+					]
+				},
+				{
+					name: 'Illegal: unknown code',
+					desc: 'Spec code not in the cached exam specification catalogue (9.9.9.9). Schema shape passes but Phase 2 validation must reject/warn — preview of ticket #6.',
+					steps: [
+						['Reset', 'Reset to worked example'],
+						['Inject unknown code', 'Unknown spec code 9.9.9.9 on 01.3']
+					]
+				}
+			];
+			let activeWalk = 0;
+			function drawTabs() {
+				$('tabs').innerHTML = '';
+				walks.forEach((w, i) => {
+					const b = document.createElement('button');
+					b.textContent = w.name;
+					b.setAttribute('aria-selected', i === activeWalk);
+					b.onclick = () => {
+						activeWalk = i;
+						drawWalk();
+					};
+					$('tabs').appendChild(b);
+				});
+			}
+			function drawWalk() {
+				drawTabs();
+				const w = walks[activeWalk];
+				$('walkDesc').textContent = w.desc;
+				$('walkSteps').innerHTML = '';
+				w.steps.forEach(([label, caseName]) => {
+					const b = document.createElement('button');
+					b.textContent = label;
+					b.onclick = () => {
+						current = cases[caseName]();
+						render();
+					};
+					$('walkSteps').appendChild(b);
+				});
+			}
+			drawWalk();
+			render();
+		</script>
+	</body>
+</html>
