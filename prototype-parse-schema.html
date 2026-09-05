@@ -106,9 +106,16 @@
 			const SCHEMA = {
 				$id: 'qla/phase1-breakdown-v0.1',
 				type: 'object',
-				required: ['paperId', 'specRef', 'questions'],
+				required: ['paperId', 'paperTitle', 'year', 'totalMarks', 'specRef', 'questions'],
 				properties: {
 					paperId: { type: 'string', example: 'AQA-84632H-JUN23' },
+					paperTitle: { type: 'string', example: 'GCSE Physics Higher Tier Paper 2' },
+					year: { type: 'integer', example: 2023 },
+					totalMarks: {
+						type: 'integer',
+						description:
+							"Paper maximum as stated in the paper's Information section — read off the page, NEVER summed from questions"
+					},
 					specRef: {
 						type: 'object',
 						required: ['board', 'specCode', 'tier', 'version'],
@@ -173,6 +180,9 @@
 
 			const EXAMPLE = {
 				paperId: 'AQA-84632H-JUN23',
+				paperTitle: 'GCSE Physics Higher Tier Paper 2',
+				year: 2023,
+				totalMarks: 100,
 				specRef: { board: 'AQA', specCode: '8463', tier: 'H', version: '1.1 30 September 2019' },
 				questions: [
 					{
@@ -224,6 +234,10 @@
 			function validateBreakdown(b) {
 				const errs = [];
 				if (!b.paperId) errs.push('paperId missing');
+				if (!b.paperTitle || !b.paperTitle.trim()) errs.push('paperTitle missing');
+				if (!Number.isInteger(b.year)) errs.push('year missing/not int');
+				if (!Number.isInteger(b.totalMarks) || b.totalMarks < 1)
+					errs.push('totalMarks missing/not int (read off paper, never summed)');
 				if (!b.specRef || !b.specRef.specCode) errs.push('specRef.specCode missing');
 				let total = 0;
 				(b.questions || []).forEach((q, i) => {
