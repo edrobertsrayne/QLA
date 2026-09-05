@@ -124,18 +124,13 @@
 				$defs: {
 					question: {
 						type: 'object',
-						required: [
-							'number',
-							'marks',
-							'specCodes',
-							'questionText',
-							'ao',
-							'commandWord',
-							'markPoints',
-							'source'
-						],
+						required: ['number', 'marks', 'specCodes', 'questionText', 'ao', 'commandWord'],
 						properties: {
-							number: { type: 'string', description: "As printed, e.g. '01.1'" },
+							number: {
+								type: 'string',
+								description:
+									"As printed, free string unique within paper — GCSE '01.1', A-level '16(a)(ii)'"
+							},
 							marks: { type: 'integer', minimum: 1 },
 							specCodes: {
 								type: 'array',
@@ -147,28 +142,6 @@
 							commandWord: {
 								type: 'string',
 								description: 'e.g. Complete, Describe, Tick+reason; empty string if none'
-							},
-							levelsBased: { type: 'boolean' },
-							markPoints: {
-								type: 'array',
-								items: {
-									type: 'object',
-									required: ['point', 'marks'],
-									properties: {
-										point: { type: 'string' },
-										marks: { type: 'integer', minimum: 1 },
-										levels: { type: 'array', items: { type: 'string' } }
-									}
-								}
-							},
-							diagramRef: {
-								type: ['string', 'null'],
-								description: 'Figure caption if diagram-dependent, else null'
-							},
-							source: {
-								type: 'object',
-								required: ['qpPage', 'msPage'],
-								properties: { qpPage: { type: 'integer' }, msPage: { type: 'integer' } }
 							}
 						}
 					}
@@ -186,11 +159,7 @@
 						questionText:
 							'In a transverse wave, the direction of oscillation is ___ to energy transfer.',
 						ao: ['AO1'],
-						commandWord: 'Complete',
-						levelsBased: false,
-						markPoints: [{ point: 'perpendicular', marks: 1 }],
-						diagramRef: null,
-						source: { qpPage: 2, msPage: 7 }
+						commandWord: 'Complete'
 					},
 					{
 						number: '01.2',
@@ -199,22 +168,7 @@
 						questionText:
 							'Describe a method to test: black flask emits more infrared than silver flask over 10 min cooling.',
 						ao: ['AO1', 'AO3'],
-						commandWord: 'Describe',
-						levelsBased: true,
-						markPoints: [
-							{
-								point: 'Level 3: valid outcome, key steps logically sequenced',
-								marks: 6,
-								levels: ['L3 5-6', 'L2 3-4', 'L1 1-2']
-							},
-							{
-								point:
-									'Indicative content: heat water; equal volumes; thermometers/IR detectors equidistant; t=0 and t=10min readings; change; compare. L3 must show decrease-for-both or IR comparison.',
-								marks: 6
-							}
-						],
-						diagramRef: 'Figure 1 (equipment photo)',
-						source: { qpPage: 3, msPage: 7 }
+						commandWord: 'Describe'
 					},
 					{
 						number: '01.3',
@@ -222,17 +176,16 @@
 						specCodes: ['4.6.3.1'],
 						questionText: 'When will flasks emit at greatest rate? Tick one box + reason.',
 						ao: ['AO2', 'AO1'],
-						commandWord: 'Tick + reason',
-						levelsBased: false,
-						markPoints: [
-							{ point: 'during the 1st minute', marks: 1 },
-							{
-								point: 'greatest temperature difference to surroundings (MP2 depends on MP1)',
-								marks: 1
-							}
-						],
-						diagramRef: null,
-						source: { qpPage: 4, msPage: 8 }
+						commandWord: 'Tick + reason'
+					},
+					{
+						number: '16(a)(ii)',
+						marks: 2,
+						specCodes: ['4.6.1.1'],
+						questionText:
+							'A-level shape probe (OCR H556/01): Use the graph to show acceleration at t = 12 s is about 1.5 m s-2.',
+						ao: ['AO2'],
+						commandWord: 'Show'
 					}
 				]
 			};
@@ -244,9 +197,8 @@
 				let total = 0;
 				(b.questions || []).forEach((q, i) => {
 					total += q.marks || 0;
-					if (!q.number) errs.push(`q[${i}]: number missing`);
-					if (!/^\d+\.\d+$/.test(q.number || ''))
-						errs.push(`q[${i}] (${q.number}): number not NN.N shape`);
+					if (!(q.number || '').trim())
+						errs.push(`q[${i}]: number missing/empty (free string, unique within paper)`);
 					(q.specCodes || []).forEach((c) => {
 						if (!/^\d+\.\d+(\.\d+(\.\d+)?)?$/.test(c))
 							errs.push(`${q.number}: specCode '${c}' bad shape`);
@@ -255,15 +207,16 @@
 								`${q.number}: specCode '${c}' looks like a spec number, not a dotted content code`
 							);
 					});
-					const mpSum = (q.markPoints || []).reduce((a, m) => a + (m.marks || 0), 0);
-					if (!q.levelsBased && mpSum !== q.marks)
-						errs.push(`${q.number}: markPoints sum ${mpSum} != marks ${q.marks}`);
-					if (q.levelsBased && !q.markPoints.some((m) => m.levels))
-						errs.push(`${q.number}: levelsBased but no levels bands recorded`);
-					if (!q.ao || !q.ao.length)
-						errs.push(`${q.number}: AO missing (needed for Phase 2 analysis?)`);
-					if (!q.source || q.source.qpPage == null || q.source.msPage == null)
-						errs.push(`${q.number}: source pages missing (uncheckable)`);
+					if (!Number.isInteger(q.marks) || q.marks < 1)
+						errs.push(`${q.number || 'q[' + i + ']'}: marks must be a positive integer`);
+					if (!q.ao || !q.ao.length) errs.push(`${q.number}: AO missing (required)`);
+					if (!q.questionText || !q.questionText.trim())
+						errs.push(`${q.number}: questionText missing`);
+				});
+				const seen = {};
+				(b.questions || []).forEach((q) => {
+					if (q.number && seen[q.number]) errs.push(`duplicate number '${q.number}'`);
+					seen[q.number] = true;
 				});
 				return { ok: errs.length === 0, errs, total, count: (b.questions || []).length };
 			}
@@ -279,9 +232,7 @@
 				$('renderView').innerHTML = current.questions
 					.map(
 						(q) =>
-							`<div><strong>Q${q.number}</strong> [${q.marks}m, ${q.ao.join('/')}, ${q.levelsBased ? 'levels' : 'points'}] → specCodes ${q.specCodes.join(', ')}<br><em>${q.questionText}</em><br>markPoints: ${q.markPoints.map((m) => m.point + ' (' + m.marks + 'm)').slice(0, 110)}. ` +
-							(q.diagramRef ? `diagram: ${q.diagramRef}` : 'no diagram') +
-							` <small>QP p${q.source.qpPage} / MS p${q.source.msPage}</small></div><hr>`
+							`<div><strong>Q${q.number}</strong> [${q.marks}m, ${q.ao.join('/')}] → specCodes ${q.specCodes.join(', ')}<br><em>${q.questionText}</em><br>command: ${q.commandWord || '—'}</div><hr>`
 					)
 					.join('');
 				$('stateView').textContent = JSON.stringify(current, null, 1);
@@ -306,25 +257,14 @@
 					b.questions[0].specCodes = ['8463'];
 					return b;
 				},
-				'Split 01.3 into sub-points (tick vs reason)': () => {
+				'Duplicate number (01.1 twice)': () => {
 					const b = JSON.parse(JSON.stringify(EXAMPLE));
-					b.questions[2].markPoints = [
-						{ point: 'tick: 1st minute', marks: 1 },
-						{ point: 'reason: greatest temp difference', marks: 1 }
-					];
+					b.questions[1].number = '01.1';
 					return b;
 				},
-				'Flatten 01.2 levels into 6 points (wrong?)': () => {
+				'A-level number 16(a)(ii) valid': () => {
 					const b = JSON.parse(JSON.stringify(EXAMPLE));
-					b.questions[2 - 1].levelsBased = false;
-					b.questions[1].markPoints = [
-						{ point: 'p1', marks: 1 },
-						{ point: 'p2', marks: 1 },
-						{ point: 'p3', marks: 1 },
-						{ point: 'p4', marks: 1 },
-						{ point: 'p5', marks: 1 },
-						{ point: 'p6', marks: 1 }
-					];
+					b.questions[0].number = '16(a)(ii)';
 					return b;
 				}
 			};
@@ -344,11 +284,11 @@
 					steps: [['Load valid slice', 'Reset to worked example']]
 				},
 				{
-					name: 'Tricky: 6-mark levels',
-					desc: 'Q01.2 is levels-marked (L3/L2/L1), not 6×1pt. Flattening it to points should feel wrong — levelsBased + bands must survive. Try the flatten button.',
+					name: 'Tricky: A-level numbering',
+					desc: 'OCR H556/01 uses 1..16(a)(i)/(ii) — free-string numbers must validate, duplicates must fail. Try both buttons.',
 					steps: [
 						['Reset', 'Reset to worked example'],
-						['Flatten levels', 'Flatten 01.2 levels into 6 points (wrong?)']
+						['Duplicate number', 'Duplicate number (01.1 twice)']
 					]
 				},
 				{
