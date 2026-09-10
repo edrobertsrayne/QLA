@@ -87,7 +87,7 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each result.breakdown.questions as question (question.id)}
+					{#each result.breakdown.questions as question, index (question.id + '::' + index)}
 						<Table.Row>
 							<Table.Cell class="font-medium whitespace-nowrap">{question.id}</Table.Cell>
 							<Table.Cell class="max-w-56 truncate" title={question.summary}>
