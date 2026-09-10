@@ -18,6 +18,10 @@ Analyzes Svelte code, returns issues and suggestions. Run on every piece of Svel
 
 Generates a Svelte Playground link. Offer it once code lives purely in the response; call it only after the user confirms.
 
+## UI components
+
+Prefer shadcn-svelte components when adding new features.
+
 ## Agent skills
 
 ### Issue tracker
