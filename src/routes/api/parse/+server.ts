@@ -61,7 +61,6 @@ function statusFor(code: string): number {
 			return 502;
 		case 'MISSING_API_KEY':
 		case 'MALFORMED_MODEL_OUTPUT':
-		case 'MODEL_ERROR':
 		case MODEL_ERROR_CODE:
 			return 500;
 		default:
@@ -141,7 +140,6 @@ export const POST: RequestHandler = async ({ request }) => {
 		} catch {
 			throw new Error('unreadable');
 		}
-		const base64 = Buffer.from(bytes).toString('base64');
 		let parsed;
 		try {
 			parsed = await parsePdfBytes(bytes);
@@ -153,7 +151,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				filename: file.name,
 				pageCount: parsed.pageCount,
 				text: parsed.textWithMarkers,
-				pdfBase64: base64
+				pdfBase64: useNativePdf ? Buffer.from(bytes).toString('base64') : null
 			},
 			pages: parsed.pageCount
 		};
@@ -203,7 +201,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			return error(INVALID_SPEC_URL_CODE, 'The specification link is not a valid URL.');
 		}
 		try {
-			const fetched = await fetchSpecPdf(specUrl);
+			const fetched = await fetchSpecPdf(specUrl, useNativePdf);
 			specDoc = fetched.doc;
 			totalPages += fetched.pages;
 		} catch (specError) {

@@ -8,16 +8,15 @@
 // words, specPoint string-or-null (exact lift, never validated), commandWord
 // string-or-null, ao AO1/AO2/AO3-or-null.
 
-import { ASSESSMENT_OBJECTIVES, type Breakdown, type ParseWarning } from './schema';
+import { ASSESSMENT_OBJECTIVES, type ParseWarning } from './schema';
+import { isBreakdown, isRecord } from '$lib/parse/is-breakdown.js';
+
+export { isBreakdown };
 
 const AO_SET: ReadonlySet<string> = new Set(ASSESSMENT_OBJECTIVES);
 
 function countWords(text: string): number {
 	return text.trim().split(/\s+/).filter(Boolean).length;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
 }
 
 /**
@@ -105,10 +104,4 @@ export function validateBreakdown(breakdown: unknown): ParseWarning[] {
 	}
 
 	return warnings;
-}
-
-/** Type-guard for a structurally complete breakdown (warnings may still apply). */
-export function isBreakdown(value: unknown): value is Breakdown {
-	if (!isRecord(value)) return false;
-	return Array.isArray(value['questions']);
 }
