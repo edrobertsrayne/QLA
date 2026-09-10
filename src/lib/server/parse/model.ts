@@ -14,6 +14,7 @@
 import type { Breakdown, ParseUsage } from './schema';
 import { OPENROUTER_MAX_TOKENS, OPENROUTER_TIMEOUT_MS, buildHybridPayload } from './pdf';
 import { getApiKey } from './env';
+import { CURATED_PRICING } from './models';
 
 /** One ingested PDF forwarded to the model transport (hybrid dual-input). */
 export interface IngestedDocument {
@@ -21,8 +22,8 @@ export interface IngestedDocument {
 	pageCount: number;
 	/** Per-page extracted text joined with `[p.N]` markers (ordering ground truth). */
 	text: string;
-	/** Raw PDF as base64 (the route attaches it natively when the model supports it). */
-	pdfBase64: string;
+	/** Raw PDF as base64, only populated when the run will attach it natively. */
+	pdfBase64: string | null;
 }
 
 /** Inputs the route forwards to the model transport. */
@@ -132,22 +133,20 @@ export function stubBreakdown(): Breakdown {
 }
 
 /**
- * Rough per-1M-token prices (USD) used only for the `estCost` hint shown on
- * every response. The ~$0.014/run anchor is the observed Gemini Flash cost for
- * a full GCSE paper — other models fall back to generic rates so the hint
- * stays present, never exact billing.
+ * Per-1M-token prices (USD) used for the `estCost` hint shown on every
+ * response. Curated model ids resolve to `CURATED_PRICING` in `models.ts` —
+ * the same table the model picker's catalogue entry comes from, so the
+ * estimate can never drift from that source (issue #17). Anything else
+ * (a custom model id typed into the picker) gets one documented generic
+ * rate — a mid-range guess, not real billing, just enough to keep a cost
+ * hint present.
  */
+const GENERIC_PRICE = { input: 0.3, output: 1.2 };
+
 function priceFor(modelId: string): { input: number; output: number } {
-	const id = modelId.toLowerCase();
-	if (id.includes('gemini') && id.includes('flash')) return { input: 0.075, output: 0.3 };
-	if (id.includes('gemini')) return { input: 0.1, output: 0.4 };
-	if (id.includes('haiku')) return { input: 0.8, output: 4 };
-	if (id.includes('sonnet')) return { input: 3, output: 15 };
-	if (id.includes('claude')) return { input: 3, output: 15 };
-	if (id.includes('mini') || id.includes('nano')) return { input: 0.15, output: 0.6 };
-	if (id.includes('gpt-4o') || id.includes('gpt-5') || id.includes('gpt-4.1'))
-		return { input: 2.5, output: 10 };
-	return { input: 0.3, output: 1.2 };
+	const curated = CURATED_PRICING[modelId];
+	if (curated) return { input: curated.promptPrice, output: curated.completionPrice };
+	return GENERIC_PRICE;
 }
 
 /** Estimate run cost from token counts (display hint only, 4dp in the UI). */

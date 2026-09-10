@@ -10,6 +10,7 @@
 	import { onMount } from 'svelte';
 	import * as Card from '$lib/components/ui/card';
 	import type { FatalError, RunResult } from '$lib/components/parse/types.js';
+	import { isBreakdown } from '$lib/parse/is-breakdown.js';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import { toast } from 'svelte-sonner';
 
@@ -32,7 +33,6 @@
 	let modelOptions = $state<ModelOption[]>([]);
 	let modelsLoading = $state(true);
 	let modelsError = $state<string | null>(null);
-	let modelsSource = $state<'live' | 'fallback' | null>(null);
 	let specUrl = $state('');
 	let specUrlError = $state<string | null>(null);
 	let running = $state(false);
@@ -110,10 +110,8 @@
 			if (!response.ok) throw new Error(`status ${response.status}`);
 			const body = (await response.json()) as {
 				models?: ModelOption[];
-				source?: 'live' | 'fallback';
 			};
 			modelOptions = Array.isArray(body.models) ? body.models : [];
-			modelsSource = body.source ?? null;
 			if (
 				!modelCustom &&
 				modelOverride !== '' &&
@@ -124,7 +122,6 @@
 		} catch {
 			modelsError = 'The model list could not be loaded. Server default still works.';
 			modelOptions = [];
-			modelsSource = null;
 		} finally {
 			modelsLoading = false;
 		}
@@ -151,6 +148,12 @@
 			const body = (await response.json()) as RunResult | { error: FatalError };
 			if (!response.ok) {
 				fatal = (body as { error: FatalError }).error;
+				toast.error(`Run failed (${fatal.code})`, { description: fatal.message });
+			} else if (!isBreakdown((body as RunResult).breakdown)) {
+				fatal = {
+					code: 'MALFORMED_MODEL_OUTPUT',
+					message: "The model's response was not a valid breakdown. Please try again."
+				};
 				toast.error(`Run failed (${fatal.code})`, { description: fatal.message });
 			} else {
 				result = body as RunResult;
@@ -234,7 +237,6 @@
 						models={modelOptions}
 						loading={modelsLoading}
 						loadError={modelsError}
-						source={modelsSource}
 						onretry={() => void loadModels()}
 					/>
 				</div>
