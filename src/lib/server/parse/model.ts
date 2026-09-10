@@ -139,8 +139,7 @@ export function stubBreakdown(): Breakdown {
  */
 function priceFor(modelId: string): { input: number; output: number } {
 	const id = modelId.toLowerCase();
-	if (id.includes('gemini-flash') || (id.includes('gemini') && id.includes('flash')))
-		return { input: 0.075, output: 0.3 };
+	if (id.includes('gemini') && id.includes('flash')) return { input: 0.075, output: 0.3 };
 	if (id.includes('gemini')) return { input: 0.1, output: 0.4 };
 	if (id.includes('claude')) return { input: 3, output: 15 };
 	if (id.includes('gpt-4o') || id.includes('gpt-5') || id.includes('gpt-4.1'))

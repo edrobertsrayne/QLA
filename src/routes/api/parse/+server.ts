@@ -180,6 +180,15 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Optional specification link: fetched fresh per run (no cache) and
 	// verified as a readable PDF. Any failure fails the run before model spend.
+	// The paper+markscheme ceiling is checked first so an already-oversize
+	// upload never pays for a spec download.
+	if (totalPages > MAX_TOTAL_PAGES) {
+		return error(
+			'FILE_TOO_BIG',
+			`The PDFs total ${totalPages} pages, above the ${MAX_TOTAL_PAGES}-page ceiling. Split or compress them and try again.`,
+			{ totalPages, limit: MAX_TOTAL_PAGES }
+		);
+	}
 	const specUrlText =
 		typeof specUrlRaw === 'string' && specUrlRaw.trim() !== '' ? specUrlRaw.trim() : undefined;
 	if (specUrlText !== undefined) {
@@ -206,6 +215,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 	}
 
+	// Combined ceiling including the spec pages (paper+markscheme alone was
+	// already checked before the spec download above).
 	if (totalPages > MAX_TOTAL_PAGES) {
 		return error(
 			'FILE_TOO_BIG',
