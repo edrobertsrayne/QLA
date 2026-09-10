@@ -4,7 +4,7 @@
 
 A tool that takes a class's assessment results and turns them into individual, question-by-question post-assessment reports with feedback — built in three phases, each a working increment, each detailed out in its own wayfinder session when it starts.
 
-Terminology used throughout: see [`CONTEXT.md`](./CONTEXT.md) (markscheme, marksheet, assessment paper, exam specification, spec code).
+Terminology used throughout: see [`CONTEXT.md`](./CONTEXT.md) (markscheme, marksheet, assessment paper, exam specification, specification point).
 
 ## Locked decisions (apply across every phase)
 
@@ -27,9 +27,9 @@ Not yet specified, deferred to this phase's wayfinder session:
 
 ## Phase 2 — Marksheet
 
-First phase where UI/UX is in scope. Teacher builds a marksheet — per-student, per-question marks — held in browser storage, cross-referenced against Phase 1's spec-code mappings to surface cohort-level strengths and weaknesses.
+First phase where UI/UX is in scope. Teacher builds a marksheet — per-student, per-question marks — held in browser storage, cross-referenced against Phase 1's specification-point mappings to surface cohort-level strengths and weaknesses.
 
-Not yet specified: marksheet data entry method (manual, import, scan), what "strengths/weaknesses" analysis looks like concretely, whether this phase needs any LLM call at all (may be pure local aggregation) or only Phase 3 does.
+Charted as [Phase 2 Marksheet — wayfinder map](https://github.com/edrobertsrayne/QLA/issues/23). Scope settled at charting: **one class, one marksheet at a time**; the app opens on upload, persists the breakdown in browser storage so re-opening lands on the marksheet, and a "new upload" button wipes and restarts. Analysis is narrowed to an on-demand per-question view with RAG conditional formatting (specification-point roll-up deliberately deferred), and Phase 2 makes no LLM call at all — every figure is local arithmetic. Remaining open decisions live as the map's child tickets.
 
 ## Phase 3 — Report
 
