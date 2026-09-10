@@ -32,3 +32,11 @@ One of hardcoded AO1 / AO2 / AO3 (shared across AQA/OCR GCSE and A-Level). Tagge
 **Exam specification**:
 The exam board's syllabus document defining topic/skill codes. Optional for the prototype — the teacher may attach a link to the specification PDF, fetched fresh per run as extra grounding; `specPoint` entries stay verbatim lifts from the markscheme, never inferred from the spec.
 _Avoid_: Spec (informal shorthand is fine in conversation, not as a defined term)
+
+**Marked leaf**:
+The smallest thing on an assessment paper that carries its own marks (e.g. `1a`, `2bii`) — the unit one row of a breakdown describes and one column of a marksheet collects. A question that is subdivided is not itself a marked leaf; its parts are.
+_Avoid_: Sub-question, part, item
+
+**Facility index**:
+The proportion of a marked leaf's available marks that a cohort actually gained — the measure Phase 2's analysis ranks and RAG-colours to surface poorly answered questions. Computed over marks entered, excluding absent students and unmarked cells.
+_Avoid_: Difficulty, average score, success rate
