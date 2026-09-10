@@ -1,11 +1,13 @@
 // `POST /api/parse` — single stateless server proxy for the v1 prototype.
 //
 // Multipart in, `{ breakdown, warnings, usage }` out. Accepts an assessment
-// paper and/or a markscheme PDF (at least one required). No exam
-// specification input, no spec fetch/cache/validation. The live model call
-// goes through the real configurable OpenRouter model (Gemini Flash default,
-// per-run override) with max_tokens 4000, a 120s timeout, usage on every
-// response, one silent retry on malformed JSON, and 429/5xx → 502 mapping.
+// paper and/or a markscheme PDF (at least one required), plus an optional
+// exam specification URL fetched server-side per run (no cache). The live
+// model call goes through the real configurable OpenRouter model (Gemini
+// Flash default, per-run override) with max_tokens 4000, a 120s timeout,
+// usage on every response, one silent retry on malformed JSON, and
+// 429/5xx → 502 mapping. Spec failures fail the run (400) before any model
+// spend; the spec never changes the verbatim specPoint rule.
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -14,7 +16,10 @@ import {
 	MARKSCHEME_FIELD,
 	MAX_FILE_BYTES,
 	MAX_TOTAL_PAGES,
-	MODEL_OVERRIDE_FIELD
+	MODEL_OVERRIDE_FIELD,
+	SPEC_URL_FIELD,
+	INVALID_SPEC_URL_CODE,
+	SPEC_UNREADABLE_CODE
 } from '$lib/server/parse/schema';
 import { validateBreakdown } from '$lib/server/parse/validate';
 import {
@@ -30,6 +35,12 @@ import {
 	resolveModelId,
 	supportsNativePdf
 } from '$lib/server/parse/pdf';
+import {
+	fetchSpecPdf,
+	parseSpecUrl,
+	SpecUnreadableError,
+	SpecUrlError
+} from '$lib/server/parse/spec';
 import { getApiKey } from '$lib/server/parse/env';
 
 function error(code: string, message: string, extra: Record<string, unknown> = {}): Response {
@@ -41,6 +52,8 @@ function statusFor(code: string): number {
 		case 'MISSING_INPUT':
 		case 'INVALID_FILE_TYPE':
 		case 'PDF_UNREADABLE':
+		case INVALID_SPEC_URL_CODE:
+		case SPEC_UNREADABLE_CODE:
 			return 400;
 		case 'FILE_TOO_BIG':
 			return 413;
@@ -78,6 +91,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const paper = form.get(ASSESSMENT_PAPER_FIELD);
 	const markscheme = form.get(MARKSCHEME_FIELD);
 	const modelOverride = form.get(MODEL_OVERRIDE_FIELD);
+	const specUrlRaw = form.get(SPEC_URL_FIELD);
 
 	const hasPaper = paper instanceof File && paper.size > 0;
 	const hasMarkscheme = markscheme instanceof File && markscheme.size > 0;
@@ -144,6 +158,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	let paperDoc: IngestedDocument | undefined;
 	let markschemeDoc: IngestedDocument | undefined;
+	let specDoc: IngestedDocument | undefined;
 	let totalPages = 0;
 	try {
 		if (paperFile) {
@@ -163,6 +178,34 @@ export const POST: RequestHandler = async ({ request }) => {
 		);
 	}
 
+	// Optional specification link: fetched fresh per run (no cache) and
+	// verified as a readable PDF. Any failure fails the run before model spend.
+	const specUrlText =
+		typeof specUrlRaw === 'string' && specUrlRaw.trim() !== '' ? specUrlRaw.trim() : undefined;
+	if (specUrlText !== undefined) {
+		let specUrl: URL;
+		try {
+			specUrl = parseSpecUrl(specUrlText);
+		} catch (specError) {
+			if (specError instanceof SpecUrlError) return error(specError.code, specError.message);
+			return error(INVALID_SPEC_URL_CODE, 'The specification link is not a valid URL.');
+		}
+		try {
+			const fetched = await fetchSpecPdf(specUrl);
+			specDoc = fetched.doc;
+			totalPages += fetched.pages;
+		} catch (specError) {
+			if (specError instanceof SpecUnreadableError && specError.code === 'FILE_TOO_BIG') {
+				return error('FILE_TOO_BIG', 'The specification exceeds the 15MB per-file limit.', {
+					file: specUrl.toString(),
+					limit: MAX_FILE_BYTES
+				});
+			}
+			if (specError instanceof SpecUnreadableError) return error(specError.code, specError.message);
+			return error(SPEC_UNREADABLE_CODE, 'The specification could not be downloaded.');
+		}
+	}
+
 	if (totalPages > MAX_TOTAL_PAGES) {
 		return error(
 			'FILE_TOO_BIG',
@@ -178,7 +221,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		modelId,
 		useNativePdf,
 		...(paperDoc ? { paper: paperDoc } : {}),
-		...(markschemeDoc ? { markscheme: markschemeDoc } : {})
+		...(markschemeDoc ? { markscheme: markschemeDoc } : {}),
+		...(specDoc ? { spec: specDoc } : {})
 	};
 	for (let attempt = 1; attempt <= 2; attempt++) {
 		let result;
