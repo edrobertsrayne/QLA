@@ -24,3 +24,6 @@ vite.config.ts.timestamp-*
 
 # Husky internals
 .husky/_
+
+# Test artefacts
+.vitest-attachments/
