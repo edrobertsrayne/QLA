@@ -123,6 +123,9 @@ export const POST: RequestHandler = async ({ request }) => {
 			? modelOverride.trim()
 			: undefined;
 	const modelId = resolveModelId(override);
+	// Custom ids outside the drop-down's native-PDF set degrade to text-only
+	// with a visible warning (the route attaches `engine: 'native'` only via
+	// `useNativePdf`, so there is no silent paid-OCR fallback).
 	const useNativePdf = supportsNativePdf(modelId);
 
 	// Ingest whichever PDFs were provided: deterministic per-page text plus

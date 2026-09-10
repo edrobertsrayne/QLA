@@ -11,9 +11,9 @@ import { POST } from './+server';
 import { MAX_TOTAL_PAGES, SPEC_URL_FIELD, type Breakdown } from '$lib/server/parse/schema';
 import { isBreakdown, validateBreakdown } from '$lib/server/parse/validate';
 import {
-	DIAGRAM_UNVERIFIED_CODE,
 	buildHybridPayload,
-	buildPromptText
+	buildPromptText,
+	DIAGRAM_UNVERIFIED_CODE
 } from '$lib/server/parse/pdf';
 import {
 	MODEL_RETRYABLE_CODE,
@@ -288,7 +288,7 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		expect(calls).toBe(0);
 	});
 
-	it('override without native support degrades to text-only with a warning', async () => {
+	it('custom override without native support degrades to text-only with a warning', async () => {
 		let seen: ModelInput | undefined;
 		setModelTransport(async (input) => {
 			seen = input;
@@ -302,6 +302,23 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		expect(status).toBe(200);
 		expect(seen?.useNativePdf).toBe(false);
 		expect(body.warnings?.some((w) => w.code === DIAGRAM_UNVERIFIED_CODE)).toBe(true);
+	});
+
+	it('supported override reaches the model with native PDF attached', async () => {
+		let seen: ModelInput | undefined;
+		setModelTransport(async (input) => {
+			seen = input;
+			return stubResultWith(stubBreakdown());
+		});
+
+		const form = paperOnlyForm();
+		form.append('modelOverride', 'openai/gpt-4o-mini');
+		const { status, body } = await post(form);
+
+		expect(status).toBe(200);
+		expect(seen?.useNativePdf).toBe(true);
+		expect(seen?.modelId).toBe('openai/gpt-4o-mini');
+		expect(body.warnings).toEqual([]);
 	});
 
 	it('unreadable PDFs fail with 400 before any model call', async () => {

@@ -6,6 +6,8 @@
 	import SourceFilesCard from '$lib/components/parse/SourceFilesCard.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import ModelSelect, { type ModelOption } from '$lib/components/parse/ModelSelect.svelte';
+	import { onMount } from 'svelte';
 	import * as Card from '$lib/components/ui/card';
 	import type { FatalError, RunResult } from '$lib/components/parse/types.js';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
@@ -26,6 +28,11 @@
 	let paperError = $state<string | null>(null);
 	let markschemeError = $state<string | null>(null);
 	let modelOverride = $state('');
+	let modelCustom = $state(false);
+	let modelOptions = $state<ModelOption[]>([]);
+	let modelsLoading = $state(true);
+	let modelsError = $state<string | null>(null);
+	let modelsSource = $state<'live' | 'fallback' | null>(null);
 	let specUrl = $state('');
 	let specUrlError = $state<string | null>(null);
 	let running = $state(false);
@@ -95,6 +102,38 @@
 		return null;
 	}
 
+	async function loadModels(): Promise<void> {
+		modelsLoading = true;
+		modelsError = null;
+		try {
+			const response = await fetch('/api/models');
+			if (!response.ok) throw new Error(`status ${response.status}`);
+			const body = (await response.json()) as {
+				models?: ModelOption[];
+				source?: 'live' | 'fallback';
+			};
+			modelOptions = Array.isArray(body.models) ? body.models : [];
+			modelsSource = body.source ?? null;
+			if (
+				!modelCustom &&
+				modelOverride !== '' &&
+				!modelOptions.some((m) => m.id === modelOverride)
+			) {
+				modelOverride = '';
+			}
+		} catch {
+			modelsError = 'The model list could not be loaded. Server default still works.';
+			modelOptions = [];
+			modelsSource = null;
+		} finally {
+			modelsLoading = false;
+		}
+	}
+
+	onMount(() => {
+		void loadModels();
+	});
+
 	async function run(): Promise<void> {
 		if (!canRun) return;
 		running = true;
@@ -104,7 +143,8 @@
 			const form = new FormData();
 			if (assessmentPaper) form.append('assessmentPaper', assessmentPaper);
 			if (markscheme) form.append('markscheme', markscheme);
-			if (modelOverride.trim() !== '') form.append('modelOverride', modelOverride.trim());
+			if (modelCustom) modelOverride = modelOverride.trim();
+			if (modelOverride !== '') form.append('modelOverride', modelOverride);
 			if (specUrl.trim() !== '') form.append('specUrl', specUrl.trim());
 
 			const response = await fetch('/api/parse', { method: 'POST', body: form });
@@ -177,17 +217,26 @@
 			{onPaperChange}
 			{onMarkschemeChange}
 		/>
-		<Card.Root>
+		<Card.Root class="overflow-visible">
 			<Card.Header>
 				<Card.Title>Options</Card.Title>
 				<Card.Description
-					>Optional model override and specification link for this run.</Card.Description
+					>Pick a curated model with native PDF parsing, or choose Custom for any OpenRouter model
+					id.</Card.Description
 				>
 			</Card.Header>
 			<Card.Content class="space-y-4">
 				<div class="space-y-2">
-					<Label for="model">Model override (optional)</Label>
-					<Input id="model" placeholder="e.g. google/gemini-2.5-flash" bind:value={modelOverride} />
+					<Label>Model override (optional)</Label>
+					<ModelSelect
+						bind:value={modelOverride}
+						bind:custom={modelCustom}
+						models={modelOptions}
+						loading={modelsLoading}
+						loadError={modelsError}
+						source={modelsSource}
+						onretry={() => void loadModels()}
+					/>
 				</div>
 				<div class="space-y-2">
 					<Label for="spec">Specification link (optional)</Label>
