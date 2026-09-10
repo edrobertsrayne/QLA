@@ -159,7 +159,7 @@
 			</Card.Header>
 			<Card.Content class="space-y-2">
 				<Label for="model">Model override (optional)</Label>
-				<Input id="model" placeholder="e.g. google/gemini-flash-1.5" bind:value={modelOverride} />
+				<Input id="model" placeholder="e.g. google/gemini-2.5-flash" bind:value={modelOverride} />
 			</Card.Content>
 		</Card.Root>
 	</div>

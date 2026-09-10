@@ -18,7 +18,7 @@ import type { ParseWarning } from './schema';
 import { getEnvDefaultModel } from './env';
 
 /** Default model when no per-run override is given (Gemini Flash via OpenRouter). */
-export const DEFAULT_MODEL_ID = 'google/gemini-flash-1.5';
+export const DEFAULT_MODEL_ID = 'google/gemini-2.5-flash';
 
 /** Guardrail: cap completion so a full GCSE paper completes in one run. */
 export const OPENROUTER_MAX_TOKENS = 4000;
