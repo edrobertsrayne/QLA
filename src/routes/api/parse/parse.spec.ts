@@ -558,6 +558,7 @@ describe('buildPromptText v1', () => {
 		});
 		expect(withSpec).toContain('specification topic code');
 		expect(withSpec).toContain('extra grounding only');
+		expect(withSpec).toContain('NEVER infer or guess, even when the specification');
 
 		const paperOnly = buildPromptText({
 			paperText: 'paper',
