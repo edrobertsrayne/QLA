@@ -30,5 +30,5 @@ The instruction verb as printed in the paper (e.g. Explain). Verbatim, null when
 One of hardcoded AO1 / AO2 / AO3 (shared across AQA/OCR GCSE and A-Level). Tagged per leaf, null when unknowable. No board picker in the prototype.
 
 **Exam specification**:
-The exam board's syllabus document defining topic/skill codes. Not required for the prototype; adding it later is a refinement to an existing import, not a required input.
+The exam board's syllabus document defining topic/skill codes. Optional for the prototype — the teacher may attach a link to the specification PDF, fetched fresh per run as extra grounding; `specPoint` entries stay verbatim lifts from the markscheme, never inferred from the spec.
 _Avoid_: Spec (informal shorthand is fine in conversation, not as a defined term)

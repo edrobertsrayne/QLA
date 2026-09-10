@@ -34,6 +34,8 @@ export interface ModelInput {
 	useNativePdf: boolean;
 	paper?: IngestedDocument;
 	markscheme?: IngestedDocument;
+	/** Optional exam specification, fetched server-side per run (no cache). */
+	spec?: IngestedDocument;
 }
 
 /** Raw model result: unparsed JSON plus usage for the response. */
@@ -203,10 +205,13 @@ export async function liveTransport(input: ModelInput): Promise<ModelResult> {
 		useNativePdf: input.useNativePdf,
 		paperText: input.paper?.text ?? null,
 		markschemeText: input.markscheme?.text ?? null,
+		specText: input.spec?.text ?? null,
 		paperFilename: input.paper?.filename ?? null,
 		markschemeFilename: input.markscheme?.filename ?? null,
+		specFilename: input.spec?.filename ?? null,
 		paperPdfBase64: input.paper?.pdfBase64 ?? null,
-		markschemePdfBase64: input.markscheme?.pdfBase64 ?? null
+		markschemePdfBase64: input.markscheme?.pdfBase64 ?? null,
+		specPdfBase64: input.spec?.pdfBase64 ?? null
 	});
 
 	// Guardrail: max_tokens lives in the payload (asserted in tests);

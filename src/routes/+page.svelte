@@ -26,6 +26,8 @@
 	let paperError = $state<string | null>(null);
 	let markschemeError = $state<string | null>(null);
 	let modelOverride = $state('');
+	let specUrl = $state('');
+	let specUrlError = $state<string | null>(null);
 	let running = $state(false);
 	let result = $state<RunResult | null>(null);
 	let fatal = $state<FatalError | null>(null);
@@ -49,6 +51,7 @@
 		(assessmentPaper !== null || markscheme !== null) &&
 			paperError === null &&
 			markschemeError === null &&
+			specUrlError === null &&
 			!running
 	);
 
@@ -71,6 +74,27 @@
 		markscheme = file && !markschemeError ? file : null;
 	}
 
+	function onSpecUrlInput(event: Event): void {
+		const value = (event.target as HTMLInputElement).value;
+		specUrl = value;
+		specUrlError = checkSpecUrl(value);
+	}
+
+	function checkSpecUrl(value: string): string | null {
+		const trimmed = value.trim();
+		if (trimmed === '') return null;
+		let url: URL;
+		try {
+			url = new URL(trimmed);
+		} catch {
+			return 'Enter a valid http(s) link, or leave this empty.';
+		}
+		if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+			return 'Enter a valid http(s) link, or leave this empty.';
+		}
+		return null;
+	}
+
 	async function run(): Promise<void> {
 		if (!canRun) return;
 		running = true;
@@ -81,6 +105,7 @@
 			if (assessmentPaper) form.append('assessmentPaper', assessmentPaper);
 			if (markscheme) form.append('markscheme', markscheme);
 			if (modelOverride.trim() !== '') form.append('modelOverride', modelOverride.trim());
+			if (specUrl.trim() !== '') form.append('specUrl', specUrl.trim());
 
 			const response = await fetch('/api/parse', { method: 'POST', body: form });
 			const body = (await response.json()) as RunResult | { error: FatalError };
@@ -155,11 +180,35 @@
 		<Card.Root>
 			<Card.Header>
 				<Card.Title>Options</Card.Title>
-				<Card.Description>Optional model override for this run.</Card.Description>
+				<Card.Description
+					>Optional model override and specification link for this run.</Card.Description
+				>
 			</Card.Header>
-			<Card.Content class="space-y-2">
-				<Label for="model">Model override (optional)</Label>
-				<Input id="model" placeholder="e.g. google/gemini-2.5-flash" bind:value={modelOverride} />
+			<Card.Content class="space-y-4">
+				<div class="space-y-2">
+					<Label for="model">Model override (optional)</Label>
+					<Input id="model" placeholder="e.g. google/gemini-2.5-flash" bind:value={modelOverride} />
+				</div>
+				<div class="space-y-2">
+					<Label for="spec">Specification link (optional)</Label>
+					<Input
+						id="spec"
+						type="url"
+						inputmode="url"
+						placeholder="https://…/specification.pdf"
+						value={specUrl}
+						aria-invalid={specUrlError !== null}
+						oninput={onSpecUrlInput}
+					/>
+					{#if specUrlError}
+						<p class="text-sm text-destructive">{specUrlError}</p>
+					{:else}
+						<p class="text-sm text-muted-foreground">
+							Link to the exam board specification PDF. It is fetched for this run only and must be
+							a readable PDF.
+						</p>
+					{/if}
+				</div>
 			</Card.Content>
 		</Card.Root>
 	</div>
