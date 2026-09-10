@@ -1,9 +1,9 @@
 // Parse contract v1 prototype — minimal import shape.
 //
-// Input: assessment paper and/or markscheme PDF (at least one required).
-// Output: `{ breakdown: { questions }, warnings, usage }`.
-// No exam specification input, no spec fetch/cache/validation. `specPoint`
-// is an exact verbatim lift from the markscheme or null — never inferred.
+// Input: assessment paper and/or markscheme PDF (at least one required),
+// plus an optional exam specification URL fetched server-side per run
+// (no cache). No spec validation: `specPoint` is an exact verbatim lift
+// from the markscheme or null — never inferred, even when a spec is given.
 
 /** Hardcoded assessment objectives (shared AQA/OCR, GCSE + A-Level). */
 export const ASSESSMENT_OBJECTIVES = ['AO1', 'AO2', 'AO3'] as const;
@@ -68,11 +68,21 @@ export interface ParseErrorBody {
 export const ASSESSMENT_PAPER_FIELD = 'assessmentPaper';
 export const MARKSCHEME_FIELD = 'markscheme';
 export const MODEL_OVERRIDE_FIELD = 'modelOverride';
+/** Optional exam specification URL, fetched server-side per run (no cache). */
+export const SPEC_URL_FIELD = 'specUrl';
+
+/** Malformed spec URL (unparseable or non-http(s)). Fatal (400). */
+export const INVALID_SPEC_URL_CODE = 'INVALID_SPEC_URL';
+/** Spec fetch failed, non-OK status, or not a readable PDF. Fatal (400). */
+export const SPEC_UNREADABLE_CODE = 'SPEC_UNREADABLE';
 
 // --- Limits (client pre-checks these; the route re-enforces them) ---
 
 /** Per-file cap for assessment paper / markscheme PDFs. Fatal (413) when exceeded. */
 export const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
-/** Total page ceiling across provided PDFs. Fatal (413) when exceeded. */
+/** Total page ceiling across provided PDFs (paper + markscheme + spec). Fatal (413) when exceeded. */
 export const MAX_TOTAL_PAGES = 100;
+
+/** Server timeout for fetching the optional spec URL. Fatal (400) on timeout. */
+export const SPEC_FETCH_TIMEOUT_MS = 30_000;

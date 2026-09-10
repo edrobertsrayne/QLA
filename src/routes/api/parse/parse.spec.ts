@@ -1,12 +1,14 @@
 // Contract tests for `POST /api/parse` — the v1 prototype seam.
 //
 // Externally observable behaviour only: multipart in (paper and/or
-// markscheme), `{ breakdown: { questions }, warnings, usage }` out.
-// Uses the stubbed model transport; no exam specification anywhere.
+// markscheme, optional specification link), `{ breakdown: { questions },
+// warnings, usage }` out. Uses the stubbed model transport; the spec fetch
+// is mocked via `setSpecFetch` — no network, no spec validation of
+// `specPoint` (verbatim lift rule unchanged).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { POST } from './+server';
-import { MAX_TOTAL_PAGES, type Breakdown } from '$lib/server/parse/schema';
+import { MAX_TOTAL_PAGES, SPEC_URL_FIELD, type Breakdown } from '$lib/server/parse/schema';
 import { isBreakdown, validateBreakdown } from '$lib/server/parse/validate';
 import {
 	DIAGRAM_UNVERIFIED_CODE,
@@ -25,6 +27,7 @@ import {
 	type ModelResult
 } from '$lib/server/parse/model';
 import { clearApiKeyForTests, setApiKeyForTests } from '$lib/server/parse/env';
+import { resetSpecFetch, setSpecFetch } from '$lib/server/parse/spec';
 
 const API_KEY = 'test-key';
 
@@ -142,6 +145,7 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 	afterEach(() => {
 		clearApiKeyForTests();
 		resetModelTransport();
+		resetSpecFetch();
 	});
 
 	it('happy path returns the stub breakdown with no warnings', async () => {
@@ -332,6 +336,154 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		expect(body.breakdown?.questions).toHaveLength(2);
 		expect(body.warnings?.some((w) => w.code === 'DUPLICATE_ID')).toBe(true);
 	});
+
+	it('omitted spec link behaves exactly as before', async () => {
+		let seen: ModelInput | undefined;
+		setModelTransport(async (input) => {
+			seen = input;
+			return stubResultWith(stubBreakdown());
+		});
+
+		const { status, body } = await post(paperOnlyForm());
+
+		expect(status).toBe(200);
+		expect(body.warnings).toEqual([]);
+		expect(seen?.spec).toBeUndefined();
+	});
+
+	it('malformed spec link fails with 400 before any model call', async () => {
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return stubResultWith(stubBreakdown());
+		});
+
+		const form = paperOnlyForm();
+		form.append(SPEC_URL_FIELD, 'not a url at all');
+		const { status, body } = await post(form);
+
+		expect(status).toBe(400);
+		expect(body.error?.code).toBe('INVALID_SPEC_URL');
+		expect(calls).toBe(0);
+	});
+
+	it('non-http spec link fails with 400 before any model call', async () => {
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return stubResultWith(stubBreakdown());
+		});
+
+		const form = paperOnlyForm();
+		form.append(SPEC_URL_FIELD, 'ftp://example.com/spec.pdf');
+		const { status, body } = await post(form);
+
+		expect(status).toBe(400);
+		expect(body.error?.code).toBe('INVALID_SPEC_URL');
+		expect(calls).toBe(0);
+	});
+
+	it('unreachable spec link fails with 400 before any model call', async () => {
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return stubResultWith(stubBreakdown());
+		});
+		setSpecFetch(async () => {
+			throw new Error('socket hang up');
+		});
+
+		const form = paperOnlyForm();
+		form.append(SPEC_URL_FIELD, 'https://example.com/spec.pdf');
+		const { status, body } = await post(form);
+
+		expect(status).toBe(400);
+		expect(body.error?.code).toBe('SPEC_UNREADABLE');
+		expect(calls).toBe(0);
+	});
+
+	it('spec link with error status fails with 400 before any model call', async () => {
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return stubResultWith(stubBreakdown());
+		});
+		setSpecFetch(async () => new Response('gone', { status: 404 }));
+
+		const form = paperOnlyForm();
+		form.append(SPEC_URL_FIELD, 'https://example.com/spec.pdf');
+		const { status, body } = await post(form);
+
+		expect(status).toBe(400);
+		expect(body.error?.code).toBe('SPEC_UNREADABLE');
+		expect(calls).toBe(0);
+	});
+
+	it('spec link to a non-PDF fails with 400 before any model call', async () => {
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return stubResultWith(stubBreakdown());
+		});
+		setSpecFetch(
+			async () =>
+				new Response('<html>not a pdf</html>', {
+					status: 200,
+					headers: { 'content-type': 'text/html' }
+				})
+		);
+
+		const form = paperOnlyForm();
+		form.append(SPEC_URL_FIELD, 'https://example.com/spec');
+		const { status, body } = await post(form);
+
+		expect(status).toBe(400);
+		expect(body.error?.code).toBe('SPEC_UNREADABLE');
+		expect(calls).toBe(0);
+	});
+
+	it('valid spec PDF is forwarded to the model as extra grounding', async () => {
+		let seen: ModelInput | undefined;
+		setModelTransport(async (input) => {
+			seen = input;
+			return stubResultWith(stubBreakdown());
+		});
+		setSpecFetch(
+			async () =>
+				new Response(buildPdfBytes(['Specification topic code 4.6.1']) as unknown as BodyInit, {
+					status: 200
+				})
+		);
+
+		const form = paperOnlyForm();
+		form.append(SPEC_URL_FIELD, 'https://example.com/spec.pdf');
+		const { status, body } = await post(form);
+
+		expect(status).toBe(200);
+		expect(body.warnings).toEqual([]);
+		expect(seen?.spec?.pageCount).toBe(1);
+		expect(seen?.spec?.text).toContain('Specification topic code');
+	});
+
+	it('spec pages count toward the total page ceiling', async () => {
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return stubResultWith(stubBreakdown());
+		});
+		setSpecFetch(
+			async () => new Response(buildPdfBytes(['spec page']) as unknown as BodyInit, { status: 200 })
+		);
+
+		const form = new FormData();
+		form.set('assessmentPaper', pdfWithPages('paper.pdf', MAX_TOTAL_PAGES));
+		form.append(SPEC_URL_FIELD, 'https://example.com/spec.pdf');
+		const { status, body } = await post(form);
+
+		expect(status).toBe(413);
+		expect(body.error?.code).toBe('FILE_TOO_BIG');
+		expect(calls).toBe(0);
+	});
 });
 
 describe('validateBreakdown v1 rules', () => {
@@ -395,6 +547,17 @@ describe('buildPromptText v1', () => {
 		expect(both).toContain('3-8 word');
 		expect(both).toContain('NEVER infer');
 		expect(both).toContain('AO1, AO2, AO3');
+		expect(both).toContain('--- specification text ---');
+		expect(both).toContain('(no specification provided)');
+
+		const withSpec = buildPromptText({
+			paperText: 'paper',
+			markschemeText: 'scheme',
+			specText: 'specification topic code',
+			useNativePdf: true
+		});
+		expect(withSpec).toContain('specification topic code');
+		expect(withSpec).toContain('extra grounding only');
 
 		const paperOnly = buildPromptText({
 			paperText: 'paper',
@@ -414,5 +577,23 @@ describe('buildPromptText v1', () => {
 			markschemePdfBase64: null
 		});
 		expect(payload.plugins).toEqual([{ id: 'file-parser', pdf: { engine: 'native' } }]);
+
+		const specPayload = buildHybridPayload({
+			modelId: 'google/gemini-2.5-flash',
+			useNativePdf: true,
+			paperText: 'paper',
+			markschemeText: null,
+			specText: 'specification topic code',
+			paperFilename: 'paper.pdf',
+			markschemeFilename: null,
+			specFilename: 'specification.pdf',
+			paperPdfBase64: 'AAA',
+			markschemePdfBase64: null,
+			specPdfBase64: 'BBB'
+		});
+		const fileParts = (
+			specPayload.messages[0] as { content: Array<{ type: string }> }
+		).content.filter((part) => part.type === 'file');
+		expect(fileParts).toHaveLength(2);
 	});
 });

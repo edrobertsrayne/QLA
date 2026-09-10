@@ -108,10 +108,14 @@ export interface HybridPayloadInput {
 	useNativePdf: boolean;
 	paperText: string | null;
 	markschemeText: string | null;
+	/** Optional spec text; absent when the run supplies no specification link. */
+	specText?: string | null;
 	paperFilename: string | null;
 	markschemeFilename: string | null;
+	specFilename?: string | null;
 	paperPdfBase64: string | null;
 	markschemePdfBase64: string | null;
+	specPdfBase64?: string | null;
 }
 
 export interface HybridPayload {
@@ -129,6 +133,8 @@ export interface HybridPayload {
 export function buildPromptText(input: {
 	paperText: string | null;
 	markschemeText: string | null;
+	/** Optional spec text; absent when the run supplies no specification link. */
+	specText?: string | null;
 	useNativePdf: boolean;
 }): string {
 	const nativeHint = input.useNativePdf
@@ -136,10 +142,12 @@ export function buildPromptText(input: {
 		: 'No native PDF is attached — work from the extracted text only; diagram and table-heavy questions are unverified.';
 	const paperSection = input.paperText ?? '(no assessment paper provided)';
 	const markschemeSection = input.markschemeText ?? '(no markscheme provided)';
+	const specSection = input.specText ?? '(no specification provided)';
 	return [
 		'Parse the assessment paper and/or markscheme into the v1 per-question JSON breakdown.',
 		'Return ONLY a single JSON object — no markdown fences, no commentary.',
 		nativeHint,
+		'The specification below is extra grounding only: specPoint is still an exact spec reference lifted verbatim from the markscheme, or null when the markscheme gives none — NEVER infer or guess, even when the specification lists candidate codes.',
 		'',
 		'Top level: questions array, one entry per smallest marked leaf (e.g. 1a, 2bii).',
 		'Per question: id (verbatim leaf label, non-empty, unique, e.g. 1a) / marks (positive int, or null when unknowable from the inputs; marks from the markscheme win when both inputs present) / summary (3-8 word summary of what the leaf asks, from the paper stem when present else the markscheme answer) / specPoint (exact spec reference lifted verbatim from the markscheme, or null when the markscheme gives none — NEVER infer or guess) / commandWord (verbatim instruction verb from the paper, or null when absent — no normalisation) / ao (one of AO1, AO2, AO3, or null when unknowable).',
@@ -148,7 +156,10 @@ export function buildPromptText(input: {
 		paperSection,
 		'',
 		'--- markscheme text ---',
-		markschemeSection
+		markschemeSection,
+		'',
+		'--- specification text ---',
+		specSection
 	].join('\n');
 }
 
@@ -165,6 +176,7 @@ export function buildHybridPayload(input: HybridPayloadInput): HybridPayload {
 	const promptText = buildPromptText({
 		paperText: input.paperText,
 		markschemeText: input.markschemeText,
+		specText: input.specText ?? null,
 		useNativePdf: input.useNativePdf
 	});
 
@@ -189,6 +201,15 @@ export function buildHybridPayload(input: HybridPayloadInput): HybridPayload {
 			file: {
 				filename: input.markschemeFilename,
 				file_data: toPdfDataUrl(input.markschemePdfBase64)
+			}
+		});
+	}
+	if (input.specFilename && input.specPdfBase64) {
+		files.push({
+			type: 'file',
+			file: {
+				filename: input.specFilename,
+				file_data: toPdfDataUrl(input.specPdfBase64)
 			}
 		});
 	}
