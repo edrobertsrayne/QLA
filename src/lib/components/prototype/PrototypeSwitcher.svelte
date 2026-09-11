@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { dev } from '$app/environment';
+	import { page } from '$app/state';
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
@@ -22,8 +23,9 @@
 	}
 
 	function setVariant(key: string) {
+		// Stay on whichever prototype route mounted the switcher.
 		const target = resolve(
-			`/prototype/marksheet-grid?variant=${encodeURIComponent(key)}` as `/prototype/marksheet-grid?${string}`
+			`${page.url.pathname}?variant=${encodeURIComponent(key)}` as `/prototype/marksheet-grid?${string}`
 		);
 		goto(target, { replaceState: true, noScroll: true, keepFocus: true });
 	}
