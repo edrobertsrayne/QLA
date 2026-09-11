@@ -22,6 +22,8 @@ Generates a Svelte Playground link. Offer it once code lives purely in the respo
 
 Prefer shadcn-svelte components when adding new features.
 
+Resolve UI decisions — layout, placement, emphasis, labels, visual treatment — with a prototype, never in a grilling session. Grilling settles structure, invariants and what exists; anything whose answer depends on seeing it needs something concrete to react to, and gets iterated through testing. When a grilling session reaches a look-and-feel question, hand it to a prototype ticket and move on.
+
 ## Agent skills
 
 ### Issue tracker
