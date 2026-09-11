@@ -11,14 +11,16 @@
 	import VariantA from './VariantA.svelte';
 	import VariantB from './VariantB.svelte';
 	import VariantC from './VariantC.svelte';
+	import VariantD from './VariantD.svelte';
 
 	const VARIANTS = [
+		{ key: 'D', label: 'Chosen: A table + B sidebar' },
 		{ key: 'A', label: 'Inline spreadsheet table' },
 		{ key: 'B', label: 'Issues rail + row editor' },
 		{ key: 'C', label: 'Paper-shaped question cards' }
 	];
 
-	const variant = $derived(page.url.searchParams.get('variant') ?? 'A');
+	const variant = $derived(page.url.searchParams.get('variant') ?? 'D');
 	const editor = new BreakdownEditor();
 
 	const POLICIES: NullPolicy[] = ['block', 'warn', 'silent'];
@@ -99,12 +101,14 @@
 {/if}
 
 {#key editor.sample}
-	{#if variant === 'B'}
+	{#if variant === 'A'}
+		<VariantA {editor} />
+	{:else if variant === 'B'}
 		<VariantB {editor} />
 	{:else if variant === 'C'}
 		<VariantC {editor} />
 	{:else}
-		<VariantA {editor} />
+		<VariantD {editor} />
 	{/if}
 {/key}
 

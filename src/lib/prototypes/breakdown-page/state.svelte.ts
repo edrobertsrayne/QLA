@@ -42,7 +42,8 @@ export class BreakdownEditor {
 	printedTotal = $state(0);
 	/** Teacher-typed total from the paper's cover (variant B reconciliation). */
 	paperTotal = $state<number | null>(null);
-	nullPolicy = $state<NullPolicy>('warn');
+	// Chosen at #29: an entry without marks blocks confirmation.
+	nullPolicy = $state<NullPolicy>('block');
 	confirmedAt = $state<string | null>(null);
 	/** Questions the teacher has ticked as checked (variant C). */
 	checked = $state<Record<string, boolean>>({});
