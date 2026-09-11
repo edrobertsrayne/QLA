@@ -10,13 +10,19 @@ export const ASSESSMENT_OBJECTIVES = ['AO1', 'AO2', 'AO3'] as const;
 
 export type AssessmentObjective = (typeof ASSESSMENT_OBJECTIVES)[number];
 
-/** One marked leaf in the v1 breakdown (e.g. `1a`, `2bii`). */
+/** One breakdown entry: an undivided question, or a marked subquestion (e.g. `1a`, `2bii`). */
 export interface ParseQuestion {
-	/** Verbatim leaf label from the paper/markscheme, unique within the run. */
+	/** Verbatim label from the paper/markscheme, unique within the run. */
 	id: string;
+	/**
+	 * The question this entry belongs to (e.g. `2` for `2bii`), so a marksheet
+	 * can band its columns. Equals `id` for an undivided question. Falls back
+	 * to `id` with a warning when the model omits it.
+	 */
+	questionNumber: string;
 	/** Positive integer marks, or null when unknowable from the inputs. */
 	marks: number | null;
-	/** 3–8 word summary of what the leaf asks. */
+	/** 3–8 word summary of what the question or subquestion asks. */
 	summary: string;
 	/** Exact spec reference lifted verbatim from the markscheme, or null. Never inferred. */
 	specPoint: string | null;
@@ -33,7 +39,7 @@ export interface Breakdown {
 
 /** A soft finding: the run succeeds (HTTP 200) with the breakdown intact. */
 export interface ParseWarning {
-	/** Question id this applies to, or `null` for run-level findings. */
+	/** `id` of the entry this applies to, or `null` for run-level findings. */
 	questionId: string | null;
 	code: string;
 	message: string;

@@ -7,6 +7,7 @@ import type { RunResult } from './types.js';
 function question(overrides: Partial<RunResult['breakdown']['questions'][number]> = {}) {
 	return {
 		id: '1a',
+		questionNumber: '1',
 		marks: 2,
 		summary: 'Explain the process shown',
 		specPoint: null,

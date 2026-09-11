@@ -14,7 +14,11 @@ import {
 	SPEC_URL_FIELD,
 	type Breakdown
 } from '$lib/server/parse/schema';
-import { isBreakdown, validateBreakdown } from '$lib/server/parse/validate';
+import {
+	applyQuestionNumberFallback,
+	isBreakdown,
+	validateBreakdown
+} from '$lib/server/parse/validate';
 import {
 	buildHybridPayload,
 	buildPromptText,
@@ -132,6 +136,7 @@ async function post(form: FormData): Promise<{ status: number; body: SeamBody }>
 function question(overrides: Record<string, unknown> = {}): Record<string, unknown> {
 	return {
 		id: '1a',
+		questionNumber: '1',
 		marks: 2,
 		summary: 'Transverse wave oscillation direction',
 		specPoint: '4.6.1.1',
@@ -589,6 +594,7 @@ describe('validateBreakdown v1 rules', () => {
 			questions: [
 				{
 					id: '2bii',
+					questionNumber: '2',
 					marks: 4,
 					summary: 'Balanced equation for combustion reaction',
 					specPoint: '4.1.2.3',
@@ -597,6 +603,7 @@ describe('validateBreakdown v1 rules', () => {
 				},
 				{
 					id: '3a',
+					questionNumber: '3',
 					marks: null,
 					summary: 'Internal test without published marks',
 					specPoint: null,
@@ -631,6 +638,23 @@ describe('validateBreakdown v1 rules', () => {
 		const codes = warnings.map((w) => w.code);
 		expect(codes).toContain('EMPTY_ID');
 		expect(codes).toContain('DUPLICATE_ID');
+	});
+
+	it('a missing question number warns and falls back to the entry id', () => {
+		const breakdown = {
+			questions: [
+				question({ id: '2bii', questionNumber: '2' }),
+				question({ id: '3a', questionNumber: '  ' }),
+				question({ id: '4', questionNumber: undefined })
+			]
+		};
+		const codes = validateBreakdown(breakdown)
+			.filter((w) => w.code === 'MISSING_QUESTION_NUMBER')
+			.map((w) => w.questionId);
+		expect(codes).toEqual(['3a', '4']);
+
+		applyQuestionNumberFallback(breakdown);
+		expect(breakdown.questions.map((q) => q.questionNumber)).toEqual(['2', '3a', '4']);
 	});
 });
 

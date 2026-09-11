@@ -106,6 +106,7 @@ export function stubBreakdown(): Breakdown {
 		questions: [
 			{
 				id: '1a',
+				questionNumber: '1',
 				marks: 1,
 				summary: 'Transverse wave oscillation direction',
 				specPoint: '4.6.1.1',
@@ -114,6 +115,7 @@ export function stubBreakdown(): Breakdown {
 			},
 			{
 				id: '1b',
+				questionNumber: '1',
 				marks: 6,
 				summary: 'Method for infrared investigation task',
 				specPoint: null,
@@ -122,6 +124,7 @@ export function stubBreakdown(): Breakdown {
 			},
 			{
 				id: '2a',
+				questionNumber: '2',
 				marks: 2,
 				summary: 'Tick box plus give reason',
 				specPoint: null,

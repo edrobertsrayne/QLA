@@ -4,9 +4,9 @@
 // breakdown is returned intact. Only unparseable model output fails the run —
 // that is handled at the route seam, not here.
 //
-// Rules: id non-empty + unique, marks positive int or null, summary 3–8
-// words, specPoint string-or-null (exact lift, never validated), commandWord
-// string-or-null, ao AO1/AO2/AO3-or-null.
+// Rules: id non-empty + unique, questionNumber non-empty, marks positive int
+// or null, summary 3–8 words, specPoint string-or-null (exact lift, never
+// validated), commandWord string-or-null, ao AO1/AO2/AO3-or-null.
 
 import { ASSESSMENT_OBJECTIVES, type ParseWarning } from './schema';
 import { isBreakdown, isRecord } from '$lib/parse/is-breakdown.js';
@@ -65,6 +65,17 @@ export function validateBreakdown(breakdown: unknown): ParseWarning[] {
 			seen.add(id);
 		}
 
+		// questionNumber: non-empty. Banding metadata — soft, with an id fallback
+		// applied by `applyQuestionNumberFallback`.
+		const questionNumber = question['questionNumber'];
+		if (typeof questionNumber !== 'string' || questionNumber.trim() === '') {
+			warn(
+				label,
+				'MISSING_QUESTION_NUMBER',
+				`Entry '${label}' has no question number; grouping falls back to its own id.`
+			);
+		}
+
 		// marks: positive integer or null (null = unknowable from inputs).
 		const marks = question['marks'];
 		if (marks !== null && (!Number.isInteger(marks) || (marks as number) < 1)) {
@@ -104,4 +115,26 @@ export function validateBreakdown(breakdown: unknown): ParseWarning[] {
 	}
 
 	return warnings;
+}
+
+/**
+ * Fill a missing or blank `questionNumber` from the entry's own `id`.
+ *
+ * Banding a marksheet's columns under their question is cosmetic, so a
+ * breakdown that omits it still reaches the teacher (the gap is reported by
+ * `validateBreakdown`). The fallback is exactly right for an undivided
+ * question and bands a subquestion under itself rather than its parent.
+ */
+export function applyQuestionNumberFallback(breakdown: unknown): void {
+	if (!isRecord(breakdown)) return;
+	const questions = breakdown['questions'];
+	if (!Array.isArray(questions)) return;
+
+	for (const question of questions) {
+		if (!isRecord(question)) continue;
+		const questionNumber = question['questionNumber'];
+		if (typeof questionNumber === 'string' && questionNumber.trim() !== '') continue;
+		const id = question['id'];
+		if (typeof id === 'string' && id.trim() !== '') question['questionNumber'] = id;
+	}
 }

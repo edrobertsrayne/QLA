@@ -58,6 +58,7 @@ describe('+page.svelte run handler', () => {
 					questions: [
 						{
 							id: '1a',
+							questionNumber: '1',
 							marks: 2,
 							summary: 'Explain the process shown',
 							specPoint: null,
