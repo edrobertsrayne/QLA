@@ -12,6 +12,10 @@ _Avoid_: Mark sheet, answer key (when referring to this specific document)
 A QLA-generated record of one cohort's marks, per student per question, built in Phase 2 to support strengths/weaknesses analysis. An _output_ the app builds, not an uploaded document.
 _Avoid_: Markscheme, gradebook
 
+**Local student id**:
+The stable identifier a marksheet uses to tie a student's marks to their name, so renaming a student or inserting one mid-list never reassigns marks. Generated on the teacher's device and never sent anywhere — distinct from the Phase 3 pseudonymization UUID, which exists to keep names away from the model.
+_Avoid_: Pseudonym, student UUID (those mean the Phase 3 concept)
+
 **Assessment paper**:
 The exam paper itself (the questions), uploaded alongside and/or instead of its markscheme in Phase 1.
 
