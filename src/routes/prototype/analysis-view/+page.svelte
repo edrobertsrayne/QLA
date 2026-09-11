@@ -19,11 +19,13 @@
 	import VariantA from './VariantA.svelte';
 	import VariantB from './VariantB.svelte';
 	import VariantC from './VariantC.svelte';
+	import VariantD from './VariantD.svelte';
 
 	const VARIANTS = [
 		{ key: 'A', label: 'Separate Analysis tab' },
 		{ key: 'B', label: 'Summary row under the grid' },
-		{ key: 'C', label: 'Report view grouped by band' }
+		{ key: 'C', label: 'Report view grouped by band' },
+		{ key: 'D', label: 'C report + B facility row' }
 	];
 	const variant = $derived(page.url.searchParams.get('variant') ?? 'A');
 
@@ -69,6 +71,8 @@
 
 	{#if variant === 'B'}
 		<VariantB {engine} {analysis} />
+	{:else if variant === 'D'}
+		<VariantD {engine} {analysis} />
 	{:else if variant === 'C'}
 		<VariantC {engine} {analysis} />
 	{:else}
@@ -76,5 +80,5 @@
 	{/if}
 </div>
 
-<Controls {engine} {analysis} showTrigger={variant === 'A'} />
+<Controls {engine} {analysis} {variant} />
 <PrototypeSwitcher variants={VARIANTS} current={variant} />

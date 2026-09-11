@@ -24,8 +24,8 @@
 	let {
 		engine,
 		analysis,
-		showTrigger
-	}: { engine: GridEngine; analysis: AnalysisState; showTrigger: boolean } = $props();
+		variant
+	}: { engine: GridEngine; analysis: AnalysisState; variant: string } = $props();
 
 	let open = $state(true);
 	let jsonOpen = $state(false);
@@ -196,13 +196,32 @@
 			>
 				View as: <strong>{analysis.colourSim}</strong>
 			</button>
-			{#if showTrigger}
+			{#if variant === 'A'}
 				<button
 					type="button"
 					class={pill}
 					onclick={() => (analysis.trigger = cycle(TRIG, analysis.trigger))}
 				>
 					Run: <strong>{analysis.trigger === 'button' ? 'button only' : 'on opening tab'}</strong>
+				</button>
+			{/if}
+			{#if variant === 'D'}
+				<button
+					type="button"
+					class={pill}
+					onclick={() =>
+						(analysis.afterGenerate = analysis.afterGenerate === 'stay' ? 'open-report' : 'stay')}
+				>
+					After generate: <strong
+						>{analysis.afterGenerate === 'stay' ? 'stay on marksheet' : 'open report'}</strong
+					>
+				</button>
+				<button
+					type="button"
+					class={pill}
+					onclick={() => (analysis.hardestStrip = !analysis.hardestStrip)}
+				>
+					"Hardest" strip: <strong>{analysis.hardestStrip ? 'on' : 'off'}</strong>
 				</button>
 			{/if}
 		</section>

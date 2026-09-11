@@ -8,7 +8,11 @@
 	import RagChip from './RagChip.svelte';
 	import FacilityBar from './FacilityBar.svelte';
 
-	let { analysis, results }: { analysis: AnalysisState; results: LeafResult[] } = $props();
+	let {
+		analysis,
+		results,
+		highlight = null
+	}: { analysis: AnalysisState; results: LeafResult[]; highlight?: string | null } = $props();
 
 	const cols = $derived(analysis.columns);
 	const tint = {
@@ -35,7 +39,8 @@
 		{#each results as r (r.leaf.id)}
 			{@const band = analysis.band(r)}
 			<tr
-				class={`border-b border-border ${analysis.rag === 'tint' && band ? tint[band] : ''} ${r.facility == null ? 'text-muted-foreground' : ''}`}
+				id={`analysis-leaf-${r.leaf.id}`}
+				class={`scroll-mt-24 border-b border-border ${highlight === r.leaf.id ? 'outline-2 -outline-offset-2 outline-primary' : ''} ${analysis.rag === 'tint' && band ? tint[band] : ''} ${r.facility == null ? 'text-muted-foreground' : ''}`}
 			>
 				{#if cols.id}<td class="px-3 py-1.5 font-semibold tabular-nums">{r.leaf.id}</td>{/if}
 				{#if cols.summary}<td class="max-w-md truncate px-3 py-1.5" title={r.leaf.summary}

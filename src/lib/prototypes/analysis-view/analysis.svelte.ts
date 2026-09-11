@@ -11,6 +11,7 @@ export type StalePolicy = 'badge' | 'clear' | 'prompt';
 export type RagTreatment = 'chip' | 'tint' | 'bar';
 export type ColourSim = 'normal' | 'greyscale' | 'deuteranopia';
 export type RunTrigger = 'button' | 'on-open';
+export type AfterGenerate = 'stay' | 'open-report';
 
 export const COLUMN_KEYS = ['id', 'summary', 'marks', 'specPoint', 'ao', 'facility', 'n'] as const;
 export type ColumnKey = (typeof COLUMN_KEYS)[number];
@@ -105,7 +106,7 @@ export function describeSnapshot(s: Snapshot): string {
 	const time = s.at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	const provisional = s.results.filter((r) => r.provisional).length;
 	return [
-		`Run at ${time}`,
+		`Generated at ${time}`,
 		`${s.present} students${s.absent ? ` (${s.absent} absent left out)` : ''}`,
 		`${s.cellsEntered} marks`,
 		provisional ? `${provisional} questions part-marked` : null
@@ -131,6 +132,10 @@ export class AnalysisState {
 	rag = $state<RagTreatment>('chip');
 	colourSim = $state<ColourSim>('normal');
 	trigger = $state<RunTrigger>('button');
+	/** Variant D: whether Generate stays on the marksheet (facility row appears) or opens the report. */
+	afterGenerate = $state<AfterGenerate>('stay');
+	/** Variant D: show the "Hardest:" strip above the grid alongside the facility row. */
+	hardestStrip = $state(false);
 	columns = $state<Record<ColumnKey, boolean>>({
 		id: true,
 		summary: true,
@@ -153,11 +158,12 @@ export class AnalysisState {
 		return this.snapshot != null && this.snapshot.fingerprint !== this.current;
 	}
 
-	run() {
+	run(then?: () => void) {
 		this.running = true;
 		setTimeout(() => {
 			this.snapshot = computeSnapshot(this.engine);
 			this.running = false;
+			then?.();
 		}, 250);
 	}
 
