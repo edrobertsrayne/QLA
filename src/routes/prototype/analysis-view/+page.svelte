@@ -27,7 +27,7 @@
 		{ key: 'C', label: 'Report view grouped by band' },
 		{ key: 'D', label: 'C report + B facility row' }
 	];
-	const variant = $derived(page.url.searchParams.get('variant') ?? 'A');
+	const variant = $derived(page.url.searchParams.get('variant') ?? 'D');
 
 	const engine = createGridEngine(makeSampleLeavesForAnalysis(), makeSampleStudents(30));
 	fillSampleMarks(engine);

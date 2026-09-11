@@ -53,7 +53,7 @@
 			{#if r && r.facility != null}
 				<button
 					type="button"
-					class={`${dim ? 'opacity-35' : ''} ${analysis.rag !== 'bar' && band ? tint[band] : ''} ${r.provisional ? 'italic outline-1 -outline-offset-2 outline-amber-600 outline-dashed' : ''} my-1 w-[calc(100%-4px)] rounded-sm py-0.5 hover:ring-2 hover:ring-primary`}
+					class={`${dim ? 'opacity-35' : ''} ${analysis.rag !== 'bar' && band ? tint[band] : ''} ${r.provisional ? 'italic outline-1 -outline-offset-2 outline-foreground outline-dashed' : ''} my-1 w-[calc(100%-4px)] rounded-sm py-0.5 hover:ring-2 hover:ring-primary`}
 					onclick={() => onSelect(leaf.id)}
 				>
 					{#if analysis.rag === 'bar'}

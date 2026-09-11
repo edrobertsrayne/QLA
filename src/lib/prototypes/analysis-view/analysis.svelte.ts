@@ -127,15 +127,15 @@ export function worstFirst(results: LeafResult[]): LeafResult[] {
 
 export class AnalysisState {
 	snapshot = $state<Snapshot | null>(null);
-	thresholds = $state({ red: 0.4, green: 0.6 });
+	thresholds = $state({ red: 0.4, green: 0.7 });
 	stalePolicy = $state<StalePolicy>('badge');
-	rag = $state<RagTreatment>('chip');
+	rag = $state<RagTreatment>('tint');
 	colourSim = $state<ColourSim>('normal');
 	trigger = $state<RunTrigger>('button');
 	/** Variant D: whether Generate stays on the marksheet (facility row appears) or opens the report. */
 	afterGenerate = $state<AfterGenerate>('stay');
 	/** Variant D: show the "Hardest:" strip above the grid alongside the facility row. */
-	hardestStrip = $state(false);
+	hardestStrip = $state(true);
 	columns = $state<Record<ColumnKey, boolean>>({
 		id: true,
 		summary: true,
