@@ -2,7 +2,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Separator } from '$lib/components/ui/separator';
 	import FatalAlert from '$lib/components/parse/FatalAlert.svelte';
-	import ResultsCard from '$lib/components/parse/ResultsCard.svelte';
 	import SourceFilesCard from '$lib/components/parse/SourceFilesCard.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -11,6 +10,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import type { FatalError, RunResult } from '$lib/components/parse/types.js';
 	import { isBreakdown } from '$lib/parse/is-breakdown.js';
+	import { marksheetStore } from '$lib/marksheet/index.js';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import { toast } from 'svelte-sonner';
 
@@ -36,17 +36,18 @@
 	let specUrl = $state('');
 	let specUrlError = $state<string | null>(null);
 	let running = $state(false);
-	let result = $state<RunResult | null>(null);
+	/**
+	 * The upload surface is the gate's, so reaching it means nothing is stored.
+	 * A run that stores its breakdown keeps this page up for one deliberate
+	 * click through to `/breakdown` — no marks exist yet to clobber.
+	 */
+	let storedEntryCount = $state<number | null>(null);
 	let fatal = $state<FatalError | null>(null);
+
+	const store = marksheetStore();
 
 	const paperFileName = $derived(assessmentPaper?.name ?? null);
 	const markschemeFileName = $derived(markscheme?.name ?? null);
-
-	const breakdownJson = $derived.by(() => {
-		const current = result;
-		if (!current) return '';
-		return JSON.stringify({ breakdown: current.breakdown }, null, 2);
-	});
 
 	const fatalIsRetryable = $derived.by(() => {
 		const current = fatal;
@@ -134,7 +135,7 @@
 	async function run(): Promise<void> {
 		if (!canRun) return;
 		running = true;
-		result = null;
+		storedEntryCount = null;
 		fatal = null;
 		try {
 			const form = new FormData();
@@ -156,9 +157,18 @@
 				};
 				toast.error(`Run failed (${fatal.code})`, { description: fatal.message });
 			} else {
-				result = body as RunResult;
-				toast.success('Breakdown ready', {
-					description: `${result.breakdown.questions.length} questions parsed.`
+				const run = body as RunResult;
+				store.createFromParse({
+					breakdown: run.breakdown,
+					warnings: run.warnings,
+					usage: run.usage,
+					filenames: [assessmentPaper?.name, markscheme?.name].filter(
+						(name): name is string => name !== undefined
+					)
+				});
+				storedEntryCount = run.breakdown.questions.length;
+				toast.success('Breakdown stored', {
+					description: `${storedEntryCount} entries saved in this browser.`
 				});
 			}
 		} catch (error) {
@@ -170,32 +180,6 @@
 		} finally {
 			running = false;
 		}
-	}
-
-	async function copyBreakdown(): Promise<void> {
-		if (!result) return;
-		try {
-			await navigator.clipboard.writeText(breakdownJson);
-			toast.success('Copied to clipboard');
-		} catch {
-			toast.error('Copy failed', {
-				description: 'Select the raw JSON below and copy it manually.'
-			});
-		}
-	}
-
-	function downloadBreakdown(): void {
-		if (!result) return;
-		const blob = new Blob([breakdownJson], { type: 'application/json' });
-		const url = URL.createObjectURL(blob);
-		const anchor = document.createElement('a');
-		anchor.href = url;
-		anchor.download = 'breakdown.json';
-		document.body.appendChild(anchor);
-		anchor.click();
-		anchor.remove();
-		URL.revokeObjectURL(url);
-		toast.success('Download started', { description: 'breakdown.json' });
 	}
 </script>
 
@@ -278,13 +262,18 @@
 		<FatalAlert {fatal} retryable={fatalIsRetryable} />
 	{/if}
 
-	{#if result}
-		<ResultsCard
-			{result}
-			{breakdownJson}
-			{running}
-			onCopy={copyBreakdown}
-			onDownload={downloadBreakdown}
-		/>
+	{#if storedEntryCount !== null}
+		<Card.Root aria-live="polite">
+			<Card.Header>
+				<Card.Title>Breakdown stored</Card.Title>
+				<Card.Description>
+					{storedEntryCount} entries saved in this browser. Check them against the paper before you start
+					entering marks.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content>
+				<Button href="/breakdown">Open breakdown</Button>
+			</Card.Content>
+		</Card.Root>
 	{/if}
 </main>

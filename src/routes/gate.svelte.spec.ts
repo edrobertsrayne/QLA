@@ -1,0 +1,137 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+import { render } from 'vitest-browser-svelte';
+import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from '$lib/marksheet/document.js';
+import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import { load as breakdownLoad } from './breakdown/+page.js';
+import BreakdownPage from './breakdown/+page.svelte';
+import { load as marksheetLoad } from './marksheet/+page.js';
+import MarksheetPage from './marksheet/+page.svelte';
+import { load as uploadLoad } from './+page.js';
+import UploadPage from './+page.svelte';
+
+const NOW = '2026-01-01T10:00:00.000Z';
+
+function document(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
+	return {
+		schemaVersion: DOCUMENT_SCHEMA_VERSION,
+		createdAt: NOW,
+		updatedAt: NOW,
+		breakdownConfirmedAt: null,
+		lastExportedAt: null,
+		paper: {
+			label: '10X Ph1',
+			className: null,
+			sourceFilenames: ['10X Ph1.pdf'],
+			parsedAt: NOW
+		},
+		breakdown: {
+			entries: [
+				{
+					id: 'entry-1',
+					label: '2bii',
+					questionNumber: '2',
+					marks: 4,
+					summary: 'Describe the rate change',
+					specPoint: '3.2.1.4',
+					commandWord: 'Describe',
+					ao: 'AO2'
+				}
+			],
+			warnings: []
+		},
+		students: [],
+		marks: {},
+		...overrides
+	};
+}
+
+function seed(stored: MarksheetDocument): void {
+	localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+}
+
+function redirectFrom(load: () => unknown): { status: number; location: string } | null {
+	try {
+		load();
+		return null;
+	} catch (error) {
+		return error as { status: number; location: string };
+	}
+}
+
+beforeEach(() => {
+	localStorage.clear();
+});
+
+describe('boot gate', () => {
+	it('lets every surface through when the stored state allows it', () => {
+		expect(redirectFrom(uploadLoad)).toBeNull();
+
+		seed(document({ breakdownConfirmedAt: null }));
+		expect(redirectFrom(breakdownLoad)).toBeNull();
+
+		seed(document({ breakdownConfirmedAt: NOW }));
+		expect(redirectFrom(marksheetLoad)).toBeNull();
+	});
+
+	it('sends a stored document from upload to the surface it allows', () => {
+		seed(document({ breakdownConfirmedAt: null }));
+		expect(redirectFrom(uploadLoad)).toMatchObject({ status: 307, location: '/breakdown' });
+
+		seed(document({ breakdownConfirmedAt: NOW }));
+		expect(redirectFrom(uploadLoad)).toMatchObject({ status: 307, location: '/marksheet' });
+	});
+
+	it('sends an unconfirmed breakdown to upload and to the marksheet away', () => {
+		seed(document({ breakdownConfirmedAt: null }));
+		expect(redirectFrom(marksheetLoad)).toMatchObject({ status: 307, location: '/breakdown' });
+	});
+
+	it('sends a confirmed breakdown on the breakdown route to the marksheet', () => {
+		seed(document({ breakdownConfirmedAt: NOW }));
+		expect(redirectFrom(breakdownLoad)).toMatchObject({ status: 307, location: '/marksheet' });
+	});
+
+	it('sends nothing stored on any route to upload', () => {
+		expect(redirectFrom(breakdownLoad)).toMatchObject({ status: 307, location: '/' });
+		expect(redirectFrom(marksheetLoad)).toMatchObject({ status: 307, location: '/' });
+	});
+
+	it('sends an unreadable document back to upload', () => {
+		localStorage.setItem(STORAGE_KEY, '{"schemaVersion":99}');
+
+		expect(redirectFrom(breakdownLoad)).toMatchObject({ status: 307, location: '/' });
+		expect(redirectFrom(marksheetLoad)).toMatchObject({ status: 307, location: '/' });
+	});
+});
+
+// The gate runs first on every navigation; these render the surface it allowed,
+// asserting synchronously (no await) that the stored state is what is on screen.
+describe('first paint', () => {
+	it('shows the stored breakdown with no loading state', () => {
+		seed(document());
+		expect(redirectFrom(breakdownLoad)).toBeNull();
+
+		const screen = render(BreakdownPage);
+
+		expect(screen.container.textContent).toContain('2bii');
+		expect(screen.container.textContent).not.toMatch(/loading/i);
+	});
+
+	it('shows the confirmed marksheet surface', () => {
+		seed(document({ breakdownConfirmedAt: NOW }));
+		expect(redirectFrom(marksheetLoad)).toBeNull();
+
+		const screen = render(MarksheetPage);
+
+		expect(screen.container.textContent).toContain('entries · 4 marks');
+		expect(screen.container.textContent).not.toMatch(/loading/i);
+	});
+
+	it('shows the parse form when nothing is stored', () => {
+		expect(redirectFrom(uploadLoad)).toBeNull();
+
+		const screen = render(UploadPage);
+
+		expect(screen.container.textContent).toContain('Parse assessment paper');
+	});
+});

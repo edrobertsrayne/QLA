@@ -1,6 +1,8 @@
 import { page } from 'vitest/browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
+import { STORAGE_KEY } from '$lib/marksheet/document.js';
+import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import Page from './+page.svelte';
 
 function pdfFile(): File {
@@ -22,8 +24,27 @@ function stubFetch(parseBody: unknown, parseStatus = 200) {
 	});
 }
 
+const parsedRun = {
+	breakdown: {
+		questions: [
+			{
+				id: '1a',
+				questionNumber: '1',
+				marks: 2,
+				summary: 'Explain the process shown',
+				specPoint: null,
+				commandWord: 'Explain',
+				ao: 'AO1'
+			}
+		]
+	},
+	warnings: [{ questionId: '1a', code: 'SUMMARY_LENGTH', message: 'Not 3–8 words.' }],
+	usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30, estCost: 0.001 }
+};
+
 describe('+page.svelte run handler', () => {
 	beforeEach(() => {
+		localStorage.clear();
 		vi.stubGlobal(
 			'fetch',
 			stubFetch({
@@ -48,29 +69,11 @@ describe('+page.svelte run handler', () => {
 			.element(page.getByTestId('fatal-panel'))
 			.toHaveTextContent('MALFORMED_MODEL_OUTPUT');
 		await expect.element(page.getByRole('button', { name: 'Run' })).toBeInTheDocument();
+		expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
 	});
 
-	it('renders a normal successful run unaffected', async () => {
-		vi.stubGlobal(
-			'fetch',
-			stubFetch({
-				breakdown: {
-					questions: [
-						{
-							id: '1a',
-							questionNumber: '1',
-							marks: 2,
-							summary: 'Explain the process shown',
-							specPoint: null,
-							commandWord: 'Explain',
-							ao: 'AO1'
-						}
-					]
-				},
-				warnings: [],
-				usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 }
-			})
-		);
+	it('stores the parsed breakdown and offers the move in one click', async () => {
+		vi.stubGlobal('fetch', stubFetch(parsedRun));
 
 		render(Page);
 
@@ -78,8 +81,37 @@ describe('+page.svelte run handler', () => {
 		await page.getByRole('button', { name: 'Run' }).click();
 
 		await expect
-			.element(page.getByRole('cell', { name: 'Explain the process shown' }))
-			.toBeInTheDocument();
+			.element(page.getByRole('link', { name: 'Open breakdown' }))
+			.toHaveAttribute('href', '/breakdown');
 		await expect.element(page.getByTestId('fatal-panel')).not.toBeInTheDocument();
+
+		const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
+		expect(stored.breakdownConfirmedAt).toBeNull();
+		expect(stored.paper.sourceFilenames).toEqual(['paper.pdf']);
+		expect(stored.paper.label).toBe('paper');
+		expect(stored.breakdown.entries.map((entry) => entry.label)).toEqual(['1a']);
+		expect(stored.breakdown.entries[0].id).not.toBe('');
+		expect(stored.breakdown.warnings).toEqual([
+			{
+				questionId: stored.breakdown.entries[0].id,
+				code: 'SUMMARY_LENGTH',
+				message: 'Not 3–8 words.'
+			}
+		]);
+		expect(localStorage.getItem(STORAGE_KEY)).not.toContain('promptTokens');
+	});
+
+	it('drops the results panel and the breakdown.json download', async () => {
+		vi.stubGlobal('fetch', stubFetch(parsedRun));
+
+		const screen = render(Page);
+
+		await page.getByLabelText('Assessment paper (PDF)').upload(pdfFile());
+		await page.getByRole('button', { name: 'Run' }).click();
+		await expect.element(page.getByRole('link', { name: 'Open breakdown' })).toBeInTheDocument();
+
+		expect(screen.container.textContent).not.toContain('breakdown.json');
+		expect(screen.container.textContent).not.toContain('Explain the process shown');
+		expect(page.getByRole('button', { name: /copy|download/i }).elements()).toHaveLength(0);
 	});
 });
