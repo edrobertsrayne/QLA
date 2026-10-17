@@ -70,8 +70,8 @@ A breakdown entry whose coverage is below 100%; it is still banded, over the mar
 _Avoid_: Provisional, incomplete
 
 **Analysis**:
-An on-demand snapshot of every breakdown entry's facility index and RAG band. Goes out of date when marks change, and stays until regenerated.
-_Avoid_: Report, results
+Every breakdown entry's facility index and RAG band, recomputed whenever a mark, an absent flag, the class or the breakdown changes. Always current; there is no run step and no out-of-date state. Per breakdown entry only — never pooled per question.
+_Avoid_: Report, results, snapshot, regenerate
 
 **Class**:
 The group of students one marksheet is entered for, named by the teacher (e.g. "10C1").
