@@ -333,7 +333,8 @@ export class BandingState {
 	singleton = $state<Singleton>('repeat');
 	warnings = $state<ParseWarning[]>([]);
 	engine: GridEngine;
-	snapshot = $state<Snapshot | null>(null);
+	/** Round 2 (#32 verdict): no Generate/Regenerate — the analysis recomputes on every change. */
+	snapshot = $derived.by((): Snapshot | null => computeSnapshot(this.engine, this.bands));
 
 	constructor() {
 		this.engine = createGridEngine([], makeSampleStudents(30));
@@ -350,11 +351,6 @@ export class BandingState {
 		this.engine.editing = null;
 		this.warnings = warnings;
 		fillMarks(this.engine);
-		this.generate();
-	}
-
-	generate() {
-		this.snapshot = computeSnapshot(this.engine, bandsOf(this.engine.leaves, this.warnings));
 	}
 
 	entryResult(id: string) {

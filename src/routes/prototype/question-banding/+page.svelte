@@ -11,7 +11,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import ChartColumnIcon from '@lucide/svelte/icons/chart-column';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import RotateCwIcon from '@lucide/svelte/icons/rotate-cw';
 	import {
 		BandingState,
 		SAMPLES,
@@ -73,10 +72,8 @@
 					>{s.warnings.length} entries have no question number from the parse</span
 				>
 			{/if}
-			<div class="ml-auto flex gap-2">
-				<Button variant="ghost" size="sm" onclick={() => s.generate()}
-					><RotateCwIcon /> Regenerate analysis</Button
-				>
+			<div class="ml-auto flex items-center gap-2">
+				<span class="text-xs text-muted-foreground">Analysis updates as you type</span>
 				<Button size="sm" onclick={() => openReport(null)}><ChartColumnIcon /> View analysis</Button
 				>
 			</div>
