@@ -66,7 +66,7 @@ nesting, no depth, and no representation of an unmarked stem.
 - The fallback bands a subquestion under itself when the model omits the
   field, so a degraded parse shows `2bii` as its own band rather than
   grouping under Question 2. Wrong, but visibly wrong and non-fatal.
-- Question-level facility (a whole question's marks across a cohort) is now
+- Question-level facility (a whole question's marks across a class) is now
   computable without inventing structure later, though nothing computes it
   yet.
 - Unmarked stems are absent from the breakdown entirely, so the stem's own
