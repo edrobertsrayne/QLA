@@ -17,8 +17,8 @@ The one-way moment a teacher accepts a breakdown as correct, after which it is r
 _Avoid_: Approval, locking, freezing
 
 **Marksheet**:
-A QLA-generated record of one cohort's marks, per student per question, built in Phase 2 to support strengths/weaknesses analysis. An _output_ the app builds, not an uploaded document.
-_Avoid_: Markscheme, gradebook
+A QLA-generated record of one class's marks, per student per question, built in Phase 2 to support strengths/weaknesses analysis. An _output_ the app builds, not an uploaded document.
+_Avoid_: Markscheme, gradebook, markbook
 
 **Local student id**:
 The stable identifier a marksheet uses to tie a student's marks to their name, so renaming a student or inserting one mid-list never reassigns marks. Generated on the teacher's device and never sent anywhere — distinct from the Phase 3 pseudonymization UUID, which exists to keep names away from the model.
@@ -54,5 +54,65 @@ Anything below a question, at any depth: `2a` and `2bii` are equally subquestion
 _Avoid_: Sub-question, part, item, leaf
 
 **Facility index**:
-The proportion of a question or subquestion's available marks that a cohort actually gained — the measure Phase 2's analysis ranks and RAG-colours to surface poorly answered questions. Computed over marks entered, excluding absent students and unmarked cells.
-_Avoid_: Difficulty, average score, success rate
+The proportion of a question or subquestion's available marks that a class actually gained (mean mark ÷ available marks) — the measure Phase 2's analysis ranks and RAG-colours to surface poorly answered questions. Computed per breakdown entry over marks entered, excluding absent students, unmarked cells and marks above the entry's available marks.
+_Avoid_: Difficulty, average score, success rate, % marks
+
+**RAG band**:
+Red, Amber or Green, given to a facility index by fixed absolute thresholds that are the same on every paper — never relative to the class.
+_Avoid_: Grade, rating, percentile
+
+**Not scored**:
+The state of a breakdown entry that has no RAG band, because its available marks are unknown or it has no marks entered yet.
+_Avoid_: Ungraded, N/A
+
+**Part-marked**:
+A breakdown entry whose coverage is below 100%; it is still banded, over the marks entered.
+_Avoid_: Provisional, incomplete
+
+**Analysis**:
+An on-demand snapshot of every breakdown entry's facility index and RAG band. Goes out of date when marks change, and stays until regenerated.
+_Avoid_: Report, results
+
+**Class**:
+The group of students one marksheet is entered for, named by the teacher (e.g. "10C1").
+_Avoid_: Roster, cohort, group, register, set
+
+**Student**:
+One member of a class on a marksheet, identified by a local student id and carrying a first name, a surname and an absent flag.
+_Avoid_: Pupil, learner, candidate, row
+
+**First name** / **Surname**:
+The two separately held parts of a student's name.
+_Avoid_: Forename, last name, given name, family name
+
+**Mark**:
+A whole number a student gained on one breakdown entry, from 0 up to that entry's available marks.
+_Avoid_: Score, grade
+
+**Unmarked**:
+A breakdown entry for which a student has no mark yet; excluded from analysis. Not the same as a mark of 0.
+_Avoid_: Blank, missing, N/A, zero
+
+**Absent**:
+A flag on a student, not a mark: every one of that student's marks is ignored in every denominator. Marks entered before the flag was set are kept and count again if it is cleared.
+_Avoid_: DNS, missing, zero
+
+**Progress**:
+How much of one student's marksheet row is filled in: breakdown entries with a mark, out of all breakdown entries.
+_Avoid_: Completion, count
+
+**Coverage**:
+How far one breakdown entry has been marked across the class: non-absent students with a mark, out of all non-absent students.
+_Avoid_: Sample size, n
+
+**Backup**:
+A restorable copy of the whole stored breakdown and marksheet. The only thing that can bring a marksheet back after a new upload or lost browser storage.
+_Avoid_: Save, export, download
+
+**Marks export**:
+A one-way CSV of a marksheet's marks for use elsewhere. Lossy: it cannot be restored from.
+_Avoid_: Backup, save, download
+
+**New upload**:
+The destructive action that discards the stored breakdown and marksheet and returns to uploading a fresh assessment paper and/or markscheme. Only exists once something is stored.
+_Avoid_: Reset, clear, start over
