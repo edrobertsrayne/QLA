@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { CORRUPT_KEY_PREFIX, DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from './document.js';
 import type { MarksheetDocument } from './document.js';
 import { MarksheetStore } from './store.svelte.js';
-import type { DocumentStorage } from './store.svelte.js';
+import type { DocumentStorage, LoadResult } from './store.svelte.js';
 
 const NOW = new Date('2026-01-01T10:00:00.000Z');
 
@@ -18,6 +18,10 @@ function fakeStorage(initial: Record<string, string> = {}): FakeStorage {
 	return {
 		map,
 		writes,
+		get length() {
+			return map.size;
+		},
+		key: (index) => [...map.keys()][index] ?? null,
 		getItem: (key) => map.get(key) ?? null,
 		setItem: (key, value) => {
 			writes.push(key);
@@ -63,8 +67,44 @@ function storedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDo
 	};
 }
 
-function storeWith(storage: DocumentStorage) {
-	return new MarksheetStore({ storage, now: () => NOW });
+function storeWith(storage: DocumentStorage, now: () => Date = () => NOW) {
+	return new MarksheetStore({ storage, now });
+}
+
+/** The key an unreadable document was preserved under, asserting the load found one. */
+function preservedKeyOf(result: LoadResult): string {
+	expect(result.kind).toBe('corrupt');
+	if (result.kind !== 'corrupt') throw new Error('expected an unreadable document');
+	return result.preservedKey;
+}
+
+/** Storage that only refuses writes of the marksheet document itself (a full quota). */
+function unwritableDocument(storage: FakeStorage): DocumentStorage {
+	return {
+		get length() {
+			return storage.length;
+		},
+		key: (index) => storage.key(index),
+		getItem: storage.getItem,
+		removeItem: storage.removeItem,
+		setItem: (key, value) => {
+			if (key === STORAGE_KEY) throw new Error('QuotaExceededError');
+			storage.setItem(key, value);
+		}
+	};
+}
+
+/** Private browsing exposes storage that refuses every write. */
+function unwritableStorage(): DocumentStorage {
+	return {
+		length: 0,
+		key: () => null,
+		getItem: () => null,
+		setItem: () => {
+			throw new Error('SecurityError');
+		},
+		removeItem: () => undefined
+	};
 }
 
 describe('boot gate', () => {
@@ -122,13 +162,7 @@ describe('boot gate', () => {
 	});
 
 	it('runs on upload when browser storage is unavailable', () => {
-		const store = storeWith({
-			getItem: () => null,
-			setItem: () => {
-				throw new Error('SecurityError');
-			},
-			removeItem: () => undefined
-		});
+		const store = storeWith(unwritableStorage());
 
 		expect(store.load()).toEqual({ kind: 'unavailable' });
 		expect(store.route()).toBe('/');
@@ -137,12 +171,20 @@ describe('boot gate', () => {
 	it('keeps one copy of an unreadable document however often the gate runs', () => {
 		const raw = '{"schemaVersion":99}';
 		const storage = fakeStorage({ [STORAGE_KEY]: raw });
-		const store = storeWith(storage);
+		let nowMs = Date.parse('2026-01-01T10:00:00.000Z');
+		const clock = () => new Date(nowMs);
+		const store = storeWith(storage, clock);
 
 		const first = store.load();
+		nowMs += 60_000;
 		const second = store.load();
+		nowMs += 60_000;
+		// A second page load starts a fresh store over the same storage.
+		const afterReload = storeWith(storage, clock).load();
 
-		expect(second).toEqual(first);
+		const preservedKey = preservedKeyOf(first);
+		expect(preservedKeyOf(second)).toBe(preservedKey);
+		expect(preservedKeyOf(afterReload)).toBe(preservedKey);
 		expect(
 			[...storage.map.keys()].filter((key) => key.startsWith(CORRUPT_KEY_PREFIX))
 		).toHaveLength(1);
@@ -290,13 +332,7 @@ describe('createFromParse', () => {
 	});
 
 	it('keeps working, and reporting unavailable, when the browser refuses writes', () => {
-		const store = storeWith({
-			getItem: () => null,
-			setItem: () => {
-				throw new Error('SecurityError');
-			},
-			removeItem: () => undefined
-		});
+		const store = storeWith(unwritableStorage());
 		store.load();
 
 		store.createFromParse(input);
@@ -314,14 +350,7 @@ describe('createFromParse', () => {
 
 	it('keeps an unsaved parse in the tab when the write is refused', () => {
 		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument()) });
-		const store = storeWith({
-			getItem: storage.getItem,
-			removeItem: storage.removeItem,
-			setItem: (key, value) => {
-				if (key === STORAGE_KEY) throw new Error('QuotaExceededError');
-				storage.setItem(key, value);
-			}
-		});
+		const store = storeWith(unwritableDocument(storage));
 		store.load();
 
 		store.createFromParse(input);
@@ -400,6 +429,27 @@ describe('autosave', () => {
 		}
 	});
 
+	it('stamps updatedAt when it writes, not when the change was made', () => {
+		vi.useFakeTimers();
+		try {
+			const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument()) });
+			let nowMs = Date.parse('2026-01-01T10:00:00.000Z');
+			const store = storeWith(storage, () => new Date(nowMs));
+			store.load();
+
+			store.setPaperLabel('10X/Ph1');
+			nowMs += 60_000;
+			vi.advanceTimersByTime(500);
+
+			const stored = JSON.parse(storage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
+			expect(stored.paper.label).toBe('10X/Ph1');
+			expect(stored.createdAt).toBe('2026-01-01T10:00:00.000Z');
+			expect(stored.updatedAt).toBe('2026-01-01T10:01:00.000Z');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('does nothing when there is nothing pending', () => {
 		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument()) });
 		const store = storeWith(storage);
@@ -414,15 +464,7 @@ describe('autosave', () => {
 		vi.useFakeTimers();
 		try {
 			const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument()) });
-			const failing: DocumentStorage = {
-				getItem: storage.getItem,
-				removeItem: storage.removeItem,
-				setItem: (key, value) => {
-					if (key === STORAGE_KEY) throw new Error('QuotaExceededError');
-					storage.setItem(key, value);
-				}
-			};
-			const store = storeWith(failing);
+			const store = storeWith(unwritableDocument(storage));
 			store.load();
 
 			store.setPaperLabel('10X');

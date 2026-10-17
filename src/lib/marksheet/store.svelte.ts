@@ -23,6 +23,8 @@ export const AUTOSAVE_DEBOUNCE_MS = 500;
 
 /** The slice of the Web Storage API the store needs. */
 export interface DocumentStorage {
+	readonly length: number;
+	key(index: number): string | null;
 	getItem(key: string): string | null;
 	setItem(key: string, value: string): void;
 	removeItem(key: string): void;
@@ -78,6 +80,20 @@ function storageAvailable(storage: DocumentStorage): boolean {
 	}
 }
 
+/**
+ * An existing preserved copy of this payload, if there is one. Every route
+ * visits the gate and every page load starts a fresh store, so without this a
+ * single unreadable document would leave a copy behind per visit.
+ */
+function preservedCopyOf(storage: DocumentStorage, raw: string): string | null {
+	for (let index = 0; index < storage.length; index++) {
+		const key = storage.key(index);
+		if (key === null || !key.startsWith(CORRUPT_KEY_PREFIX)) continue;
+		if (storage.getItem(key) === raw) return key;
+	}
+	return null;
+}
+
 /** Run `run` after `ms`, returning a cancel function. Keeps the timer handle's type local. */
 function scheduleTimer(ms: number, run: () => void): () => void {
 	const handle = setTimeout(run, ms);
@@ -90,8 +106,6 @@ export class MarksheetStore {
 	readonly #debounceMs: number;
 	#cancelTimer: (() => void) | null = null;
 	#loaded = false;
-	/** The copy taken of an unreadable document, so repeated gates do not pile copies up. */
-	#preserved: { raw: string; key: string } | null = null;
 	/** Changes not yet in storage: in-memory state wins over a re-read. */
 	#unsaved = false;
 	/** A failed write stops autosave rather than retrying behind the teacher's back. */
@@ -137,18 +151,17 @@ export class MarksheetStore {
 		const document = parseStoredDocument(raw);
 		if (!document) {
 			// Never delete what we cannot read: a validator bug must not take the
-			// teacher's only copy with it. One copy per distinct payload — every
-			// route visits the gate.
-			if (this.#preserved?.raw !== raw) {
-				const key = `${CORRUPT_KEY_PREFIX}${this.#now().toISOString()}`;
+			// teacher's only copy with it.
+			let preservedKey = preservedCopyOf(this.#storage, raw);
+			if (preservedKey === null) {
+				preservedKey = `${CORRUPT_KEY_PREFIX}${this.#now().toISOString()}`;
 				try {
-					this.#storage.setItem(key, raw);
+					this.#storage.setItem(preservedKey, raw);
 				} catch {
 					// Best effort: the original is still under its own key.
 				}
-				this.#preserved = { raw, key };
 			}
-			return this.#settle({ kind: 'corrupt', preservedKey: this.#preserved.key, raw }, null, {
+			return this.#settle({ kind: 'corrupt', preservedKey, raw }, null, {
 				kind: 'saved',
 				at: this.#now()
 			});

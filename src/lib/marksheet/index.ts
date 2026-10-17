@@ -10,6 +10,8 @@ function browserStorage(): DocumentStorage {
 		return window.localStorage;
 	} catch {
 		return {
+			length: 0,
+			key: () => null,
 			getItem: () => null,
 			setItem: () => {
 				throw new Error('Browser storage is unavailable.');
