@@ -16,11 +16,11 @@
 	const VARIANTS = [
 		{ key: 'A', label: 'Top bar + header buttons' },
 		{ key: 'B', label: 'Flow stepper + File menu' },
-		{ key: 'C', label: 'Grouped by purpose + status bar' },
+		{ key: 'C', label: 'Chosen: grouped by purpose + status bar' },
 		{ key: 'D', label: 'Left rail document panel' }
 	];
 
-	const variant = $derived(page.url.searchParams.get('variant') ?? 'A');
+	const variant = $derived(page.url.searchParams.get('variant') ?? 'C');
 	const shell = new Shell();
 	let collapsed = $state(false);
 </script>
