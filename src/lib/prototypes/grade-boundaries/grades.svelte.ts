@@ -222,3 +222,62 @@ export function loadSample(): void {
 	const read = readPaste(SAMPLES[0].text, []);
 	if (read.ok) grades.rows = read.rows;
 }
+
+/** Grade scales a teacher can start from; the labels are only a starting point. */
+export const SCALES: { name: string; labels: string[] }[] = [
+	{ name: 'GCSE 9–1', labels: ['9', '8', '7', '6', '5', '4', '3', '2', '1'] },
+	{ name: 'A level A*–E', labels: ['A*', 'A', 'B', 'C', 'D', 'E'] },
+	{ name: 'Distinction / Merit / Pass', labels: ['Distinction', 'Merit', 'Pass'] },
+	{ name: 'Working at (school)', labels: ['Greater depth', 'Expected', 'Working towards'] }
+];
+
+/** A dialog's working copy: nothing reaches the marksheet until it is saved. */
+export interface Draft {
+	rows: BoundaryRow[];
+	below: string;
+}
+
+export function draftFromGrades(): Draft {
+	return { rows: grades.rows.map((r) => ({ ...r })), below: grades.below };
+}
+
+/**
+ * The rows a draft would save. With `dropUnmarked`, a grade with no minimum is one
+ * this paper doesn't award (a higher-tier paper has no 1 or 2), so it is left out.
+ */
+export function draftRows(draft: Draft, dropUnmarked = false): BoundaryRow[] {
+	return draft.rows.filter(
+		(r) => !(r.label.trim() === '' && r.min.trim() === '') && !(dropUnmarked && r.min.trim() === '')
+	);
+}
+
+export function saveDraft(draft: Draft, dropUnmarked = false): void {
+	grades.rows = draftRows(draft, dropUnmarked).map((r) => ({
+		label: r.label.trim(),
+		min: r.min.trim()
+	}));
+	grades.below = draft.below.trim() || 'U';
+}
+
+/** Problems with a draft, indexed against the draft's own rows. */
+export function draftIssues(draft: Draft, dropUnmarked = false): RowIssue[] {
+	const kept = draft.rows.flatMap((r, i) =>
+		(r.label.trim() === '' && r.min.trim() === '') || (dropUnmarked && r.min.trim() === '')
+			? []
+			: [i]
+	);
+	return issuesOf(
+		kept.map((i) => draft.rows[i]),
+		draft.below,
+		paperTotal()
+	).map((issue) => ({ ...issue, index: kept[issue.index] }));
+}
+
+/** Totals of fully-marked students, for editors that show the class against the marks. */
+export function classTotals(): { name: string; total: number }[] {
+	const store = marksheetStore();
+	return store.students.flatMap((s) => {
+		const g = studentGrade(s.id);
+		return g.kind === 'complete' ? [{ name: `${s.firstName} ${s.surname}`, total: g.total }] : [];
+	});
+}

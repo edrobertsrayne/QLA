@@ -17,7 +17,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import BoundaryStrip from '$lib/prototypes/grade-boundaries/BoundaryStrip.svelte';
-	import BoundaryText from '$lib/prototypes/grade-boundaries/BoundaryText.svelte';
+	import BoundaryDialogBody, {
+		type Entry
+	} from '$lib/prototypes/grade-boundaries/BoundaryDialogBody.svelte';
 	import GradeGrid from '$lib/prototypes/grade-boundaries/GradeGrid.svelte';
 	import { boundaries } from '$lib/prototypes/grade-boundaries/grades.svelte.js';
 	import { cn } from '$lib/utils';
@@ -26,7 +28,7 @@
 	import TopicNames from './TopicNames.svelte';
 	import { blockerText, reportFlow } from './flow.svelte.js';
 
-	let { grade }: { grade: 'A' | 'B' | 'C' } = $props();
+	let { grade, entry = 'text' }: { grade: 'A' | 'B' | 'C'; entry?: Entry } = $props();
 
 	type StepKey = 'names' | 'grades' | 'who' | 'writing' | 'review';
 	const flow = reportFlow();
@@ -100,7 +102,7 @@
 	<Dialog.Root bind:open={boundaryDialog}>
 		<Dialog.Content class="sm:max-w-2xl">
 			<Dialog.Header><Dialog.Title>Grade boundaries</Dialog.Title></Dialog.Header>
-			<BoundaryText onDone={() => (boundaryDialog = false)} />
+			<BoundaryDialogBody {entry} onDone={() => (boundaryDialog = false)} />
 		</Dialog.Content>
 	</Dialog.Root>
 {:else if view === 'analysis'}
@@ -150,7 +152,7 @@
 					With boundaries, each report shows the student's grade and the marks to the next one.
 					Without them, reports show marks and percentages only.
 				</p>
-				<BoundaryText onDone={() => (step = 'who')} />
+				<BoundaryDialogBody {entry} onDone={() => (step = 'who')} />
 				<Button variant="link" class="h-auto p-0" onclick={() => (step = 'who')}>
 					{gradeCount > 0 ? 'Keep these and go on' : 'Skip: no grades on these reports'}
 				</Button>
