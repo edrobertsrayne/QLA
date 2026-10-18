@@ -759,7 +759,7 @@ export class MarksheetStore {
 	 *
 	 * Pasted rows past the class become students when there is a name to give
 	 * them. Columns past the last entry are clipped. A cell that is not a whole
-	 * number is refused on its own and leaves the sheet as it was, while a blank
+	 * number is refused on its own and leaves the sheet as it was, while an empty
 	 * cell clears a mark — the same rules as typing, applied a block at a time.
 	 */
 	pasteMarks(rows: readonly (readonly string[])[], anchor: PasteAnchor): PasteResult {

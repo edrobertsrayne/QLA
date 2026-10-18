@@ -294,8 +294,8 @@
 	}
 
 	/**
-	 * Take what the open editor holds: a whole number becomes the mark, a blank
-	 * cell goes back to unmarked, and anything else is refused and leaves the cell
+	 * Take what the open editor holds: a whole number becomes the mark, an empty
+	 * editor goes back to unmarked, and anything else is refused and leaves the cell
 	 * as it was — so `2.000` never becomes 2. Returns what to tell the teacher
 	 * about a refusal, or null when there was nothing to refuse.
 	 */

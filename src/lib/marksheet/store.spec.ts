@@ -1815,7 +1815,7 @@ describe('pasting a block', () => {
 		});
 	});
 
-	it('clears a mark when the pasted cell is blank', () => {
+	it('clears a mark when the pasted cell is empty', () => {
 		const { store } = openPasteSheet({ marks: { 'student-1': { 'entry-1': 2 } } });
 
 		const result = store.pasteMarks([['', '3']], {
