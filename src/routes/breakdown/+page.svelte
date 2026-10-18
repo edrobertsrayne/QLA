@@ -7,6 +7,7 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import BreakdownTable from '$lib/components/marksheet/BreakdownTable.svelte';
 	import BackupCard from '$lib/components/shell/BackupCard.svelte';
+	import PaperLabelInput from '$lib/components/shell/PaperLabelInput.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
@@ -77,10 +78,6 @@
 		return messages;
 	});
 
-	function onLabelInput(event: Event): void {
-		store.setPaperLabel((event.target as HTMLInputElement).value);
-	}
-
 	/** Take the printed total as it is typed, and refuse anything that is not a whole number. */
 	function onPaperTotalInput(event: Event): void {
 		const input = event.currentTarget as HTMLInputElement;
@@ -123,17 +120,11 @@
 	<title>{title}</title>
 </svelte:head>
 
-<main class="mx-auto max-w-6xl space-y-6 p-6 pb-[calc(var(--status-bar-height)+1.5rem)]">
+<main class="mx-auto max-w-6xl space-y-6 p-6">
 	<header class="space-y-3">
 		<div class="flex items-start justify-between gap-4">
 			<div class="space-y-2">
-				<Input
-					aria-label="Paper label"
-					class="h-auto border-transparent bg-transparent px-1 text-2xl font-bold tracking-tight shadow-none hover:border-input"
-					placeholder="Name this paper"
-					value={store.document?.paper.label ?? ''}
-					oninput={onLabelInput}
-				/>
+				<PaperLabelInput />
 				<p class="px-1 text-sm text-muted-foreground">
 					{entries.length} entries · {marks} marks{#if usage}
 						· this run: {usage.totalTokens} tokens · ${usage.estCost.toFixed(4)}{/if}

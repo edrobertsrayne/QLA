@@ -7,6 +7,7 @@
 	import AnalysisView from '$lib/components/marksheet/AnalysisView.svelte';
 	import MarksheetGrid from '$lib/components/marksheet/MarksheetGrid.svelte';
 	import BackupCard from '$lib/components/shell/BackupCard.svelte';
+	import PaperLabelInput from '$lib/components/shell/PaperLabelInput.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { totalMarks } from '$lib/marksheet/document.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
@@ -33,14 +34,6 @@
 		].join(' · ')
 	);
 
-	function onLabelInput(event: Event): void {
-		store.setPaperLabel((event.currentTarget as HTMLInputElement).value);
-	}
-
-	function onClassNameInput(event: Event): void {
-		store.setClassName((event.currentTarget as HTMLInputElement).value);
-	}
-
 	/** Open the analysis, at one entry when the teacher asked from that entry's figure. */
 	function openAnalysis(entryId: string | null): void {
 		highlighted = entryId;
@@ -52,24 +45,18 @@
 	<title>{title}</title>
 </svelte:head>
 
-<main class="mx-auto max-w-6xl space-y-4 p-6 pb-[calc(var(--status-bar-height)+1.5rem)]">
+<main class="mx-auto max-w-6xl space-y-4 p-6">
 	{#if view === 'grid'}
 		<header class="space-y-3">
 			<div class="space-y-1">
-				<Input
-					aria-label="Paper label"
-					class="h-auto border-transparent bg-transparent px-1 text-2xl font-bold tracking-tight shadow-none hover:border-input"
-					placeholder="Name this paper"
-					value={store.document?.paper.label ?? ''}
-					oninput={onLabelInput}
-				/>
+				<PaperLabelInput />
 				<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 					<Input
 						aria-label="Class name"
 						class="h-8 w-40 border-transparent bg-transparent px-1 shadow-none hover:border-input"
 						placeholder="Name this class"
 						value={className ?? ''}
-						oninput={onClassNameInput}
+						oninput={(event) => store.setClassName(event.currentTarget.value)}
 					/>
 					<p class="text-sm text-muted-foreground">{summary}</p>
 				</div>

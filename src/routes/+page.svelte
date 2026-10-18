@@ -191,7 +191,7 @@
 	<title>Upload · QLA</title>
 </svelte:head>
 
-<main class="mx-auto max-w-4xl space-y-6 p-6 pb-[calc(var(--status-bar-height)+1.5rem)]">
+<main class="mx-auto max-w-4xl space-y-6 p-6">
 	<CorruptDocumentAlert />
 
 	<div class="space-y-2">

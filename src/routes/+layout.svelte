@@ -15,7 +15,9 @@
 
 <ModeWatcher />
 <AppNav />
-{@render children()}
+<div class="pb-[var(--status-bar-height)]">
+	{@render children()}
+</div>
 <StatusBar />
 <!-- Toasts rise above the status bar rather than sitting under it, on a narrow
 	window as much as a wide one. -->
