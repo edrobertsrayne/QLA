@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from '$lib/marksheet/document.js';
-import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import type { BreakdownEntry, MarksheetDocument, StoredWarning } from '$lib/marksheet/document.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { load as breakdownLoad } from './+page.js';
 import BreakdownPage from './+page.svelte';
@@ -12,6 +12,25 @@ const goto = vi.hoisted(() => vi.fn());
 vi.mock('$app/navigation', () => ({ goto }));
 
 const NOW = '2026-01-01T10:00:00.000Z';
+
+function entry(
+	id: string,
+	label: string,
+	questionNumber: string,
+	overrides: Partial<BreakdownEntry> = {}
+): BreakdownEntry {
+	return {
+		id,
+		label,
+		questionNumber,
+		marks: 4,
+		summary: 'Describe the rate change',
+		specPoint: '3.2.1.4',
+		commandWord: 'Describe',
+		ao: 'AO2',
+		...overrides
+	};
+}
 
 function parsedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return {
@@ -27,18 +46,7 @@ function parsedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDo
 			parsedAt: NOW
 		},
 		breakdown: {
-			entries: [
-				{
-					id: 'entry-1',
-					label: '2bii',
-					questionNumber: '2',
-					marks: 4,
-					summary: 'Describe the rate change',
-					specPoint: '3.2.1.4',
-					commandWord: 'Describe',
-					ao: 'AO2'
-				}
-			],
+			entries: [entry('entry-1', '2bii', '2')],
 			warnings: [
 				{ questionId: 'entry-1', code: 'SUMMARY_LENGTH', message: 'Not 3–8 words.' },
 				{ questionId: null, code: 'SPEC_UNREADABLE', message: 'Specification could not be read.' }
@@ -50,7 +58,23 @@ function parsedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDo
 	};
 }
 
+/** A document whose entries and warnings are the point of the test. */
+function documentOf(entries: BreakdownEntry[], warnings: StoredWarning[] = []): MarksheetDocument {
+	return parsedDocument({ breakdown: { entries, warnings } });
+}
+
+function seed(stored: MarksheetDocument): void {
+	localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+}
+
+function storedDocument(): MarksheetDocument {
+	return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
+}
+
 beforeEach(() => {
+	// A fresh surface: the store keeps changes the tab has not written, so a
+	// previous test's document is wiped rather than carried into this one.
+	marksheetStore().wipe();
 	localStorage.clear();
 	goto.mockClear();
 });
@@ -63,25 +87,24 @@ function openBreakdownPage() {
 
 describe('breakdown page', () => {
 	it('shows the stored breakdown, its warnings and no run cost after a reload', async () => {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(parsedDocument()));
+		seed(parsedDocument());
 
 		const screen = openBreakdownPage();
 
-		await expect.element(page.getByText('Describe the rate change')).toBeInTheDocument();
+		await expect.element(page.getByLabelText('Label for 2bii')).toHaveValue('2bii');
+		await expect.element(page.getByLabelText('Marks for 2bii')).toHaveValue('4');
+		await expect.element(page.getByLabelText('Spec point for 2bii')).toHaveValue('3.2.1.4');
 		await expect.element(page.getByLabelText('Paper label')).toHaveValue('10X Ph1');
-		await expect.element(page.getByRole('cell', { name: '3.2.1.4' })).toBeInTheDocument();
-		await expect
-			.element(page.getByText(/SUMMARY_LENGTH \(2bii\): Not 3–8 words\./))
-			.toBeInTheDocument();
-		await expect
-			.element(page.getByText(/SPEC_UNREADABLE: Specification could not be read\./))
-			.toBeInTheDocument();
-		await expect.element(page.getByRole('cell', { name: '2bii' })).toBeInTheDocument();
+
+		// A finding about one entry is on its row; one about the run is beside the table.
+		await expect.element(page.getByTestId('run-warnings')).toHaveTextContent('SPEC_UNREADABLE');
+		await page.getByRole('button', { name: 'Parse warnings for 2bii' }).click();
+		await expect.element(page.getByText(/Not 3–8 words\./)).toBeInTheDocument();
 		expect(screen.container.textContent).not.toContain('this run');
 	});
 
 	it('shows this run usage once a parse has run in this tab', async () => {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(parsedDocument()));
+		seed(parsedDocument());
 		openBreakdownPage();
 
 		marksheetStore().createFromParse({
@@ -106,21 +129,202 @@ describe('breakdown page', () => {
 		await expect.element(page.getByText(/this run: 30 tokens · \$0\.0010/)).toBeInTheDocument();
 	});
 
+	it('edits every field in place and autosaves', async () => {
+		seed(parsedDocument());
+		openBreakdownPage();
+
+		await page.getByLabelText('Summary for 2bii').fill('Rate change on cooling');
+		await page.getByLabelText('Spec point for 2bii').fill('3.2.2.1');
+		await page.getByLabelText('Command word for 2bii').fill('State');
+		await userEvent.selectOptions(page.getByLabelText('Assessment objective for 2bii'), 'AO3');
+		await userEvent.fill(page.getByLabelText('Marks for 2bii'), '6');
+		await userEvent.tab();
+		// The entry's name is in every cell's label, so it is renamed last.
+		await page.getByLabelText('Label for 2bii').fill('2b');
+
+		await vi.waitFor(() => {
+			expect(storedDocument().breakdown.entries).toEqual([
+				{
+					id: 'entry-1',
+					label: '2b',
+					questionNumber: '2',
+					marks: 6,
+					summary: 'Rate change on cooling',
+					specPoint: '3.2.2.1',
+					commandWord: 'State',
+					ao: 'AO3'
+				}
+			]);
+		});
+	});
+
+	it('empties a spec point or command word to none', async () => {
+		seed(parsedDocument());
+		openBreakdownPage();
+
+		await page.getByLabelText('Spec point for 2bii').fill('');
+		await page.getByLabelText('Command word for 2bii').fill('');
+
+		await vi.waitFor(() => {
+			const stored = storedDocument().breakdown.entries[0];
+			expect(stored.specPoint).toBeNull();
+			expect(stored.commandWord).toBeNull();
+		});
+	});
+
+	it('saves a mark as it is typed, before the cell is left', async () => {
+		seed(parsedDocument());
+		openBreakdownPage();
+
+		await userEvent.fill(page.getByLabelText('Marks for 2bii'), '7');
+
+		await vi.waitFor(() => expect(storedDocument().breakdown.entries[0].marks).toBe(7));
+	});
+
+	it('refuses a mark cell holding anything but digits, showing what the entry holds', async () => {
+		seed(parsedDocument());
+		openBreakdownPage();
+
+		// Digits are saved as they are typed, so a cell holding no digits at all
+		// (a pasted decimal, an exponent) leaves the entry exactly as it was.
+		for (const refused of ['2.5', '1e1', '0x5', 'four']) {
+			await userEvent.fill(page.getByLabelText('Marks for 2bii'), refused);
+			await userEvent.tab();
+
+			await expect.element(page.getByLabelText('Marks for 2bii')).toHaveValue('4');
+			expect(storedDocument().breakdown.entries[0].marks).toBe(4);
+		}
+	});
+
+	it("re-bands the rows when the band's question number is edited", async () => {
+		seed(
+			documentOf([
+				entry('entry-1', '1a', '1'),
+				entry('entry-2', '1b', '1'),
+				entry('entry-3', '2a', '2')
+			])
+		);
+		openBreakdownPage();
+
+		await userEvent.fill(page.getByLabelText('Question number for band 1'), '2');
+		await userEvent.tab();
+
+		await expect.element(page.getByText('3 subquestions')).toBeInTheDocument();
+		await expect.element(page.getByLabelText('Question number for band 1')).not.toBeInTheDocument();
+		await vi.waitFor(() => {
+			expect(storedDocument().breakdown.entries.map((one) => one.questionNumber)).toEqual([
+				'2',
+				'2',
+				'2'
+			]);
+		});
+	});
+
+	it('shows the question number as a column when banding is off', async () => {
+		seed(documentOf([entry('entry-1', '1a', '1'), entry('entry-2', '2a', '2')]));
+		openBreakdownPage();
+
+		await page.getByLabelText('Band by question').click();
+
+		await expect.element(page.getByLabelText('Question number for 1a')).toHaveValue('1');
+		expect(page.getByTestId('band-row').elements()).toHaveLength(0);
+	});
+
+	it('jumps to the entry and the field that blocks confirmation', async () => {
+		seed(
+			documentOf([
+				entry('entry-1', '1a', '1'),
+				entry('entry-2', '3a', '3', { marks: null, summary: 'Name the gas produced' })
+			])
+		);
+		openBreakdownPage();
+
+		await page.getByRole('button', { name: '3a: no available marks' }).click();
+
+		await expect.element(page.getByLabelText('Marks for 3a')).toHaveFocus();
+	});
+
+	it('jumps to the label of an entry whose label is the problem', async () => {
+		seed(documentOf([entry('entry-1', '2a', '2'), entry('entry-2', '2a', '2')]));
+		openBreakdownPage();
+
+		await page.getByRole('button', { name: '2a: duplicate label' }).first().click();
+
+		await expect.element(page.getByLabelText('Label for 2a').first()).toHaveFocus();
+	});
+
+	it('refuses to confirm while an entry has no available marks, naming it', async () => {
+		seed(documentOf([entry('entry-1', '1a', '1'), entry('entry-2', '3a', '3', { marks: null })]));
+		openBreakdownPage();
+
+		await expect
+			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
+			.toBeDisabled();
+		await expect
+			.element(page.getByText(/Available marks are not yet known for 3a/))
+			.toBeInTheDocument();
+	});
+
+	it('refuses to confirm while a label is empty or repeated, naming the offenders', async () => {
+		seed(
+			documentOf([
+				entry('entry-1', '2a', '2'),
+				entry('entry-2', '2a', '2'),
+				entry('entry-3', '  ', '3')
+			])
+		);
+		openBreakdownPage();
+
+		await expect
+			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
+			.toBeDisabled();
+		await expect.element(page.getByText(/2a is used more than once/)).toBeInTheDocument();
+		await expect.element(page.getByText(/1 entry has no label/)).toBeInTheDocument();
+	});
+
+	it('confirms a complete breakdown and opens the marksheet', async () => {
+		seed(parsedDocument());
+		openBreakdownPage();
+
+		await page.getByRole('button', { name: 'Confirm and build marksheet' }).click();
+
+		await vi.waitFor(() => {
+			expect(goto).toHaveBeenCalledWith('/marksheet');
+			expect(storedDocument().breakdownConfirmedAt).not.toBeNull();
+		});
+	});
+
+	it('confirms only once the blocking marks are entered', async () => {
+		seed(documentOf([entry('entry-1', '1a', '1', { marks: null })]));
+		openBreakdownPage();
+
+		const confirm = page.getByRole('button', { name: 'Confirm and build marksheet' });
+		await expect.element(confirm).toBeDisabled();
+
+		await userEvent.fill(page.getByLabelText('Marks for 1a'), '5');
+		await userEvent.tab();
+
+		await expect.element(confirm).toBeEnabled();
+		await confirm.click();
+
+		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/marksheet'));
+	});
+
 	it('renames the paper in place and autosaves it', async () => {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(parsedDocument()));
+		seed(parsedDocument());
 		openBreakdownPage();
 
 		await page.getByLabelText('Paper label').fill('10X/Ph1 2026');
 
 		await vi.waitFor(() => {
-			const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
+			const stored = storedDocument();
 			expect(stored.paper.label).toBe('10X/Ph1 2026');
 			expect(stored.updatedAt).not.toBe(NOW);
 		});
 	});
 
 	it('wipes only the marksheet document and returns to upload', async () => {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(parsedDocument()));
+		seed(parsedDocument());
 		localStorage.setItem('qla:theme', 'dark');
 
 		openBreakdownPage();
@@ -133,7 +337,7 @@ describe('breakdown page', () => {
 	});
 
 	it('keeps working when the new-upload dialog is dismissed', async () => {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(parsedDocument()));
+		seed(parsedDocument());
 
 		openBreakdownPage();
 		await page.getByRole('button', { name: 'New upload…' }).click();

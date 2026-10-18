@@ -1,5 +1,10 @@
+<!--
+	Where a confirmed breakdown lands: the columns the marksheet is built from,
+	read-only. The class and its marks arrive with the grid.
+-->
 <script lang="ts">
 	import NewUploadDialog from '$lib/components/marksheet/NewUploadDialog.svelte';
+	import * as Table from '$lib/components/ui/table';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { totalMarks } from '$lib/marksheet/document.js';
 
@@ -32,4 +37,22 @@
 		</div>
 		<NewUploadDialog />
 	</header>
+
+	<div class="overflow-hidden rounded-xl border">
+		<Table.Root>
+			<Table.Header>
+				<Table.Row>
+					<Table.Head class="w-48">Student</Table.Head>
+					{#each entries as entry (entry.id)}
+						<Table.Head class="w-16 px-2">
+							<span class="block">{entry.label}</span>
+							<span class="block text-xs font-normal text-muted-foreground">
+								/{entry.marks ?? '?'}
+							</span>
+						</Table.Head>
+					{/each}
+				</Table.Row>
+			</Table.Header>
+		</Table.Root>
+	</div>
 </main>

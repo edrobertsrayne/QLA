@@ -5,10 +5,7 @@
 // (no cache). No spec validation: `specPoint` is an exact verbatim lift
 // from the markscheme or null — never inferred, even when a spec is given.
 
-/** Hardcoded assessment objectives (shared AQA/OCR, GCSE + A-Level). */
-export const ASSESSMENT_OBJECTIVES = ['AO1', 'AO2', 'AO3'] as const;
-
-export type AssessmentObjective = (typeof ASSESSMENT_OBJECTIVES)[number];
+import type { AssessmentObjective } from '$lib/parse/assessment-objectives.js';
 
 /** One breakdown entry: an undivided question, or a marked subquestion (e.g. `1a`, `2bii`). */
 export interface ParseQuestion {

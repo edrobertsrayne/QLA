@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CORRUPT_KEY_PREFIX, DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from './document.js';
-import type { MarksheetDocument } from './document.js';
+import type { BreakdownEntry, MarksheetDocument } from './document.js';
 import { MarksheetStore } from './store.svelte.js';
 import type { DocumentStorage, LoadResult } from './store.svelte.js';
 
@@ -69,6 +69,44 @@ function storedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDo
 
 function storeWith(storage: DocumentStorage, now: () => Date = () => NOW) {
 	return new MarksheetStore({ storage, now });
+}
+
+/** One breakdown entry, for documents whose entries matter to the test. */
+function entry(
+	id: string,
+	label: string,
+	questionNumber: string,
+	overrides: Partial<BreakdownEntry> = {}
+): BreakdownEntry {
+	return {
+		id,
+		label,
+		questionNumber,
+		marks: 4,
+		summary: 'Explain the process shown',
+		specPoint: '3.2.1.4',
+		commandWord: 'Explain',
+		ao: 'AO1',
+		...overrides
+	};
+}
+
+/** A loaded store over a seeded document, with its storage alongside. */
+function openStore(overrides: Partial<MarksheetDocument> = {}) {
+	const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument(overrides)) });
+	const store = storeWith(storage);
+	store.load();
+	return { store, storage };
+}
+
+/** The document as it last reached storage. */
+function stored(storage: FakeStorage): MarksheetDocument {
+	return JSON.parse(storage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
+}
+
+/** Entries the document keyed by id, so a test can assert the store's state. */
+function entryOf(store: MarksheetStore, id: string): BreakdownEntry | undefined {
+	return store.document?.breakdown.entries.find((candidate) => candidate.id === id);
 }
 
 /** The key an unreadable document was preserved under, asserting the load found one. */
@@ -564,5 +602,223 @@ describe('wipe', () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+});
+
+describe('breakdown edits', () => {
+	it('edits every field in place, writing once', () => {
+		vi.useFakeTimers();
+		try {
+			const { store, storage } = openStore();
+
+			// A label is stored trimmed: it becomes a marksheet column heading.
+			store.setEntryLabel('entry-1', ' 2b ');
+			store.setBandQuestionNumber(['entry-1'], '3');
+			store.setEntryMarks('entry-1', 6);
+			store.setEntrySummary('entry-1', 'Explain the rate change');
+			store.setEntrySpecPoint('entry-1', '3.2.2.1');
+			store.setEntryCommandWord('entry-1', 'State');
+			store.setEntryAo('entry-1', 'AO3');
+			vi.advanceTimersByTime(500);
+
+			expect(stored(storage).breakdown.entries).toEqual([
+				{
+					id: 'entry-1',
+					label: '2b',
+					questionNumber: '3',
+					marks: 6,
+					summary: 'Explain the rate change',
+					specPoint: '3.2.2.1',
+					commandWord: 'State',
+					ao: 'AO3'
+				}
+			]);
+			expect(storage.writes.filter((key) => key === STORAGE_KEY)).toEqual([STORAGE_KEY]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('refuses marks that are not positive whole numbers', () => {
+		const { store } = openStore();
+
+		for (const refused of [2.5, 0, -3, Number.NaN, Number.POSITIVE_INFINITY]) {
+			store.setEntryMarks('entry-1', refused);
+			expect(entryOf(store, 'entry-1')?.marks).toBe(4);
+		}
+	});
+
+	it('takes a positive whole number, and empties the cell back to no available marks', () => {
+		const { store } = openStore();
+
+		store.setEntryMarks('entry-1', 7);
+		expect(entryOf(store, 'entry-1')?.marks).toBe(7);
+
+		store.setEntryMarks('entry-1', null);
+		expect(entryOf(store, 'entry-1')?.marks).toBeNull();
+	});
+
+	it('reads a blank spec point or command word as none, trimming what it keeps', () => {
+		const { store } = openStore();
+
+		store.setEntrySpecPoint('entry-1', '  ');
+		store.setEntryCommandWord('entry-1', '');
+		store.setEntryAo('entry-1', null);
+
+		expect(entryOf(store, 'entry-1')).toMatchObject({
+			specPoint: null,
+			commandWord: null,
+			ao: null
+		});
+
+		store.setEntrySpecPoint('entry-1', ' 3.2.1.4 ');
+		store.setEntryCommandWord('entry-1', ' Describe ');
+
+		expect(entryOf(store, 'entry-1')).toMatchObject({
+			specPoint: '3.2.1.4',
+			commandWord: 'Describe'
+		});
+	});
+
+	it('gives a band its new question number, re-banding its rows', () => {
+		const { store } = openStore({
+			breakdown: {
+				entries: [
+					entry('entry-1', '1a', '1'),
+					entry('entry-2', '1b', '1'),
+					entry('entry-3', '2a', '2')
+				],
+				warnings: []
+			}
+		});
+
+		store.setBandQuestionNumber(['entry-1', 'entry-2'], '5');
+
+		expect(store.document?.breakdown.entries.map((one) => one.questionNumber)).toEqual([
+			'5',
+			'5',
+			'2'
+		]);
+		expect(store.questionBands.map((band) => band.entries.length)).toEqual([2, 1]);
+	});
+
+	it('ignores an edit aimed at an entry that is not there', () => {
+		vi.useFakeTimers();
+		try {
+			const { store, storage } = openStore();
+
+			store.setEntryLabel('entry-gone', '2b');
+			store.setEntryMarks('entry-gone', 3);
+			vi.advanceTimersByTime(500);
+
+			expect(entryOf(store, 'entry-1')?.label).toBe('2bii');
+			expect(storage.writes.filter((key) => key === STORAGE_KEY)).toEqual([]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('leaves a confirmed breakdown alone', () => {
+		const { store } = openStore({ breakdownConfirmedAt: NOW.toISOString() });
+
+		store.setEntryLabel('entry-1', '2b');
+		store.setBandQuestionNumber(['entry-1'], '9');
+		store.setEntryMarks('entry-1', 9);
+		store.setEntrySummary('entry-1', 'Something else');
+		store.setEntrySpecPoint('entry-1', '9.9.9.9');
+		store.setEntryCommandWord('entry-1', 'State');
+		store.setEntryAo('entry-1', 'AO3');
+
+		expect(entryOf(store, 'entry-1')).toEqual(storedDocument().breakdown.entries[0]);
+	});
+});
+
+describe('confirm breakdown', () => {
+	it('confirms a complete breakdown, saving it so a reload lands on the marksheet', () => {
+		vi.useFakeTimers();
+		try {
+			const { store, storage } = openStore();
+			expect(store.blockers.blocked).toBe(false);
+
+			expect(store.confirmBreakdown()).toBe(true);
+			vi.advanceTimersByTime(500);
+
+			expect(entryOf(store, 'entry-1')).toEqual(storedDocument().breakdown.entries[0]);
+			expect(store.route()).toBe('/marksheet');
+			expect(stored(storage).breakdownConfirmedAt).toBe(NOW.toISOString());
+
+			const reloaded = storeWith(storage);
+			reloaded.load();
+			expect(reloaded.route()).toBe('/marksheet');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is already done when the breakdown was confirmed before', () => {
+		const confirmedAt = '2025-12-01T09:00:00.000Z';
+		const { store } = openStore({ breakdownConfirmedAt: confirmedAt });
+
+		expect(store.confirmBreakdown()).toBe(true);
+
+		expect(store.document?.breakdownConfirmedAt).toBe(confirmedAt);
+	});
+
+	it('refuses while an entry has no available marks, naming it', () => {
+		const { store } = openStore({
+			breakdown: {
+				entries: [
+					entry('entry-1', '1a', '1', { marks: 3 }),
+					entry('entry-2', '2bii', '2', { marks: null })
+				],
+				warnings: []
+			}
+		});
+
+		expect(store.confirmBreakdown()).toBe(false);
+
+		expect(store.document?.breakdownConfirmedAt).toBeNull();
+		expect(store.route()).toBe('/breakdown');
+		expect(store.blockers).toMatchObject({
+			blocked: true,
+			noAvailableMarks: [expect.objectContaining({ label: '2bii' })],
+			emptyLabels: [],
+			duplicateLabels: []
+		});
+	});
+
+	it('refuses while a label is empty or repeated, naming the offenders', () => {
+		const { store } = openStore({
+			breakdown: {
+				entries: [
+					entry('entry-1', '2bii', '2'),
+					entry('entry-2', '2bii', '2'),
+					entry('entry-3', '   ', '3')
+				],
+				warnings: []
+			}
+		});
+
+		expect(store.confirmBreakdown()).toBe(false);
+
+		expect(store.document?.breakdownConfirmedAt).toBeNull();
+		expect(store.blockers.emptyLabels.map((offender) => offender.id)).toEqual(['entry-3']);
+		expect(store.blockers.duplicateLabels.map((offender) => offender.id)).toEqual([
+			'entry-1',
+			'entry-2'
+		]);
+	});
+
+	it('confirms once the blockers are fixed', () => {
+		const { store } = openStore({
+			breakdown: { entries: [entry('entry-1', '', '1', { marks: null })], warnings: [] }
+		});
+		expect(store.confirmBreakdown()).toBe(false);
+
+		store.setEntryLabel('entry-1', '1a');
+		store.setEntryMarks('entry-1', 2);
+
+		expect(store.confirmBreakdown()).toBe(true);
+		expect(store.route()).toBe('/marksheet');
 	});
 });

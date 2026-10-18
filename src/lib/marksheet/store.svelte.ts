@@ -7,6 +7,15 @@
 // document directly.
 
 import type { Breakdown, ParseUsage, ParseWarning } from '$lib/server/parse/schema.js';
+import type { AssessmentObjective } from '$lib/parse/assessment-objectives.js';
+import {
+	confirmationBlockers,
+	needsAttention,
+	questionBands,
+	type AttentionItem,
+	type ConfirmationBlockers,
+	type QuestionBand
+} from './breakdown.js';
 import {
 	CORRUPT_KEY_PREFIX,
 	DOCUMENT_SCHEMA_VERSION,
@@ -99,6 +108,12 @@ function scheduleTimer(ms: number, run: () => void): () => void {
 	return () => clearTimeout(handle);
 }
 
+/** A field the teacher has cleared means "none", not an empty string. */
+function trimOrNull(value: string | null): string | null {
+	const trimmed = value?.trim() ?? '';
+	return trimmed === '' ? null : trimmed;
+}
+
 export class MarksheetStore {
 	readonly #storage: DocumentStorage;
 	readonly #now: () => Date;
@@ -184,6 +199,22 @@ export class MarksheetStore {
 		return document.breakdownConfirmedAt === null ? '/breakdown' : '/marksheet';
 	}
 
+	/** The bands the breakdown table groups its rows under. */
+	get questionBands(): QuestionBand[] {
+		return questionBands(this.document?.breakdown.entries ?? []);
+	}
+
+	/** What stops the breakdown being confirmed right now. */
+	get blockers(): ConfirmationBlockers {
+		return confirmationBlockers(this.document?.breakdown.entries ?? []);
+	}
+
+	/** The entries worth a second look before confirming, in document order. */
+	get attention(): AttentionItem[] {
+		const breakdown = this.document?.breakdown;
+		return breakdown ? needsAttention(breakdown) : [];
+	}
+
 	/**
 	 * The parse handoff: a run that validated becomes the stored document at
 	 * once, unconfirmed, so a reload before the teacher has read it costs
@@ -247,6 +278,82 @@ export class MarksheetStore {
 		this.#mutated();
 	}
 
+	/** Edit a breakdown entry's label: display only, so no marks move. */
+	setEntryLabel(entryId: string, label: string): void {
+		this.#editEntries([entryId], (entry) => {
+			entry.label = label.trim();
+		});
+	}
+
+	/** Edit what the entry asks. */
+	setEntrySummary(entryId: string, summary: string): void {
+		this.#editEntries([entryId], (entry) => {
+			entry.summary = summary;
+		});
+	}
+
+	/**
+	 * Re-band a whole band under one question number, or a single row when the
+	 * table is not banded: the number belongs to the band rather than the row,
+	 * so every entry in a run moves together.
+	 */
+	setBandQuestionNumber(entryIds: readonly string[], questionNumber: string): void {
+		const number = questionNumber.trim();
+		this.#editEntries(entryIds, (entry) => {
+			entry.questionNumber = number;
+		});
+	}
+
+	/**
+	 * Set an entry's available marks, or null to leave it unknown. Only a
+	 * positive whole number is taken: anything else is refused outright, so a
+	 * typo cannot become a fractional or negative column. Marks already entered
+	 * by students are never clamped to the new total.
+	 */
+	setEntryMarks(entryId: string, marks: number | null): void {
+		if (marks !== null && (!Number.isInteger(marks) || marks < 1)) return;
+		this.#editEntries([entryId], (entry) => {
+			entry.marks = marks;
+		});
+	}
+
+	/** Set the specification point. An empty field means none. */
+	setEntrySpecPoint(entryId: string, specPoint: string | null): void {
+		this.#editEntries([entryId], (entry) => {
+			entry.specPoint = trimOrNull(specPoint);
+		});
+	}
+
+	/** Set the command word. An empty field means none. */
+	setEntryCommandWord(entryId: string, commandWord: string | null): void {
+		this.#editEntries([entryId], (entry) => {
+			entry.commandWord = trimOrNull(commandWord);
+		});
+	}
+
+	/** Set the assessment objective, or null for none. */
+	setEntryAo(entryId: string, ao: AssessmentObjective | null): void {
+		this.#editEntries([entryId], (entry) => {
+			entry.ao = ao;
+		});
+	}
+
+	/**
+	 * Confirm the breakdown, unless something blocks the marksheet it would
+	 * build: an entry with no marks, or a blank or repeated label. Returns
+	 * whether the breakdown is confirmed, changing nothing when it is not.
+	 */
+	confirmBreakdown(): boolean {
+		const document = this.document;
+		if (!document) return false;
+		if (document.breakdownConfirmedAt !== null) return true;
+		if (confirmationBlockers(document.breakdown.entries).blocked) return false;
+
+		document.breakdownConfirmedAt = this.#now().toISOString();
+		this.#mutated();
+		return true;
+	}
+
 	/** Write anything pending now: a hidden or closing tab must not lose keystrokes. */
 	flush(): void {
 		if (this.#cancelTimer === null) return;
@@ -270,6 +377,26 @@ export class MarksheetStore {
 			null,
 			this.#unavailable ? { kind: 'unavailable' } : { kind: 'saved', at: this.#now() }
 		);
+	}
+
+	/**
+	 * Apply one edit to the entries a command targets, then autosave it. An edit
+	 * naming no entry in the document changes nothing; a confirmed breakdown is
+	 * read-only, and the unlock that makes it editable again is an action of its
+	 * own.
+	 */
+	#editEntries(entryIds: readonly string[], edit: (entry: BreakdownEntry) => void): void {
+		const document = this.document;
+		if (!document || document.breakdownConfirmedAt !== null) return;
+
+		let edited = false;
+		for (const entryId of entryIds) {
+			const entry = document.breakdown.entries.find((candidate) => candidate.id === entryId);
+			if (!entry) continue;
+			edit(entry);
+			edited = true;
+		}
+		if (edited) this.#mutated();
 	}
 
 	/** Adopt the state a load or a wipe found, and hand it back to the caller. */

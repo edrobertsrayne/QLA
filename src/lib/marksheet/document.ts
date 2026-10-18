@@ -4,7 +4,10 @@
 // boot-time load and (later) backup restore, so a file we accept from disk is
 // the same thing we accept from storage. It has no I/O and no reactive state.
 
-import type { AssessmentObjective } from '$lib/server/parse/schema.js';
+import {
+	assessmentObjectiveOf,
+	type AssessmentObjective
+} from '$lib/parse/assessment-objectives.js';
 import { isRecord } from '$lib/parse/is-breakdown.js';
 
 /** localStorage key holding the marksheet document. */
@@ -15,8 +18,6 @@ export const CORRUPT_KEY_PREFIX = 'qla:marksheet:corrupt:';
 
 /** Only version we know how to read. Anything else is treated as unreadable. */
 export const DOCUMENT_SCHEMA_VERSION = 1;
-
-const ASSESSMENT_OBJECTIVES: ReadonlySet<string> = new Set(['AO1', 'AO2', 'AO3']);
 
 /**
  * One column of a marksheet: an undivided question or a marked subquestion.
@@ -62,6 +63,12 @@ export interface StoredStudent {
 	absent: boolean;
 }
 
+/** The breakdown as stored: its entries, and the findings the parse left beside them. */
+export interface StoredBreakdown {
+	entries: BreakdownEntry[];
+	warnings: StoredWarning[];
+}
+
 export interface MarksheetDocument {
 	schemaVersion: number;
 	createdAt: string;
@@ -71,7 +78,7 @@ export interface MarksheetDocument {
 	/** Last backup download. Marks export never touches it. */
 	lastExportedAt: string | null;
 	paper: StoredPaper;
-	breakdown: { entries: BreakdownEntry[]; warnings: StoredWarning[] };
+	breakdown: StoredBreakdown;
 	/** Array order is display order. */
 	students: StoredStudent[];
 	/** Sparse: `marks[studentId][entryId]`, absent key = unmarked. */
@@ -83,7 +90,7 @@ function isStringOrNull(value: unknown): value is string | null {
 }
 
 function isAssessmentObjective(value: unknown): value is AssessmentObjective {
-	return typeof value === 'string' && ASSESSMENT_OBJECTIVES.has(value);
+	return typeof value === 'string' && assessmentObjectiveOf(value) !== null;
 }
 
 /** Parse every item, or nothing: one unreadable item makes the whole document unreadable. */

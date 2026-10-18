@@ -8,7 +8,8 @@
 // or null, summary 3–8 words, specPoint string-or-null (exact lift, never
 // validated), commandWord string-or-null, ao AO1/AO2/AO3-or-null.
 
-import { ASSESSMENT_OBJECTIVES, type ParseWarning } from './schema';
+import type { ParseWarning } from './schema';
+import { ASSESSMENT_OBJECTIVES } from '$lib/parse/assessment-objectives.js';
 import { isBreakdown, isRecord } from '$lib/parse/is-breakdown.js';
 
 export { isBreakdown };

@@ -114,7 +114,13 @@ describe('first paint', () => {
 
 		const screen = render(BreakdownPage);
 
-		expect(screen.container.textContent).toContain('2bii');
+		// Every cell is editable in place, so the entry's label is an input's value.
+		expect(screen.container.querySelector<HTMLInputElement>('[data-field="label"]')?.value).toBe(
+			'2bii'
+		);
+		expect(screen.container.querySelector<HTMLInputElement>('[data-field="marks"]')?.value).toBe(
+			'4'
+		);
 		expect(screen.container.textContent).not.toMatch(/loading/i);
 		expect(document.title).toBe('10X Ph1 · Breakdown · QLA');
 	});
@@ -126,6 +132,9 @@ describe('first paint', () => {
 		const screen = render(MarksheetPage);
 
 		expect(screen.container.textContent).toContain('entries · 4 marks');
+		// The columns the marksheet is built from, read-only.
+		expect(screen.container.textContent).toContain('2bii');
+		expect(screen.container.textContent).toContain('/4');
 		expect(screen.container.textContent).not.toMatch(/loading/i);
 		expect(document.title).toBe('Marksheet · QLA');
 	});
