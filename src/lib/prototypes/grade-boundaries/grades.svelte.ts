@@ -226,6 +226,12 @@ export function loadSample(): void {
 /** Grade scales a teacher can start from; the labels are only a starting point. */
 export const SCALES: { name: string; labels: string[] }[] = [
 	{ name: 'GCSE 9–1', labels: ['9', '8', '7', '6', '5', '4', '3', '2', '1'] },
+	{
+		name: 'GCSE Combined Science 9-9–1-1',
+		labels: [9, 8, 7, 6, 5, 4, 3, 2, 1].flatMap((n) =>
+			n === 1 ? ['1-1'] : [`${n}-${n}`, `${n}-${n - 1}`]
+		)
+	},
 	{ name: 'A level A*–E', labels: ['A*', 'A', 'B', 'C', 'D', 'E'] },
 	{ name: 'Distinction / Merit / Pass', labels: ['Distinction', 'Merit', 'Pass'] },
 	{ name: 'Working at (school)', labels: ['Greater depth', 'Expected', 'Working towards'] }

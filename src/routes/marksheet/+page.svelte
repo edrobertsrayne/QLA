@@ -28,7 +28,7 @@
 	// The route's load guard has read storage by the time this renders.
 	const store = marksheetStore();
 	const variant = $derived(
-		(['A', 'B', 'C', 'D'] as const).find((k) => k === page.url.searchParams.get('variant')) ?? 'A'
+		(['A', 'B', 'C', 'D'] as const).find((k) => k === page.url.searchParams.get('variant')) ?? 'B'
 	);
 	const className = $derived(store.document?.paper.className ?? null);
 	const title = $derived(className ? `${className} · Marksheet · QLA` : 'Marksheet · QLA');
