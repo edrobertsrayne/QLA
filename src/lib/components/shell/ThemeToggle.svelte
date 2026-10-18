@@ -5,6 +5,7 @@
 	removes the marksheet document.
 -->
 <script lang="ts">
+	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import MonitorIcon from '@lucide/svelte/icons/monitor';
 	import MoonIcon from '@lucide/svelte/icons/moon';
 	import SunIcon from '@lucide/svelte/icons/sun';
@@ -15,20 +16,26 @@
 		{ value: 'dark', label: 'Dark', Icon: MoonIcon },
 		{ value: 'system', label: 'System', Icon: MonitorIcon }
 	] as const;
+
+	/** A single-choice group lets the chosen item be clicked off; a theme is always one of the three. */
+	function choose(value: string): void {
+		const option = OPTIONS.find((candidate) => candidate.value === value);
+		if (option) userPrefersMode.current = option.value;
+	}
 </script>
 
-<div class="inline-flex rounded-full border p-0.5" role="radiogroup" aria-label="Theme">
+<ToggleGroup.Root
+	type="single"
+	size="sm"
+	variant="outline"
+	aria-label="Theme"
+	value={userPrefersMode.current}
+	onValueChange={choose}
+>
 	{#each OPTIONS as option (option.value)}
-		<button
-			type="button"
-			role="radio"
-			aria-checked={userPrefersMode.current === option.value}
-			title={option.label}
-			class="flex size-7 items-center justify-center rounded-full text-muted-foreground hover:text-foreground aria-checked:bg-muted aria-checked:text-foreground"
-			onclick={() => (userPrefersMode.current = option.value)}
-		>
+		<ToggleGroup.Item value={option.value} title={option.label}>
 			<option.Icon class="size-3.5" />
 			<span class="sr-only">{option.label}</span>
-		</button>
+		</ToggleGroup.Item>
 	{/each}
-</div>
+</ToggleGroup.Root>

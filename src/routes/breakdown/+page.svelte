@@ -10,6 +10,7 @@
 	import BreakdownTable from '$lib/components/marksheet/BreakdownTable.svelte';
 	import BackupCard from '$lib/components/shell/BackupCard.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import {
@@ -277,9 +278,9 @@
 				</Button>
 			</section>
 
-			<label class="flex items-center gap-1.5 text-xs text-muted-foreground">
-				<input type="checkbox" bind:checked={banded} /> Band by question
-			</label>
+			<Label class="gap-1.5 text-xs font-normal text-muted-foreground">
+				<Checkbox bind:checked={banded} /> Band by question
+			</Label>
 		</aside>
 
 		<div class="min-w-0 space-y-3">

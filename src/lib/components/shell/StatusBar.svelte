@@ -7,6 +7,7 @@
 	storage is working and nothing is stored yet.
 -->
 <script lang="ts">
+	import { Button } from '$lib/components/ui/button';
 	import { backUpNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { statusLine, storageNote, type StatusTone } from '$lib/marksheet/status.js';
 
@@ -62,9 +63,14 @@
 		></span>
 		<span data-testid="save-line">{line.text}</span>
 		{#if rescueable}
-			<button type="button" class="underline underline-offset-2" onclick={backUpNow}>
+			<Button
+				variant="link"
+				size="xs"
+				class="h-auto p-0 text-inherit underline underline-offset-2"
+				onclick={backUpNow}
+			>
 				Download backup now
-			</button>
+			</Button>
 		{/if}
 		{#if note}
 			<span class="ml-auto" data-testid="storage-note">{note}</span>

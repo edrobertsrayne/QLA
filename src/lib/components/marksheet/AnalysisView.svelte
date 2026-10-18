@@ -234,16 +234,16 @@
 	</section>
 
 	<section>
-		<button
-			type="button"
-			class="mb-2 flex items-center gap-2 text-base font-semibold"
+		<Button
+			variant="ghost"
+			class="mb-2 h-auto gap-2 p-0 text-base font-semibold hover:bg-transparent"
 			aria-expanded={greenOpen}
 			onclick={() => (greenOpen = !greenOpen)}
 		>
 			<ChevronRightIcon class={cn('size-4', greenOpen && 'rotate-90')} />
 			Green — {greenFrom}% and above
 			<span class="text-sm font-normal text-muted-foreground">({sections.green.length})</span>
-		</button>
+		</Button>
 		{#if greenOpen}
 			{@render rowList(sections.green)}
 		{/if}
