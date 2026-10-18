@@ -33,19 +33,23 @@
 		entryName,
 		fallbackBands,
 		isFallbackBand,
-		isWholeNumber,
 		warningsForEntry,
 		runWarnings,
 		type QuestionBand
 	} from '$lib/marksheet/breakdown.js';
-	import type { BreakdownEntry, StoredStudent } from '$lib/marksheet/document.js';
+	import {
+		isOverMax,
+		readMarkText,
+		type BreakdownEntry,
+		type StoredStudent
+	} from '$lib/marksheet/document.js';
 	import { resolveCell, type GridCell } from '$lib/marksheet/grid-cursor.js';
 	import { exportMarksNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { clipboardGrid, type PasteResult } from '$lib/marksheet/paste.js';
 	import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
 	import {
 		progressOf,
-		splitName,
+		readName,
 		studentName,
 		type StudentSortKey
 	} from '$lib/marksheet/students.js';
@@ -263,11 +267,6 @@
 		return marks[student.id]?.[entry.id];
 	}
 
-	/** Whether a mark is above what the entry offers: kept as typed, and shown for what it is. */
-	function isOverMax(mark: number | undefined, entry: BreakdownEntry): boolean {
-		return mark !== undefined && entry.marks !== null && mark > entry.marks;
-	}
-
 	/** Put the caret at the end of an open editor, so typing carries on from there. */
 	function focusEditor(studentId: string, entryId: string): void {
 		const input = document.querySelector<HTMLInputElement>(
@@ -307,15 +306,12 @@
 		editing = null;
 		if (!open) return null;
 
-		const typed = open.value.trim();
-		if (typed === '') {
-			store.clearMark(open.studentId, open.entryId);
-			return null;
-		}
-		if (!isWholeNumber(typed)) {
+		const read = readMarkText(open.value);
+		if (read.kind === 'refused') {
 			return `“${open.value}” was not stored: a mark is a whole number, or empty for a cell with no mark.`;
 		}
-		store.setMark(open.studentId, open.entryId, Number(typed));
+		if (read.kind === 'clear') store.clearMark(open.studentId, open.entryId);
+		else store.setMark(open.studentId, open.entryId, read.mark);
 		return null;
 	}
 
@@ -573,9 +569,9 @@
 		// A name typed over the old one replaces it; a name edited in place keeps
 		// whichever parts the teacher left alone.
 		const name = open.replace
-			? splitName(open.firstName)
+			? readName(open.firstName)
 			: { firstName: open.firstName.trim(), surname: open.surname.trim() };
-		if (studentName(name) === '') return;
+		if (!name || studentName(name) === '') return;
 		store.renameStudent(open.studentId, name);
 	}
 
@@ -606,8 +602,8 @@
 		}
 		if (event.key !== 'Enter') return;
 		event.preventDefault();
-		const name = splitName(newName);
-		if (studentName(name) === '') {
+		const name = readName(newName);
+		if (!name) {
 			discardNewStudent();
 			return;
 		}
@@ -1064,7 +1060,7 @@
 					</Table.Cell>
 					{#each entries as entry (entry.id)}
 						{@const mark = markOf(student, entry)}
-						{@const overMax = isOverMax(mark, entry)}
+						{@const overMax = mark !== undefined && isOverMax(mark, entry)}
 						<Table.Cell
 							role="gridcell"
 							data-testid="mark-cell"

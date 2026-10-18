@@ -5,7 +5,7 @@
 // rules for reading a pasted name are in one place rather than repeated by
 // every surface that takes one.
 
-import type { BreakdownEntry, StoredStudent } from './document.js';
+import { localId, type BreakdownEntry, type StoredStudent } from './document.js';
 
 /** A student's two name parts, as the stored document holds them. */
 export interface StudentName {
@@ -35,6 +35,17 @@ export function splitName(cell: string): StudentName {
 	const words = trimmed.split(/\s+/);
 	if (words.length === 1) return { firstName: words[0], surname: '' };
 	return { firstName: words.slice(0, -1).join(' '), surname: words[words.length - 1] };
+}
+
+/** A typed or pasted name, or null when it names nobody (blank, or only punctuation). */
+export function readName(text: string): StudentName | null {
+	const name = splitName(text);
+	return studentName(name) === '' ? null : name;
+}
+
+/** A new student on this device, unmarked and present. */
+export function newStudent(name: StudentName): StoredStudent {
+	return { id: localId(), firstName: name.firstName, surname: name.surname, absent: false };
 }
 
 /** The class a pasted column of names makes: one name per line, blank lines skipped. */

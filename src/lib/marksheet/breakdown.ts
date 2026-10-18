@@ -224,14 +224,6 @@ export function fallbackBands(
 	return bands.filter((band) => isFallbackBand(band, warnings));
 }
 
-/**
- * Whether typed text is a whole number — the only shape a mark or a printed
- * total is allowed to take.
- */
-export function isWholeNumber(typed: string): boolean {
-	return /^\d+$/.test(typed.trim());
-}
-
 /** What to call an entry in prose: its label, or a stand-in while it has none. */
 export function entryName(entry: BreakdownEntry): string {
 	const label = entry.label.trim();

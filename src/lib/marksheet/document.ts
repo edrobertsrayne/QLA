@@ -329,15 +329,87 @@ export function marksOnEntry(document: MarksheetDocument, entryId: string): numb
  * available marks has nothing for a mark to be above.
  */
 export function marksOverMax(document: MarksheetDocument, entryId: string): number {
-	const available = document.breakdown.entries.find((entry) => entry.id === entryId)?.marks ?? null;
-	if (available === null) return 0;
+	const entry = document.breakdown.entries.find((candidate) => candidate.id === entryId);
+	if (!entry) return 0;
 
 	let over = 0;
 	for (const byEntry of Object.values(document.marks)) {
 		const mark = byEntry[entryId];
-		if (mark !== undefined && mark > available) over += 1;
+		if (mark !== undefined && isOverMax(mark, entry)) over += 1;
 	}
 	return over;
+}
+
+/**
+ * Whether a mark is above what the entry offers. An entry with no available
+ * marks has nothing for a mark to be above.
+ */
+export function isOverMax(mark: number, entry: Pick<BreakdownEntry, 'marks'>): boolean {
+	return entry.marks !== null && mark > entry.marks;
+}
+
+/**
+ * Whether typed text is a whole number — the only shape a mark or a printed
+ * total is allowed to take.
+ */
+export function isWholeNumber(typed: string): boolean {
+	return /^\d+$/.test(typed.trim());
+}
+
+/** Typed or pasted cell text, read as a mark. */
+export type MarkText = { kind: 'clear' } | { kind: 'mark'; mark: number } | { kind: 'refused' };
+
+/** Typed or pasted cell text as a mark: empty clears, a whole number is a mark, anything else is refused. */
+export function readMarkText(text: string): MarkText {
+	const typed = text.trim();
+	if (typed === '') return { kind: 'clear' };
+	if (!isWholeNumber(typed)) return { kind: 'refused' };
+	return { kind: 'mark', mark: Number(typed) };
+}
+
+/**
+ * A stable id generated on this device, for an entry or a student. Marks are
+ * filed under it, so renaming, inserting or sorting never reassigns them — and
+ * being local, it is not the Phase 3 pseudonymization UUID.
+ */
+export function localId(): string {
+	if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+		return crypto.randomUUID();
+	}
+	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Put a mark on a cell, and say whether the cell changed: the mark already
+ * there is not a change, so re-entering it spends no undo and bumps nothing.
+ */
+export function putMark(
+	marks: MarksheetDocument['marks'],
+	studentId: string,
+	entryId: string,
+	mark: number
+): boolean {
+	if (marks[studentId]?.[entryId] === mark) return false;
+	marks[studentId] ??= {};
+	marks[studentId][entryId] = mark;
+	return true;
+}
+
+/**
+ * Clear a cell back to unmarked, and say whether it held a mark. A student with
+ * nothing left on the sheet leaves nothing behind: marks are sparse, so an
+ * empty record is not kept for them.
+ */
+export function removeMark(
+	marks: MarksheetDocument['marks'],
+	studentId: string,
+	entryId: string
+): boolean {
+	const studentMarks = marks[studentId];
+	if (!studentMarks || studentMarks[entryId] === undefined) return false;
+	delete studentMarks[entryId];
+	if (Object.keys(studentMarks).length === 0) delete marks[studentId];
+	return true;
 }
 
 /** Seed the paper label from an uploaded filename: `10X Ph1.pdf` → `10X Ph1`. */

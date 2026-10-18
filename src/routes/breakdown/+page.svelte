@@ -16,12 +16,11 @@
 	import {
 		entryName,
 		questionCount,
-		isWholeNumber,
 		reconcilePaperTotal,
 		runWarnings,
 		type AttentionItem
 	} from '$lib/marksheet/breakdown.js';
-	import { totalMarks } from '$lib/marksheet/document.js';
+	import { isWholeNumber, totalMarks } from '$lib/marksheet/document.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 
 	// The route's load guard has read storage by the time this renders.

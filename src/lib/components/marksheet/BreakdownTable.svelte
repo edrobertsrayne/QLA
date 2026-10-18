@@ -23,13 +23,12 @@
 		entryEdits,
 		entryName,
 		isUndivided,
-		isWholeNumber,
 		warningsForEntry,
 		type EntryEdits,
 		type QuestionBand
 	} from '$lib/marksheet/breakdown.js';
 	import type { BreakdownEntry, EditableField } from '$lib/marksheet/document.js';
-	import { totalMarks } from '$lib/marksheet/document.js';
+	import { isWholeNumber, totalMarks } from '$lib/marksheet/document.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import {
 		assessmentObjectiveOf,

@@ -6,6 +6,7 @@
 // derives it the same way. Nothing here is stored: the analysis is recomputed
 // from the document as it stands, so there is no run step and no stale figures.
 
+import { isOverMax } from './document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredStudent } from './document.js';
 
 /** Below this facility, a question is one to reteach. */
@@ -140,7 +141,7 @@ function analyseEntry(
 		// coverage reports, whether or not the figure can count it.
 		marked += 1;
 		if (!measurable) continue;
-		if (mark > available) {
+		if (isOverMax(mark, entry)) {
 			overMax += 1;
 			continue;
 		}

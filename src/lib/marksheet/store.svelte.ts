@@ -12,7 +12,6 @@ import { analyseMarksheet, type MarksheetAnalysis } from './analysis.js';
 import {
 	confirmationBlockers,
 	entryName,
-	isWholeNumber,
 	needsAttention,
 	questionBands,
 	type AttentionItem,
@@ -25,10 +24,15 @@ import {
 	DOCUMENT_SCHEMA_VERSION,
 	dropUnreachableMarks,
 	entryValuesOf,
+	isOverMax,
 	labelFromFilename,
+	localId,
 	marksOnEntry,
 	marksOverMax,
-	parseStoredDocument
+	parseStoredDocument,
+	putMark,
+	readMarkText,
+	removeMark
 } from './document.js';
 import type {
 	BreakdownEntry,
@@ -44,9 +48,10 @@ import {
 	type Unreadable
 } from './persistence.svelte.js';
 import {
+	newStudent,
 	parseNameList,
+	readName,
 	sortStudentsByName,
-	splitName,
 	studentName,
 	type StudentName,
 	type StudentSortKey
@@ -97,56 +102,6 @@ function copyOf(document: MarksheetDocument): MarksheetDocument {
 function trimOrNull(value: string | null): string | null {
 	const trimmed = value?.trim() ?? '';
 	return trimmed === '' ? null : trimmed;
-}
-
-/** A new student on this device, unmarked and present. */
-function newStudent(name: StudentName): StoredStudent {
-	return { id: localId(), firstName: name.firstName, surname: name.surname, absent: false };
-}
-
-/**
- * A stable id generated on this device, for an entry or a student. Marks are
- * filed under it, so renaming, inserting or sorting never reassigns them — and
- * being local, it is not the Phase 3 pseudonymization UUID.
- */
-function localId(): string {
-	if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-		return crypto.randomUUID();
-	}
-	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-/**
- * Put a mark on a cell, and say whether the cell changed: the mark already
- * there is not a change, so re-entering it spends no undo and bumps nothing.
- */
-function putMark(
-	marks: MarksheetDocument['marks'],
-	studentId: string,
-	entryId: string,
-	mark: number
-): boolean {
-	if (marks[studentId]?.[entryId] === mark) return false;
-	marks[studentId] ??= {};
-	marks[studentId][entryId] = mark;
-	return true;
-}
-
-/**
- * Clear a cell back to unmarked, and say whether it held a mark. A student with
- * nothing left on the sheet leaves nothing behind: marks are sparse, so an
- * empty record is not kept for them.
- */
-function removeMark(
-	marks: MarksheetDocument['marks'],
-	studentId: string,
-	entryId: string
-): boolean {
-	const studentMarks = marks[studentId];
-	if (!studentMarks || studentMarks[entryId] === undefined) return false;
-	delete studentMarks[entryId];
-	if (Object.keys(studentMarks).length === 0) delete marks[studentId];
-	return true;
 }
 
 export class MarksheetStore {
@@ -643,8 +598,8 @@ export class MarksheetStore {
 					result.rowsDropped += 1;
 					return;
 				}
-				const parsedName = splitName(name);
-				if (studentName(parsedName) === '') {
+				const parsedName = readName(name);
+				if (!parsedName) {
 					result.rowsDropped += 1;
 					return;
 				}
@@ -660,16 +615,16 @@ export class MarksheetStore {
 
 				const raw = row[firstMarkColumn + column];
 				if (raw === undefined) continue;
-				const typed = raw.trim();
+				const read = readMarkText(raw);
 
-				if (typed === '') {
+				if (read.kind === 'clear') {
 					if (!removeMark(document.marks, target.id, entry.id)) continue;
 					result.marksCleared += 1;
 					changed = true;
 					continue;
 				}
 
-				if (!isWholeNumber(typed)) {
+				if (read.kind === 'refused') {
 					result.refused.push({
 						row: rowIndex + 1,
 						column: firstMarkColumn + column + 1,
@@ -678,11 +633,10 @@ export class MarksheetStore {
 					continue;
 				}
 
-				const mark = Number(typed);
-				if (!putMark(document.marks, target.id, entry.id, mark)) continue;
+				if (!putMark(document.marks, target.id, entry.id, read.mark)) continue;
 				result.marksStored += 1;
 				changed = true;
-				if (entry.marks !== null && mark > entry.marks) result.overMax += 1;
+				if (isOverMax(read.mark, entry)) result.overMax += 1;
 			}
 		});
 
