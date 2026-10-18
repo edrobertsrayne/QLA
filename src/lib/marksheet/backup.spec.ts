@@ -101,7 +101,7 @@ describe('readBackup', () => {
 	it('reads what the restore confirm names: paper, class, students, marks and age', () => {
 		const document = marksheet({ lastExportedAt: taken(3) });
 
-		expect(readBackup(JSON.stringify(document))).toEqual({
+		expect(readBackup(JSON.stringify(document))?.summary).toEqual({
 			paperLabel: '10X Ph1',
 			className: '10C1',
 			students: 2,
@@ -117,7 +117,7 @@ describe('readBackup', () => {
 			marks: {}
 		});
 
-		expect(readBackup(JSON.stringify(document))).toEqual({
+		expect(readBackup(JSON.stringify(document))?.summary).toEqual({
 			paperLabel: null,
 			className: null,
 			students: 0,

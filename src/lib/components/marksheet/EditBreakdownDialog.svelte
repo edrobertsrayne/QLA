@@ -8,12 +8,10 @@
 	what will, since raising a total, the common fix, costs nothing.
 -->
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { marksheetStore } from '$lib/marksheet/index.js';
+	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 
 	const store = marksheetStore();
 	let open = $state(false);
@@ -22,7 +20,7 @@
 	function editBreakdown(): void {
 		if (!store.unlockBreakdown()) return;
 		open = false;
-		void goto(resolve('/breakdown'));
+		goToSurface();
 	}
 </script>
 

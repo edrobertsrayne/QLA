@@ -4,7 +4,8 @@ import {
 	DOCUMENT_SCHEMA_VERSION,
 	STORAGE_KEY,
 	entryValuesOf,
-	markCount
+	markCount,
+	parseStoredDocument
 } from './document.js';
 import type {
 	BreakdownEntry,
@@ -2370,6 +2371,13 @@ describe('exporting the marks to a spreadsheet', () => {
 	});
 });
 
+/** A document as a restore is handed it: read from its file, not built in memory. */
+function readable(document: MarksheetDocument): MarksheetDocument {
+	const read = parseStoredDocument(JSON.stringify(document));
+	if (!read) throw new Error('not a document');
+	return read;
+}
+
 describe('restoring a backup', () => {
 	it('brings a marksheet back, marks and all, from the file it handed out', () => {
 		const { store } = openStore({
@@ -2383,7 +2391,8 @@ describe('restoring a backup', () => {
 		const storage = fakeStorage();
 		const fresh = storeWith(storage);
 
-		expect(fresh.restoreBackup(file?.text ?? '')).toBe('/marksheet');
+		expect(fresh.restoreBackup(readable(JSON.parse(file?.text ?? '')))).toBe(true);
+		expect(fresh.route()).toBe('/marksheet');
 		expect(fresh.document?.paper.label).toBe('Ph1');
 		expect(fresh.document?.paper.className).toBe('10C1');
 		expect(fresh.document?.students).toEqual([student('student-1', 'Ada', 'Lovelace')]);
@@ -2397,16 +2406,20 @@ describe('restoring a backup', () => {
 	});
 
 	it('lands the restored document on the surface its state allows', () => {
-		const unconfirmed = JSON.stringify(storedDocument({ breakdownConfirmedAt: null }));
-		const confirmed = JSON.stringify(storedDocument({ breakdownConfirmedAt: NOW.toISOString() }));
+		const unconfirmed = readable(storedDocument({ breakdownConfirmedAt: null }));
+		const confirmed = readable(storedDocument({ breakdownConfirmedAt: NOW.toISOString() }));
 
-		expect(storeWith(fakeStorage()).restoreBackup(unconfirmed)).toBe('/breakdown');
-		expect(storeWith(fakeStorage()).restoreBackup(confirmed)).toBe('/marksheet');
+		const toReview = storeWith(fakeStorage());
+		expect(toReview.restoreBackup(unconfirmed)).toBe(true);
+		expect(toReview.route()).toBe('/breakdown');
+		const toMarksheet = storeWith(fakeStorage());
+		expect(toMarksheet.restoreBackup(confirmed)).toBe(true);
+		expect(toMarksheet.route()).toBe('/marksheet');
 	});
 
 	it('drops marks whose student or entry the file no longer holds', () => {
 		const store = storeWith(fakeStorage());
-		const orphaned = JSON.stringify(
+		const orphaned = readable(
 			storedDocument({
 				breakdownConfirmedAt: NOW.toISOString(),
 				students: [student('student-1', 'Ada', 'Lovelace')],
@@ -2419,25 +2432,13 @@ describe('restoring a backup', () => {
 		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
 	});
 
-	it('refuses a file that is not one of our documents, changing nothing', () => {
-		const { store, storage } = openStore();
-		const before = store.document;
-
-		expect(store.restoreBackup('not a backup at all')).toBeNull();
-		expect(store.restoreBackup('{"schemaVersion":99,"paper":{}}')).toBeNull();
-
-		expect(store.document).toBe(before);
-		expect(stored(storage).paper.label).toBe('Ph1');
-		expect(store.route()).toBe('/breakdown');
-	});
-
 	it('refuses to replace a document the browser already holds', () => {
 		const { store, storage } = openStore();
-		const other = JSON.stringify(
+		const other = readable(
 			storedDocument({ paper: { ...storedDocument().paper, label: 'Other paper' } })
 		);
 
-		expect(store.restoreBackup(other)).toBeNull();
+		expect(store.restoreBackup(other)).toBe(false);
 
 		expect(store.document?.paper.label).toBe('Ph1');
 		expect(stored(storage).paper.label).toBe('Ph1');
@@ -2447,7 +2448,7 @@ describe('restoring a backup', () => {
 		const store = storeWith(fakeStorage());
 		store.dismissBackupReminder();
 
-		store.restoreBackup(JSON.stringify(storedDocument({ lastExportedAt: null })));
+		store.restoreBackup(readable(storedDocument({ lastExportedAt: null })));
 
 		expect(store.backupReminderDismissed).toBe(false);
 	});

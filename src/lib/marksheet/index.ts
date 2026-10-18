@@ -1,8 +1,10 @@
 // The app's marksheet store: the one instance the routes render from, wired to
 // this browser's storage and clock.
 
-import { flushOnHide } from './flush.js';
+import { goto } from '$app/navigation';
+import { resolve } from '$app/paths';
 import { saveFile } from './download.js';
+import { flushOnHide } from './flush.js';
 import type { DocumentStorage } from './persistence.svelte.js';
 import { MarksheetStore } from './store.svelte.js';
 
@@ -38,6 +40,11 @@ export function marksheetStore(): MarksheetStore {
 	});
 	instance = store;
 	return store;
+}
+
+/** Go to the surface the document in hand allows: the store, not the caller, knows which. */
+export function goToSurface(): void {
+	void goto(resolve(marksheetStore().route()));
 }
 
 /**

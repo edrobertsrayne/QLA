@@ -12,8 +12,6 @@
 	Only the breakdown on its own has nothing worth a checklist.
 -->
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import CircleDashedIcon from '@lucide/svelte/icons/circle-dashed';
 	import FileSpreadsheetIcon from '@lucide/svelte/icons/file-spreadsheet';
@@ -21,7 +19,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { backupTakenAt } from '$lib/marksheet/backup.js';
 	import { markCount } from '$lib/marksheet/document.js';
-	import { backUpNow, exportMarksNow, marksheetStore } from '$lib/marksheet/index.js';
+	import { backUpNow, exportMarksNow, goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 	import { relativeTime } from '$lib/marksheet/status.js';
 
 	const store = marksheetStore();
@@ -85,7 +83,7 @@
 	function startNewUpload(): void {
 		store.wipe();
 		open = false;
-		void goto(resolve('/'));
+		goToSurface();
 	}
 </script>
 

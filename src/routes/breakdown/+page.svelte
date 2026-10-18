@@ -4,8 +4,6 @@
 	the breakdown stops being editable and becomes what marks are keyed against.
 -->
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import BreakdownTable from '$lib/components/marksheet/BreakdownTable.svelte';
 	import BackupCard from '$lib/components/shell/BackupCard.svelte';
@@ -21,7 +19,7 @@
 		type AttentionItem
 	} from '$lib/marksheet/breakdown.js';
 	import { isWholeNumber, totalMarks } from '$lib/marksheet/document.js';
-	import { marksheetStore } from '$lib/marksheet/index.js';
+	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 
 	// The route's load guard has read storage by the time this renders.
 	const store = marksheetStore();
@@ -135,7 +133,7 @@
 	}
 
 	function confirmBreakdown(): void {
-		if (store.confirmBreakdown()) void goto(resolve('/marksheet'));
+		if (store.confirmBreakdown()) goToSurface();
 	}
 </script>
 

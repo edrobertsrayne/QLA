@@ -72,19 +72,24 @@ export function backupReminder(
 }
 
 /**
- * Read a backup file, or nothing when it is not one of ours. It goes through
- * the same validator the boot gate uses, so a file QLA hands out is exactly a
- * file QLA can boot from — and anything else is refused whole, with the app
- * left as it was.
+ * Read a backup file as the document it holds and what it says of itself, or
+ * nothing when it is not one of ours. It goes through the same validator the
+ * boot gate uses, so a file QLA hands out is exactly a file QLA can boot
+ * from — and anything else is refused whole, with the app left as it was.
  */
-export function readBackup(text: string): BackupSummary | null {
+export function readBackup(
+	text: string
+): { document: MarksheetDocument; summary: BackupSummary } | null {
 	const document = parseStoredDocument(text);
 	if (!document) return null;
 	return {
-		paperLabel: document.paper.label,
-		className: document.paper.className,
-		students: document.students.length,
-		marks: markCount(document),
-		takenAt: backupTakenAt(document)
+		document,
+		summary: {
+			paperLabel: document.paper.label,
+			className: document.paper.className,
+			students: document.students.length,
+			marks: markCount(document),
+			takenAt: backupTakenAt(document)
+		}
 	};
 }

@@ -5,8 +5,6 @@
 	not one of ours is refused whole, with the app left as it was.
 -->
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -14,14 +12,19 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { readBackup, type BackupSummary } from '$lib/marksheet/backup.js';
-	import { marksheetStore } from '$lib/marksheet/index.js';
+	import type { MarksheetDocument } from '$lib/marksheet/document.js';
+	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 	import { relativeTime } from '$lib/marksheet/status.js';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 
 	const store = marksheetStore();
 
 	/** The file that has been read and is waiting for the teacher to say yes. */
-	let candidate = $state<{ filename: string; text: string; summary: BackupSummary } | null>(null);
+	let candidate = $state.raw<{
+		filename: string;
+		document: MarksheetDocument;
+		summary: BackupSummary;
+	} | null>(null);
 	/** Why the last file chosen was not one of ours. */
 	let rejection = $state<string | null>(null);
 	let open = $state(false);
@@ -46,15 +49,14 @@
 		rejection = null;
 		if (!file) return;
 
-		const text = await file.text();
-		const summary = readBackup(text);
-		if (!summary) {
+		const read = readBackup(await file.text());
+		if (!read) {
 			rejection =
 				'That file is not a QLA backup, so nothing has been changed. Choose the qla-backup-….json file you downloaded.';
 			return;
 		}
 
-		candidate = { filename: file.name, text, summary };
+		candidate = { filename: file.name, document: read.document, summary: read.summary };
 		open = true;
 	}
 
@@ -65,8 +67,7 @@
 		if (!chosen) return;
 		// The document decides where the teacher lands: an unconfirmed breakdown
 		// goes back to review, a confirmed one straight to the marksheet.
-		const route = store.restoreBackup(chosen.text);
-		if (route) void goto(resolve(route));
+		if (store.restoreBackup(chosen.document)) goToSurface();
 	}
 </script>
 

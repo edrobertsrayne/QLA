@@ -34,7 +34,6 @@ import {
 	localId,
 	marksOnEntry,
 	marksOverMax,
-	parseStoredDocument,
 	putMark,
 	removeMark
 } from './document.js';
@@ -644,24 +643,19 @@ export class MarksheetStore {
 	}
 
 	/**
-	 * Adopt a document read from a backup file, and hand back the surface its
-	 * state lands on — or nothing when the file is not one of ours, or this
-	 * browser already holds a document (replacing one is the new-upload
-	 * dialog's job, with its account of the loss), in which case the app is left
-	 * exactly as it was. The same validator reads this as reads storage, so a
-	 * file we hand out is exactly a file we can boot from.
+	 * Adopt a document read from a backup file, and say whether it was taken —
+	 * not when this browser already holds a document (replacing one is the
+	 * new-upload dialog's job, with its account of the loss), in which case the
+	 * app is left exactly as it was. Unreachable marks are dropped on the way
+	 * in, exactly as they would be on the next boot, and the document reaches
+	 * storage at once rather than on the debounce: it is the teacher's only copy
+	 * until they back up again.
 	 */
-	restoreBackup(text: string): BootRoute | null {
-		if (this.document) return null;
-		const parsed = parseStoredDocument(text);
-		if (!parsed) return null;
-
-		// Unreachable marks are dropped on the way in, exactly as they would be on
-		// the next boot, and the document reaches storage at once rather than on
-		// the debounce: it is the teacher's only copy until they back up again.
-		this.#adopt(dropUnreachableMarks(parsed));
+	restoreBackup(document: MarksheetDocument): boolean {
+		if (this.document) return false;
+		this.#adopt(dropUnreachableMarks(document));
 		this.#persistence.writeNow();
-		return this.route();
+		return true;
 	}
 
 	/** New upload: discard the marksheet document and nothing else. */
