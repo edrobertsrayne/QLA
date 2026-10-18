@@ -35,6 +35,7 @@
 		isFallbackBand,
 		isWholeNumber,
 		warningsForEntry,
+		runWarnings,
 		type QuestionBand
 	} from '$lib/marksheet/breakdown.js';
 	import type { BreakdownEntry, StoredStudent } from '$lib/marksheet/document.js';
@@ -749,6 +750,33 @@
 			</Popover.Content>
 		</Popover.Root>
 	{/if}
+	{#if warnings.length > 0}
+		<!-- The parse's findings stay reachable after confirmation: the ones about
+		     one entry, named by its label, and the ones about the run as a whole. -->
+		<Popover.Root>
+			<Popover.Trigger>
+				{#snippet child({ props })}
+					<Badge {...props} variant="outline" data-testid="parse-warnings-count">
+						<TriangleAlertIcon />
+						{warnings.length} parse warning{warnings.length === 1 ? '' : 's'}
+					</Badge>
+				{/snippet}
+			</Popover.Trigger>
+			<Popover.Content class="max-h-80 w-96 overflow-y-auto text-xs" data-testid="parse-warnings">
+				<p class="mb-1 font-medium">From the parse</p>
+				<ul class="space-y-1">
+					{#each runWarnings(warnings) as warning (warning.code + warning.message)}
+						<li><strong>{warning.code}</strong>: {warning.message}</li>
+					{/each}
+					{#each entries as entry (entry.id)}
+						{#each warningsForEntry(warnings, entry.id) as warning (warning.code + warning.message)}
+							<li><strong>{entryName(entry)}</strong> · {warning.code}: {warning.message}</li>
+						{/each}
+					{/each}
+				</ul>
+			</Popover.Content>
+		</Popover.Root>
+	{/if}
 	<!-- The way back to the entries the marks are keyed against, and at the far
 	     end from View analysis beside the marks export: a data tool, never
 	     mistaken for the page's own backup. -->
@@ -757,6 +785,9 @@
 		<Button variant="outline" size="xs" onclick={exportMarksNow}>
 			<FileSpreadsheetIcon class="size-3.5" /> Export marks to spreadsheet (.csv)
 		</Button>
+		<span class="text-[11px] text-muted-foreground" title="Not a backup: it cannot be restored">
+			Not a backup
+		</span>
 	</div>
 </div>
 
@@ -906,6 +937,12 @@
 										<dd class="inline">{entry.commandWord ?? '—'}</dd>
 									</div>
 								</dl>
+								{#each warningsForEntry(warnings, entry.id) as warning (warning.code + warning.message)}
+									<p class="mt-1 text-amber-800 dark:text-amber-300">
+										<TriangleAlertIcon class="mr-1 inline size-3" /><strong>{warning.code}</strong>:
+										{warning.message}
+									</p>
+								{/each}
 							</Popover.Content>
 						</Popover.Root>
 					</Table.Head>

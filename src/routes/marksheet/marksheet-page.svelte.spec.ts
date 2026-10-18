@@ -447,6 +447,33 @@ describe('marksheet page', () => {
 		expect(page.getByText(/expected 3–8 words/).query()).toBeNull();
 	});
 
+	it('keeps every stored parse warning reachable, run-level ones included', async () => {
+		seed(
+			confirmed({
+				breakdown: {
+					entries: [entry('entry-1', '2bii', '2')],
+					warnings: [
+						{
+							questionId: 'entry-1',
+							code: 'SUMMARY_LENGTH',
+							message: 'Summary is 2 words; expected 3–8 words.'
+						},
+						{ questionId: null, code: 'MARKS_TOTAL', message: 'Marks total 76; paper says 86.' }
+					]
+				}
+			})
+		);
+
+		openMarksheetPage();
+
+		await expect
+			.element(page.getByTestId('parse-warnings-count'))
+			.toHaveTextContent('2 parse warnings');
+		await page.getByTestId('parse-warnings-count').click();
+		await expect.element(page.getByText(/Marks total 76; paper says 86/)).toBeInTheDocument();
+		await expect.element(page.getByText(/expected 3–8 words/)).toBeInTheDocument();
+	});
+
 	it('flags no band when the parse read every question number', async () => {
 		seed(confirmed());
 
