@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
 	import { flushSync, tick } from 'svelte';
+	import ChartColumnIcon from '@lucide/svelte/icons/chart-column';
 	import ClipboardPasteIcon from '@lucide/svelte/icons/clipboard-paste';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
@@ -19,6 +20,12 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import {
+		facilityPercent,
+		notScoredLabel,
+		type EntryAnalysis,
+		type RagBand
+	} from '$lib/marksheet/analysis.js';
 	import {
 		bandName,
 		entryName,
@@ -40,6 +47,8 @@
 	} from '$lib/marksheet/students.js';
 	import { cn } from '$lib/utils.js';
 
+	let { onViewAnalysis }: { onViewAnalysis: (entryId: string | null) => void } = $props();
+
 	const store = marksheetStore();
 	const entries = $derived(store.document?.breakdown.entries ?? []);
 	const students = $derived(store.document?.students ?? []);
@@ -48,6 +57,9 @@
 	const bands = $derived(store.questionBands);
 	const fallbacks = $derived(fallbackBands(bands, warnings));
 	const undoable = $derived(store.undoable);
+	/** Every entry's facility and band, recomputed as the sheet changes. */
+	const analysis = $derived(store.analysis);
+	const hardest = $derived(analysis.hardest);
 	/** What the last paste did, cleared by the change that clears the undo it offered. */
 	const pasteNotice = $derived(store.pasteNotice);
 
@@ -108,6 +120,38 @@
 		'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100';
 	/** A column of names, as a class list has them. */
 	const NAMES_PLACEHOLDER = 'Lovelace, Ada\nGrace Hopper';
+	/**
+	 * What a facility figure is tinted with, per band. A mark cell is a fraction
+	 * of a 40&nbsp;px column, so it takes a heavier fill than the analysis view's
+	 * full-width rows to read as the same colour.
+	 */
+	const FACILITY_TINT: Record<RagBand, string> = {
+		red: 'bg-red-500/25',
+		amber: 'bg-amber-400/30',
+		green: 'bg-emerald-500/20'
+	};
+
+	/**
+	 * What one entry's figure rests on, for the cell that shows it: the cell is
+	 * the whole width of a narrow column, so the detail is the title's to carry.
+	 */
+	function facilityTitle(row: EntryAnalysis): string {
+		const lines = [`${entryName(row.entry)} — ${row.entry.summary}`];
+		if (row.facility === null) {
+			lines.push(notScoredLabel(row));
+		} else {
+			lines.push(
+				`Facility ${facilityPercent(row.facility)}%${
+					row.coverage.partMarked
+						? ` — part-marked, ${row.coverage.marked} of ${row.coverage.of}`
+						: ''
+				}`
+			);
+		}
+		if (row.overMax > 0) lines.push(`${row.overMax} above the available marks — not counted`);
+		lines.push('Click to read the analysis');
+		return lines.join('\n');
+	}
 
 	/** The cell a keystroke would land on: where the cursor is, else the first cell. */
 	const activeCell = $derived(
@@ -653,6 +697,29 @@
 {/if}
 
 <div class="flex flex-wrap items-center gap-2">
+	<Button variant="outline" size="xs" onclick={() => onViewAnalysis(null)}>
+		<ChartColumnIcon class="size-3.5" /> View analysis
+	</Button>
+	{#if hardest.length > 0}
+		<!-- The worst questions by name, so the ones to reteach are named without
+		     opening anything. Every one of them is there with its figure. -->
+		<span class="flex flex-wrap items-center gap-1.5 text-xs" data-testid="hardest">
+			<span class="font-medium">Hardest</span>
+			{#each hardest as row (row.entry.id)}
+				{#if row.facility !== null}
+					<button
+						type="button"
+						class="rounded border border-red-600/50 bg-red-500/10 px-1.5 py-0.5 tabular-nums hover:bg-red-500/20"
+						title={facilityTitle(row)}
+						onclick={() => onViewAnalysis(row.entry.id)}
+					>
+						{entryName(row.entry)}
+						<span class="text-muted-foreground">{facilityPercent(row.facility)}%</span>
+					</button>
+				{/if}
+			{/each}
+		</span>
+	{/if}
 	<span class="text-xs text-muted-foreground">Sort the class</span>
 	<Button variant="outline" size="xs" onclick={() => sortClass('firstName')}>By first name</Button>
 	<Button variant="outline" size="xs" onclick={() => sortClass('surname')}>By surname</Button>
@@ -1008,5 +1075,71 @@
 				<Table.Cell colspan={entries.length + 1} role="gridcell" />
 			</Table.Row>
 		</Table.Body>
+		<Table.Footer>
+			<!-- The figures, under the columns they belong to: one per entry, on its
+			     band's tint, so a weak question is visible while marks are entered.
+			     Part-marked ones are drawn as the estimate they are, with their
+			     coverage in the row beneath. -->
+			<Table.Row class="hover:bg-transparent">
+				<Table.Cell class={cn(NAME_COLUMN, 'px-1.5 py-1 text-xs font-semibold')}>
+					Facility
+				</Table.Cell>
+				<Table.Cell class={FROZEN_PROGRESS} style={PROGRESS_PIN} />
+				{#each analysis.entries as row (row.entry.id)}
+					<Table.Cell
+						class="border-l p-0 text-center"
+						aria-invalid={row.overMax > 0 ? 'true' : undefined}
+					>
+						{#if row.facility !== null && row.band !== null}
+							<button
+								type="button"
+								data-testid="facility-cell"
+								data-entry-id={row.entry.id}
+								title={facilityTitle(row)}
+								class={cn(
+									'my-0.5 w-[calc(100%-4px)] rounded-sm py-0.5 text-[11px] font-semibold tabular-nums hover:ring-2 hover:ring-primary',
+									FACILITY_TINT[row.band],
+									row.coverage.partMarked &&
+										'italic outline-1 -outline-offset-2 outline-dashed outline-foreground',
+									row.overMax > 0 && 'text-destructive'
+								)}
+								onclick={() => onViewAnalysis(row.entry.id)}
+							>
+								{facilityPercent(row.facility)}%
+							</button>
+						{:else}
+							<!-- An entry with no figure opens the analysis just as a scored
+							     one does: it is the entry a teacher most often needs to
+							     look into, and the cell still says which one it is. -->
+							<button
+								type="button"
+								data-testid="facility-cell"
+								data-entry-id={row.entry.id}
+								title={facilityTitle(row)}
+								class="my-0.5 w-[calc(100%-4px)] rounded-sm py-0.5 text-xs text-muted-foreground hover:ring-2 hover:ring-primary"
+								onclick={() => onViewAnalysis(row.entry.id)}
+							>
+								—
+							</button>
+						{/if}
+					</Table.Cell>
+				{/each}
+			</Table.Row>
+			<Table.Row class="hover:bg-transparent">
+				<Table.Cell class={cn(NAME_COLUMN, 'px-1.5 text-[11px] text-muted-foreground')}>
+					Marked
+				</Table.Cell>
+				<Table.Cell class={FROZEN_PROGRESS} style={PROGRESS_PIN} />
+				{#each analysis.entries as row (row.entry.id)}
+					<Table.Cell
+						data-testid="coverage-cell"
+						data-entry-id={row.entry.id}
+						class="border-l text-center text-[10px] text-amber-700 tabular-nums dark:text-amber-300"
+					>
+						{row.coverage.partMarked ? `${row.coverage.marked}/${row.coverage.of}` : ''}
+					</Table.Cell>
+				{/each}
+			</Table.Row>
+		</Table.Footer>
 	</Table.Root>
 </div>

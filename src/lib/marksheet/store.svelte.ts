@@ -8,6 +8,7 @@
 
 import type { Breakdown, ParseUsage, ParseWarning } from '$lib/server/parse/schema.js';
 import type { AssessmentObjective } from '$lib/parse/assessment-objectives.js';
+import { analyseMarksheet, type MarksheetAnalysis } from './analysis.js';
 import {
 	confirmationBlockers,
 	isWholeNumber,
@@ -274,6 +275,15 @@ export class MarksheetStore {
 	get attention(): AttentionItem[] {
 		const breakdown = this.document?.breakdown;
 		return breakdown ? needsAttention(breakdown) : [];
+	}
+
+	/**
+	 * What the marks say about every entry: facility, band and coverage, worst
+	 * first. Derived from the document as it stands, so it is current on every
+	 * change and there is nothing to run or to go out of date.
+	 */
+	get analysis(): MarksheetAnalysis {
+		return analyseMarksheet(this.document);
 	}
 
 	/**
