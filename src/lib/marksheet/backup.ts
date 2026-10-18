@@ -6,7 +6,7 @@
 // from the components and free of I/O, so both are testable at their edges —
 // including the day the window closes.
 
-import { parseStoredDocument, type MarksheetDocument } from './document.js';
+import { markCount, parseStoredDocument, type MarksheetDocument } from './document.js';
 
 /**
  * How long a backup stands before the teacher is nudged: the window WebKit
@@ -45,17 +45,11 @@ export function backupTakenAt(document: MarksheetDocument): Date | null {
 	return Number.isNaN(at.getTime()) ? null : at;
 }
 
-/** Whether the document holds a mark at all: the work a wipe or an eviction would take. */
+/**
+ * Whether the document holds a mark at all: the work a wipe or an eviction would take.
+ */
 function hasMarks(document: MarksheetDocument): boolean {
-	return Object.values(document.marks).some((byEntry) => Object.keys(byEntry).length > 0);
-}
-
-/** How many marks the document holds: one per student per entry answered. */
-function markCount(document: MarksheetDocument): number {
-	return Object.values(document.marks).reduce(
-		(sum, byEntry) => sum + Object.keys(byEntry).length,
-		0
-	);
+	return markCount(document) > 0;
 }
 
 /**

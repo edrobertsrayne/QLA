@@ -2221,6 +2221,55 @@ describe('taking a backup', () => {
 	});
 });
 
+describe('exporting the marks to a spreadsheet', () => {
+	/** A marksheet someone has marked: two students, one of them absent. */
+	function openAnsweredClass() {
+		return openStore({
+			breakdownConfirmedAt: NOW.toISOString(),
+			paper: {
+				label: 'Ph1',
+				className: '10C1',
+				sourceFilenames: ['paper.pdf'],
+				parsedAt: NOW.toISOString()
+			},
+			students: [
+				student('student-1', 'Ada', 'Lovelace'),
+				{ ...student('student-2', 'Grace', 'Hopper'), absent: true }
+			],
+			marks: { 'student-1': { 'entry-1': 3 } }
+		});
+	}
+
+	it('hands out this marksheet’s marks as the CSV a spreadsheet reads', () => {
+		const { store } = openAnsweredClass();
+
+		const file = store.exportMarksCsv();
+
+		expect(file?.type).toBe('text/csv');
+		expect(file?.filename).toBe('ph1-10c1-marks.csv');
+		expect(file?.text.split('\r\n')[0]).toBe('Surname,First name,Absent,2bii,Total');
+		expect(file?.text).toContain('Lovelace,Ada,,3,3');
+		expect(file?.text).toContain('Hopper,Grace,Y,,0');
+	});
+
+	it('leaves the backup exactly as old as it was: a marks export is not one', () => {
+		const { store, storage } = openAnsweredClass();
+		const writes = storage.writes.length;
+
+		store.exportMarksCsv();
+		store.flush();
+
+		expect(stored(storage).lastExportedAt).toBeNull();
+		expect(storage.writes.length).toBe(writes);
+	});
+
+	it('hands out nothing when there is no marksheet', () => {
+		const store = storeWith(fakeStorage());
+
+		expect(store.exportMarksCsv()).toBeNull();
+	});
+});
+
 describe('restoring a backup', () => {
 	it('brings a marksheet back, marks and all, from the file it handed out', () => {
 		const { store } = openStore({

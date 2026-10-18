@@ -18,7 +18,7 @@ import {
 	type ConfirmationBlockers,
 	type QuestionBand
 } from './breakdown.js';
-import { backupFile, type QlaFile } from './download.js';
+import { backupFile, marksCsvFile, type QlaFile } from './download.js';
 import { emptyPasteResult, trimPasteGrid, type PasteAnchor, type PasteResult } from './paste.js';
 import {
 	CORRUPT_KEY_PREFIX,
@@ -861,6 +861,19 @@ export class MarksheetStore {
 		document.lastExportedAt = this.#now().toISOString();
 		this.#write();
 		return backupFile(document, this.#now());
+	}
+
+	/**
+	 * Hand the marks out as a spreadsheet reads them. Lossy and one-way, so it
+	 * deliberately neither stamps `lastExportedAt` nor writes: taking marks into
+	 * a spreadsheet is not having a copy that brings the marksheet back, and the
+	 * backup the teacher still needs must not look fresher for it.
+	 */
+	exportMarksCsv(): QlaFile | null {
+		const document = this.document;
+		if (!document) return null;
+
+		return marksCsvFile(document);
 	}
 
 	/** Say no to the reminder for this session. The next document asks again. */

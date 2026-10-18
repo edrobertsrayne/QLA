@@ -6,7 +6,7 @@
 // Downloads folder as well as in the app, because that is where they are picked
 // up at restore time.
 
-import { CORRUPT_KEY_PREFIX, type MarksheetDocument } from './document.js';
+import { CORRUPT_KEY_PREFIX, totalMarks, type MarksheetDocument } from './document.js';
 
 /** A file the browser will save: its name, its body, and what it is. */
 export interface QlaFile {
@@ -23,6 +23,11 @@ function slug(value: string): string {
 		.replace(/^-+|-+$/g, '');
 }
 
+/** One part of a filename: sanitised, or the fallback word when there is nothing to take. */
+function slugOr(value: string | null, fallback: string): string {
+	return slug(value ?? '') || fallback;
+}
+
 /** The local day a file was made, as `2026-01-01`. */
 function dayStamp(at: Date): string {
 	const month = String(at.getMonth() + 1).padStart(2, '0');
@@ -35,11 +40,55 @@ function dayStamp(at: Date): string {
  * so restoring it brings back exactly what the teacher had.
  */
 export function backupFile(document: MarksheetDocument, now: Date): QlaFile {
-	const label = slug(document.paper.label ?? '');
 	return {
-		filename: `qla-backup-${label === '' ? 'marksheet' : label}-${dayStamp(now)}.json`,
+		filename: `qla-backup-${slugOr(document.paper.label, 'marksheet')}-${dayStamp(now)}.json`,
 		text: JSON.stringify(document),
 		type: 'application/json'
+	};
+}
+
+/** A cell as it has to be written: quoted when a comma, a quote or a line break would split the row. */
+function csvCell(value: string): string {
+	return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+}
+
+/**
+ * The marksheet's marks as a spreadsheet reads them: one row per student in
+ * display order, one column per breakdown entry in breakdown order, and a `Max`
+ * row under the header saying what each column is out of.
+ *
+ * Lossy and one-way, by design: an unmarked cell is empty, an absent student is
+ * flagged rather than dropped, and the total is the marks exactly as entered —
+ * no band, no facility, nothing that could be read back as a marksheet.
+ */
+export function marksCsvFile(document: MarksheetDocument): QlaFile {
+	const entries = document.breakdown.entries;
+	const rows = document.students.map((student) => {
+		const marks = entries.map((entry) => document.marks[student.id]?.[entry.id]);
+		return [
+			student.surname,
+			student.firstName,
+			student.absent ? 'Y' : '',
+			...marks.map((mark) => (mark === undefined ? '' : String(mark))),
+			String(marks.reduce((sum, mark) => sum + (mark ?? 0), 0))
+		];
+	});
+	const maxima = entries.map((entry) => (entry.marks === null ? '' : String(entry.marks)));
+
+	return {
+		filename: `${slugOr(document.paper.label, 'marksheet')}-${slugOr(
+			document.paper.className,
+			'class'
+		)}-marks.csv`,
+		text:
+			[
+				['Surname', 'First name', 'Absent', ...entries.map((entry) => entry.label), 'Total'],
+				['Max', '', '', ...maxima, String(totalMarks(entries))],
+				...rows
+			]
+				.map((row) => row.map(csvCell).join(','))
+				.join('\r\n') + '\r\n',
+		type: 'text/csv'
 	};
 }
 

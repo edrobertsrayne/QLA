@@ -10,6 +10,7 @@
 	import { flushSync, tick } from 'svelte';
 	import ChartColumnIcon from '@lucide/svelte/icons/chart-column';
 	import ClipboardPasteIcon from '@lucide/svelte/icons/clipboard-paste';
+	import FileSpreadsheetIcon from '@lucide/svelte/icons/file-spreadsheet';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
 	import UserXIcon from '@lucide/svelte/icons/user-x';
@@ -36,7 +37,7 @@
 		type QuestionBand
 	} from '$lib/marksheet/breakdown.js';
 	import type { BreakdownEntry, StoredStudent } from '$lib/marksheet/document.js';
-	import { marksheetStore } from '$lib/marksheet/index.js';
+	import { exportMarksNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { clipboardGrid, type PasteResult } from '$lib/marksheet/paste.js';
 	import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
 	import {
@@ -747,6 +748,11 @@
 			</Popover.Content>
 		</Popover.Root>
 	{/if}
+	<!-- At the far end from View analysis: a data tool, never mistaken for the
+	     page's own backup. -->
+	<Button variant="outline" size="xs" class="ml-auto" onclick={exportMarksNow}>
+		<FileSpreadsheetIcon class="size-3.5" /> Export marks to spreadsheet (.csv)
+	</Button>
 </div>
 
 {#if students.length === 0}

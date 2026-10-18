@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CORRUPT_KEY_PREFIX, DOCUMENT_SCHEMA_VERSION } from './document.js';
 import type { MarksheetDocument } from './document.js';
-import { backupFile, corruptFile } from './download.js';
+import { backupFile, corruptFile, marksCsvFile } from './download.js';
 
 // Local time, so the day on the file is the day the teacher saw whatever the
 // machine's timezone is.
@@ -69,6 +69,70 @@ describe('backupFile', () => {
 
 		expect(backupFile(document, NOW).filename).toBe(
 			'qla-backup-aqa-gcse-physics-p1-nov-mock-2026-01-01.json'
+		);
+	});
+});
+
+describe('marksCsvFile', () => {
+	/**
+	 * Two entries and two students, with an absent flag, a 0 and a cell still
+	 * unmarked between them: every state a mark column can hold.
+	 */
+	function marksForSpreadsheet(): MarksheetDocument {
+		const base = marksheet();
+		const [, other] = base.breakdown.entries;
+		return {
+			...base,
+			breakdown: {
+				entries: [
+					{ ...base.breakdown.entries[0], id: 'entry-2bii', label: '2bii', marks: 4 },
+					{ ...(other ?? base.breakdown.entries[0]), id: 'entry-3a', label: '3a', marks: 2 }
+				],
+				warnings: []
+			},
+			students: [
+				{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false },
+				{ id: 'student-2', firstName: 'Grace', surname: 'Hopper', absent: true }
+			],
+			marks: { 'student-1': { 'entry-2bii': 3 }, 'student-2': { 'entry-2bii': 0, 'entry-3a': 2 } }
+		};
+	}
+
+	it('lays the marks out as a spreadsheet reads them', () => {
+		const file = marksCsvFile(marksForSpreadsheet());
+
+		expect(file.text).toBe(
+			[
+				// One column per entry in breakdown order, and what the row is out of.
+				'Surname,First name,Absent,2bii,3a,Total',
+				'Max,,,4,2,6',
+				// Unmarked is empty; 0 is a mark; absent keeps what was entered.
+				'Lovelace,Ada,,3,,3',
+				'Hopper,Grace,Y,0,2,2',
+				''
+			].join('\r\n')
+		);
+		expect(file.type).toBe('text/csv');
+	});
+
+	it('names itself by paper and class, so a Downloads folder tells it from a backup', () => {
+		expect(marksCsvFile(marksForSpreadsheet()).filename).toBe('10x-ph1-10c1-marks.csv');
+	});
+
+	it('falls back for a paper or a class the teacher never named', () => {
+		const document = marksForSpreadsheet();
+		document.paper.label = null;
+		document.paper.className = null;
+
+		expect(marksCsvFile(document).filename).toBe('marksheet-class-marks.csv');
+	});
+
+	it('quotes a label a spreadsheet would otherwise read as two columns', () => {
+		const document = marksForSpreadsheet();
+		document.breakdown.entries[0].label = '2b, ii';
+
+		expect(marksCsvFile(document).text.split('\r\n')[0]).toBe(
+			'Surname,First name,Absent,"2b, ii",3a,Total'
 		);
 	});
 });

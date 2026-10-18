@@ -300,6 +300,14 @@ export function totalMarks(entries: readonly BreakdownEntry[]): number {
 	return entries.reduce((sum, entry) => sum + (entry.marks ?? 0), 0);
 }
 
+/** How many marks the document holds: one per student per entry answered. */
+export function markCount(document: MarksheetDocument): number {
+	return Object.values(document.marks).reduce(
+		(sum, byEntry) => sum + Object.keys(byEntry).length,
+		0
+	);
+}
+
 /** Seed the paper label from an uploaded filename: `10X Ph1.pdf` → `10X Ph1`. */
 export function labelFromFilename(filename: string | undefined): string | null {
 	if (filename === undefined) return null;

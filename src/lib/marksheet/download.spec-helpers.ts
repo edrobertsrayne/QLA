@@ -12,6 +12,10 @@ import { vi } from 'vitest';
 export function captureDownload(): { filename: () => string; text: () => Promise<string> } {
 	const clicks = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
 	const blobs = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:captured');
+	// Spying twice on the same method hands back the same mock, so a spec that
+	// captures two downloads in a row would otherwise read the first one twice.
+	clicks.mockClear();
+	blobs.mockClear();
 	return {
 		filename: () => (clicks.mock.instances[0] as HTMLAnchorElement | undefined)?.download ?? '',
 		text: async () => {
