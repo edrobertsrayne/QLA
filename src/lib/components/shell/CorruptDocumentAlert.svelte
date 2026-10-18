@@ -13,7 +13,7 @@
 
 	const store = marksheetStore();
 
-	const unreadable = $derived(store.loadResult.kind === 'corrupt' ? store.loadResult : null);
+	const unreadable = $derived(store.unreadable);
 
 	function downloadRaw(): void {
 		const result = unreadable;

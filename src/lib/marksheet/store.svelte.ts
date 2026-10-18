@@ -21,9 +21,7 @@ import {
 import { backupFile, marksCsvFile, type QlaFile } from './download.js';
 import { emptyPasteResult, trimPasteGrid, type PasteAnchor, type PasteResult } from './paste.js';
 import {
-	CORRUPT_KEY_PREFIX,
 	DOCUMENT_SCHEMA_VERSION,
-	STORAGE_KEY,
 	dropUnreachableMarks,
 	entryValuesOf,
 	labelFromFilename,
@@ -38,6 +36,13 @@ import type {
 	StoredWarning
 } from './document.js';
 import {
+	AUTOSAVE_DEBOUNCE_MS,
+	DocumentPersistence,
+	type DocumentStorage,
+	type SaveState,
+	type Unreadable
+} from './persistence.svelte.js';
+import {
 	parseNameList,
 	sortStudentsByName,
 	splitName,
@@ -46,41 +51,11 @@ import {
 	type StudentSortKey
 } from './students.js';
 
-/** Autosave window: a burst of typing becomes one write. */
-export const AUTOSAVE_DEBOUNCE_MS = 500;
-
-/** The slice of the Web Storage API the store needs. */
-export interface DocumentStorage {
-	readonly length: number;
-	key(index: number): string | null;
-	getItem(key: string): string | null;
-	setItem(key: string, value: string): void;
-	removeItem(key: string): void;
-}
-
 export interface MarksheetStoreDeps {
 	storage: DocumentStorage;
 	now: () => Date;
 	debounceMs?: number;
 }
-
-/** What `load()` found in storage. */
-export type LoadResult =
-	| { kind: 'empty' }
-	| { kind: 'ready'; document: MarksheetDocument }
-	| { kind: 'corrupt'; preservedKey: string | null; raw: string }
-	| { kind: 'unavailable' };
-
-/** Whether the document in hand has reached storage. */
-export type SaveState =
-	| { kind: 'saved'; at: Date }
-	| { kind: 'saving' }
-	/**
-	 * A refused write stops autosave. `since` is when the document last reached
-	 * storage: everything after that moment lives only in this tab.
-	 */
-	| { kind: 'failed'; since: Date }
-	| { kind: 'unavailable' };
 
 /** The surface the stored state allows. */
 export type BootRoute = '/' | '/breakdown' | '/marksheet';
@@ -125,6 +100,17 @@ export interface CreateFromParseInput {
 	filenames: string[];
 }
 
+/** A field the teacher has cleared means "none", not an empty string. */
+function trimOrNull(value: string | null): string | null {
+	const trimmed = value?.trim() ?? '';
+	return trimmed === '' ? null : trimmed;
+}
+
+/** A new student on this device, unmarked and present. */
+function newStudent(name: StudentName): StoredStudent {
+	return { id: localId(), firstName: name.firstName, surname: name.surname, absent: false };
+}
+
 /**
  * A stable id generated on this device, for an entry or a student. Marks are
  * filed under it, so renaming, inserting or sorting never reassigns them — and
@@ -135,60 +121,6 @@ function localId(): string {
 		return crypto.randomUUID();
 	}
 	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-/**
- * MDN's storage-availability probe: private browsing exposes storage that
- * refuses writes. A write refused for quota on a storage that already holds
- * data is a full store, not an absent one — the stored document must still be read.
- */
-function storageAvailable(storage: DocumentStorage): boolean {
-	const probeKey = 'qla:storage-probe';
-	try {
-		storage.setItem(probeKey, '1');
-		storage.removeItem(probeKey);
-		return true;
-	} catch (error) {
-		return isQuotaError(error) && storage.length !== 0;
-	}
-}
-
-function isQuotaError(error: unknown): boolean {
-	return (
-		error instanceof DOMException &&
-		(error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')
-	);
-}
-
-/**
- * An existing preserved copy of this payload, if there is one. Every route
- * visits the gate and every page load starts a fresh store, so without this a
- * single unreadable document would leave a copy behind per visit.
- */
-function preservedCopyOf(storage: DocumentStorage, raw: string): string | null {
-	for (let index = 0; index < storage.length; index++) {
-		const key = storage.key(index);
-		if (key === null || !key.startsWith(CORRUPT_KEY_PREFIX)) continue;
-		if (storage.getItem(key) === raw) return key;
-	}
-	return null;
-}
-
-/** Run `run` after `ms`, returning a cancel function. Keeps the timer handle's type local. */
-function scheduleTimer(ms: number, run: () => void): () => void {
-	const handle = setTimeout(run, ms);
-	return () => clearTimeout(handle);
-}
-
-/** A field the teacher has cleared means "none", not an empty string. */
-function trimOrNull(value: string | null): string | null {
-	const trimmed = value?.trim() ?? '';
-	return trimmed === '' ? null : trimmed;
-}
-
-/** A new student on this device, unmarked and present. */
-function newStudent(name: StudentName): StoredStudent {
-	return { id: localId(), firstName: name.firstName, surname: name.surname, absent: false };
 }
 
 /**
@@ -225,28 +157,12 @@ function removeMark(
 }
 
 export class MarksheetStore {
-	readonly #storage: DocumentStorage;
 	readonly #now: () => Date;
-	readonly #debounceMs: number;
-	#cancelTimer: (() => void) | null = null;
-	/** A failed write stops autosave rather than retrying behind the teacher's back. */
-	#failed = false;
-	#unavailable = false;
-	/**
-	 * When the document last reached storage. A placeholder the constructor
-	 * immediately replaces: a plain moment, never mutated in place, so it needs
-	 * no reactive wrapper.
-	 */
-	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	#savedAt: Date = new Date(0);
-
-	#loadResult = $state<LoadResult>({ kind: 'empty' });
+	readonly #persistence: DocumentPersistence;
 
 	document = $state<MarksheetDocument | null>(null);
-	// A placeholder the constructor immediately replaces: never mutated, so it
-	// needs no reactive wrapper.
-	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	saveState = $state<SaveState>({ kind: 'saved', at: new Date(0) });
+	/** The stored document that could not be read, if the last read found one. */
+	unreadable = $state<Unreadable | null>(null);
 	/** This session's parse cost. Absent after a reload. */
 	runUsage = $state<ParseUsage | null>(null);
 	/** The one change undo would take back, or nothing. */
@@ -265,15 +181,18 @@ export class MarksheetStore {
 	backupReminderDismissed = $state(false);
 
 	constructor(deps: MarksheetStoreDeps) {
-		this.#storage = deps.storage;
 		this.#now = deps.now;
-		this.#debounceMs = deps.debounceMs ?? AUTOSAVE_DEBOUNCE_MS;
-		this.#markSaved();
+		this.#persistence = new DocumentPersistence({
+			storage: deps.storage,
+			now: deps.now,
+			debounceMs: deps.debounceMs ?? AUTOSAVE_DEBOUNCE_MS,
+			current: () => this.document
+		});
 	}
 
-	/** What the last `load()` found, for the surface that has to report it. */
-	get loadResult(): LoadResult {
-		return this.#loadResult;
+	/** Whether the document in hand has reached storage. */
+	get saveState(): SaveState {
+		return this.#persistence.saveState;
 	}
 
 	/**
@@ -281,48 +200,11 @@ export class MarksheetStore {
 	 * in hand it returns at once, because in-memory state is the truth; storage is
 	 * read only while there is nothing in hand to lose.
 	 */
-	load(): LoadResult {
-		if (this.document) return this.#loadResult;
-
-		this.#failed = false;
-
-		if (!storageAvailable(this.#storage)) {
-			this.#unavailable = true;
-			return this.#settle({ kind: 'unavailable' }, null, { kind: 'unavailable' });
-		}
-		this.#unavailable = false;
-
-		const raw = this.#storage.getItem(STORAGE_KEY);
-		if (raw === null) {
-			return this.#settle({ kind: 'empty' }, null, { kind: 'saved', at: this.#now() });
-		}
-
-		const document = parseStoredDocument(raw);
-		if (!document) {
-			// Never delete what we cannot read: a validator bug must not take the
-			// teacher's only copy with it.
-			let preservedKey: string | null = preservedCopyOf(this.#storage, raw);
-			if (preservedKey === null) {
-				const key = `${CORRUPT_KEY_PREFIX}${this.#now().toISOString()}`;
-				try {
-					this.#storage.setItem(key, raw);
-					preservedKey = key;
-				} catch {
-					// No copy was made: the original is still under its own key, and
-					// the alert says so rather than naming a key that does not exist.
-				}
-			}
-			return this.#settle({ kind: 'corrupt', preservedKey, raw }, null, {
-				kind: 'saved',
-				at: this.#now()
-			});
-		}
-
-		const loaded = dropUnreachableMarks(document);
-		return this.#settle({ kind: 'ready', document: loaded }, loaded, {
-			kind: 'saved',
-			at: this.#now()
-		});
+	load(): void {
+		if (this.document) return;
+		const read = this.#persistence.read();
+		this.#adopt(read.kind === 'ready' ? dropUnreachableMarks(read.document) : null);
+		if (read.kind === 'corrupt') this.unreadable = read.unreadable;
 	}
 
 	/** The surface the stored state allows. */
@@ -411,10 +293,9 @@ export class MarksheetStore {
 			students: [],
 			marks: {}
 		};
+		this.#adopt(document);
 		this.runUsage = input.usage;
-		this.backupReminderDismissed = false;
-		this.#settle({ kind: 'ready', document }, document);
-		this.#write();
+		this.#persistence.writeNow();
 	}
 
 	/** Rename the paper. Blank means no label. */
@@ -920,8 +801,7 @@ export class MarksheetStore {
 
 	/** Write anything pending now: a hidden or closing tab must not lose keystrokes. */
 	flush(): void {
-		if (this.#cancelTimer === null) return;
-		this.#write();
+		this.#persistence.flush();
 	}
 
 	/**
@@ -935,8 +815,10 @@ export class MarksheetStore {
 		const document = this.document;
 		if (!document) return null;
 
-		document.lastExportedAt = this.#now().toISOString();
-		this.#write();
+		const at = this.#now().toISOString();
+		document.lastExportedAt = at;
+		document.updatedAt = at;
+		this.#persistence.writeNow();
 		return backupFile(document, this.#now());
 	}
 
@@ -974,29 +856,15 @@ export class MarksheetStore {
 		// Unreachable marks are dropped on the way in, exactly as they would be on
 		// the next boot, and the document reaches storage at once rather than on
 		// the debounce: it is the teacher's only copy until they back up again.
-		const document = dropUnreachableMarks(parsed);
-		this.runUsage = null;
-		this.backupReminderDismissed = false;
-		this.#settle({ kind: 'ready', document }, document);
-		this.#write();
+		this.#adopt(dropUnreachableMarks(parsed));
+		this.#persistence.writeNow();
 		return this.route();
 	}
 
 	/** New upload: discard the marksheet document and nothing else. */
 	wipe(): void {
-		this.#cancelPending();
-		try {
-			this.#storage.removeItem(STORAGE_KEY);
-		} catch {
-			// Nothing to do: in-memory state is gone either way.
-		}
-		this.#failed = false;
-		this.runUsage = null;
-		this.#settle(
-			{ kind: 'empty' },
-			null,
-			this.#unavailable ? { kind: 'unavailable' } : { kind: 'saved', at: this.#now() }
-		);
+		this.#persistence.clear();
+		this.#adopt(null);
 	}
 
 	/** An entry the teacher adds: nothing claimed, everything to fill in. */
@@ -1067,28 +935,14 @@ export class MarksheetStore {
 		entry.original = entryValuesOf(entry);
 	}
 
-	/** Adopt the state a load or a wipe found, and hand it back to the caller. */
-	#settle(
-		result: LoadResult,
-		document: MarksheetDocument | null,
-		saveState?: SaveState
-	): LoadResult {
+	/** Take a document, or none, as the one in hand: nothing about the previous one carries over. */
+	#adopt(document: MarksheetDocument | null): void {
 		this.document = document;
-		// Undo covers a change to the document in hand: adopting another one
-		// (a load, or a wipe) leaves nothing behind to take back.
 		this.undoable = null;
 		this.pasteNotice = null;
-		// A ready result carries the store's own document — the reactive proxy,
-		// not the plain object it was parsed or built from.
-		this.#loadResult =
-			result.kind === 'ready' && this.document
-				? { kind: 'ready', document: this.document }
-				: result;
-		if (saveState) {
-			this.saveState = saveState;
-			if (saveState.kind === 'saved') this.#savedAt = saveState.at;
-		}
-		return this.#loadResult;
+		this.unreadable = null;
+		this.runUsage = null;
+		this.backupReminderDismissed = false;
 	}
 
 	/** Every command ends here: stamp the change, then save on the debounce. */
@@ -1100,44 +954,6 @@ export class MarksheetStore {
 		this.undoable = null;
 		this.pasteNotice = null;
 		document.updatedAt = this.#now().toISOString();
-		if (this.#failed || this.#unavailable) return;
-		this.saveState = { kind: 'saving' };
-		this.#schedule();
-	}
-
-	#schedule(): void {
-		this.#cancelPending();
-		this.#cancelTimer = scheduleTimer(this.#debounceMs, () => {
-			this.#cancelTimer = null;
-			this.#write();
-		});
-	}
-
-	#cancelPending(): void {
-		this.#cancelTimer?.();
-		this.#cancelTimer = null;
-	}
-
-	/** The document is in storage as of now: nothing after this moment is only in this tab. */
-	#markSaved(): void {
-		this.#savedAt = this.#now();
-		this.saveState = { kind: 'saved', at: this.#savedAt };
-	}
-
-	#write(): void {
-		const document = this.document;
-		if (!document) return;
-		this.#cancelPending();
-		document.updatedAt = this.#now().toISOString();
-		if (this.#unavailable) return;
-		try {
-			this.#storage.setItem(STORAGE_KEY, JSON.stringify(document));
-		} catch {
-			this.#failed = true;
-			this.saveState = { kind: 'failed', since: this.#savedAt };
-			return;
-		}
-		this.#failed = false;
-		this.#markSaved();
+		this.#persistence.changed();
 	}
 }

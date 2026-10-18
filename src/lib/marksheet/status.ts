@@ -6,7 +6,7 @@
 
 import { backupTakenAt } from './backup.js';
 import type { MarksheetDocument } from './document.js';
-import type { SaveState } from './store.svelte.js';
+import type { SaveState } from './persistence.svelte.js';
 
 /** How a line reads: a healthy save, one in flight, a refused write, no storage at all. */
 export type StatusTone = 'ok' | 'busy' | 'error' | 'warn';

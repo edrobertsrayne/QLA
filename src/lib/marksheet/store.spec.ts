@@ -7,8 +7,12 @@ import type {
 	StoredBreakdown,
 	StoredStudent
 } from './document.js';
-import { AUTOSAVE_DEBOUNCE_MS, MarksheetStore } from './store.svelte.js';
-import type { DocumentStorage, LoadResult } from './store.svelte.js';
+import {
+	AUTOSAVE_DEBOUNCE_MS,
+	type DocumentStorage,
+	type Unreadable
+} from './persistence.svelte.js';
+import { MarksheetStore } from './store.svelte.js';
 import { progressOf } from './students.js';
 
 const NOW = new Date('2026-01-01T10:00:00.000Z');
@@ -146,11 +150,10 @@ function idOf(id: string | null): string {
 }
 
 /** The key an unreadable document was preserved under, asserting the load found one. */
-function preservedKeyOf(result: LoadResult): string {
-	expect(result.kind).toBe('corrupt');
-	if (result.kind !== 'corrupt') throw new Error('expected an unreadable document');
-	if (result.preservedKey === null) throw new Error('expected a preserved copy');
-	return result.preservedKey;
+function preservedKeyOf(unreadable: Unreadable | null): string {
+	if (unreadable === null) throw new Error('expected an unreadable document');
+	if (unreadable.preservedKey === null) throw new Error('expected a preserved copy');
+	return unreadable.preservedKey;
 }
 
 /** Storage that only refuses writes of the marksheet document itself (a full quota). */
@@ -187,7 +190,7 @@ describe('boot gate', () => {
 		const storage = fakeStorage();
 		const store = storeWith(storage);
 
-		expect(store.load()).toEqual({ kind: 'empty' });
+		store.load();
 		expect(store.document).toBeNull();
 		expect(store.route()).toBe('/');
 	});
@@ -196,9 +199,9 @@ describe('boot gate', () => {
 		const document = storedDocument({ breakdownConfirmedAt: null });
 		const store = storeWith(fakeStorage({ [STORAGE_KEY]: JSON.stringify(document) }));
 
-		const result = store.load();
+		store.load();
 
-		expect(result).toEqual({ kind: 'ready', document });
+		expect(store.document).toEqual(document);
 		expect(store.route()).toBe('/breakdown');
 	});
 
@@ -206,7 +209,8 @@ describe('boot gate', () => {
 		const document = storedDocument({ breakdownConfirmedAt: NOW.toISOString() });
 		const store = storeWith(fakeStorage({ [STORAGE_KEY]: JSON.stringify(document) }));
 
-		expect(store.load()).toEqual({ kind: 'ready', document });
+		store.load();
+		expect(store.document).toEqual(document);
 		expect(store.route()).toBe('/marksheet');
 	});
 
@@ -215,10 +219,9 @@ describe('boot gate', () => {
 		const storage = fakeStorage({ [STORAGE_KEY]: raw });
 		const store = storeWith(storage);
 
-		const result = store.load();
+		store.load();
 
-		expect(result).toEqual({
-			kind: 'corrupt',
+		expect(store.unreadable).toEqual({
 			preservedKey: `${CORRUPT_KEY_PREFIX}${NOW.toISOString()}`,
 			raw
 		});
@@ -232,7 +235,9 @@ describe('boot gate', () => {
 		const raw = 'not json at all';
 		const storage = fakeStorage({ [STORAGE_KEY]: raw });
 
-		expect(storeWith(storage).load().kind).toBe('corrupt');
+		const unreadable = storeWith(storage);
+		unreadable.load();
+		expect(unreadable.unreadable).not.toBeNull();
 		expect(storage.getItem(STORAGE_KEY)).toBe(raw);
 	});
 
@@ -244,25 +249,25 @@ describe('boot gate', () => {
 		const storage = fakeStorage({ [STORAGE_KEY]: raw });
 		const store = storeWith(storage);
 
-		const result = store.load();
+		store.load();
 
-		expect(result).toEqual({
-			kind: 'corrupt',
-			preservedKey: `${CORRUPT_KEY_PREFIX}${NOW.toISOString()}`,
-			raw
-		});
 		// Kept whole, under its own key: a version this app cannot read is still
 		// the teacher's only copy of their marks.
 		expect(storage.getItem(`${CORRUPT_KEY_PREFIX}${NOW.toISOString()}`)).toBe(raw);
 		expect(storage.getItem(STORAGE_KEY)).toBe(raw);
 		expect(store.document).toBeNull();
-		expect(store.loadResult).toEqual(result);
+		expect(store.unreadable).toEqual({
+			preservedKey: `${CORRUPT_KEY_PREFIX}${NOW.toISOString()}`,
+			raw
+		});
 	});
 
 	it('runs on upload when browser storage is unavailable', () => {
 		const store = storeWith(unwritableStorage());
 
-		expect(store.load()).toEqual({ kind: 'unavailable' });
+		store.load();
+		expect(store.document).toBeNull();
+		expect(store.saveState).toEqual({ kind: 'unavailable' });
 		expect(store.route()).toBe('/');
 	});
 
@@ -273,12 +278,16 @@ describe('boot gate', () => {
 		const clock = () => new Date(nowMs);
 		const store = storeWith(storage, clock);
 
-		const first = store.load();
+		store.load();
+		const first = store.unreadable;
 		nowMs += 60_000;
-		const second = store.load();
+		store.load();
+		const second = store.unreadable;
 		nowMs += 60_000;
 		// A second page load starts a fresh store over the same storage.
-		const afterReload = storeWith(storage, clock).load();
+		const reloaded = storeWith(storage, clock);
+		reloaded.load();
+		const afterReload = reloaded.unreadable;
 
 		const preservedKey = preservedKeyOf(first);
 		expect(preservedKeyOf(second)).toBe(preservedKey);
@@ -305,7 +314,8 @@ describe('boot gate', () => {
 		};
 		const store = storeWith(full);
 
-		expect(store.load()).toEqual({ kind: 'ready', document });
+		store.load();
+		expect(store.document).toEqual(document);
 		expect(store.route()).toBe('/marksheet');
 	});
 
@@ -325,7 +335,9 @@ describe('boot gate', () => {
 			}
 		});
 
-		expect(store.load()).toEqual({ kind: 'corrupt', preservedKey: null, raw });
+		store.load();
+		expect(store.document).toBeNull();
+		expect(store.unreadable).toEqual({ preservedKey: null, raw });
 	});
 });
 
@@ -351,7 +363,8 @@ describe('load', () => {
 		const store = storeWith(storage);
 		store.load();
 
-		expect(store.load()).toEqual({ kind: 'ready', document });
+		store.load();
+		expect(store.document).toEqual(document);
 		expect(storage.getItem(STORAGE_KEY)).toBe(JSON.stringify(document));
 	});
 
@@ -391,7 +404,8 @@ describe('load', () => {
 		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument()) });
 		const store = storeWith(storage);
 
-		expect(store.load().kind).toBe('ready');
+		store.load();
+		expect(store.document).not.toBeNull();
 		expect(entryOf(store, 'entry-1')?.label).toBe('2bii');
 		expect(store.document?.breakdown.entries[0]).not.toHaveProperty('original');
 	});
@@ -403,7 +417,9 @@ describe('load', () => {
 		);
 		const storage = fakeStorage({ [STORAGE_KEY]: raw });
 
-		expect(storeWith(storage).load().kind).toBe('corrupt');
+		const unreadable = storeWith(storage);
+		unreadable.load();
+		expect(unreadable.unreadable).not.toBeNull();
 		expect(storage.getItem(STORAGE_KEY)).toBe(raw);
 	});
 });
@@ -672,7 +688,7 @@ describe('autosave', () => {
 		}
 	});
 
-	it('stamps updatedAt when it writes, not when the change was made', () => {
+	it('stamps updatedAt when the change is made, not when it is written', () => {
 		vi.useFakeTimers();
 		try {
 			const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument()) });
@@ -680,14 +696,15 @@ describe('autosave', () => {
 			const store = storeWith(storage, () => new Date(nowMs));
 			store.load();
 
+			nowMs += 30_000;
 			store.setPaperLabel('10X/Ph1');
-			nowMs += 60_000;
+			nowMs += 30_000;
 			vi.advanceTimersByTime(500);
 
 			const stored = JSON.parse(storage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
 			expect(stored.paper.label).toBe('10X/Ph1');
 			expect(stored.createdAt).toBe('2026-01-01T10:00:00.000Z');
-			expect(stored.updatedAt).toBe('2026-01-01T10:01:00.000Z');
+			expect(stored.updatedAt).toBe('2026-01-01T10:00:30.000Z');
 		} finally {
 			vi.useRealTimers();
 		}

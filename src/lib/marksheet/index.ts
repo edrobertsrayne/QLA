@@ -3,7 +3,8 @@
 
 import { flushOnHide } from './flush.js';
 import { saveFile } from './download.js';
-import { MarksheetStore, type DocumentStorage } from './store.svelte.js';
+import type { DocumentStorage } from './persistence.svelte.js';
+import { MarksheetStore } from './store.svelte.js';
 
 /** Reaching for `localStorage` itself throws in some sandboxed and private contexts. */
 function browserStorage(): DocumentStorage {
