@@ -152,7 +152,6 @@ export interface EntryEdits {
 export function entryEdits(entry: BreakdownEntry): EntryEdits {
 	const original = entry.original;
 	if (original === null) return { added: true, fields: [] };
-	if (original === undefined) return { added: false, fields: [] };
 	return {
 		added: false,
 		fields: EDITABLE_FIELDS.filter((field) => original[field] !== entry[field])

@@ -30,6 +30,7 @@ function entry(
 		specPoint: '3.2.1.4',
 		commandWord: 'Explain',
 		ao: 'AO1',
+		original: null,
 		...overrides
 	};
 }
@@ -295,10 +296,6 @@ describe('entryEdits', () => {
 			added: true,
 			fields: []
 		});
-	});
-
-	it('reports nothing for an entry imported before its parse values were recorded', () => {
-		expect(entryEdits(entry('a', '1a', '1'))).toEqual({ added: false, fields: [] });
 	});
 });
 

@@ -30,7 +30,8 @@ function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocumen
 					summary: 'Explain the process shown',
 					specPoint: '3.2.1.4',
 					commandWord: 'Explain',
-					ao: 'AO1'
+					ao: 'AO1',
+					original: null
 				}
 			],
 			warnings: []

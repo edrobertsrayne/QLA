@@ -45,10 +45,9 @@ export interface BreakdownEntry extends EntryValues {
 	id: string;
 	/**
 	 * The parse's own values, so the table can show what the teacher has
-	 * changed: `null` for an entry the teacher added, absent on an entry
-	 * imported before values were recorded, otherwise the parse's values.
+	 * changed: `null` for an entry the teacher added, otherwise the parse's values.
 	 */
-	original?: EntryValues | null;
+	original: EntryValues | null;
 }
 
 /**
@@ -171,9 +170,7 @@ function parseEntry(value: unknown): BreakdownEntry | null {
 	return {
 		id,
 		...entryValuesOf(value),
-		...(original === undefined
-			? {}
-			: { original: original === null ? null : entryValuesOf(original) })
+		original: original === null ? null : entryValuesOf(original ?? value)
 	};
 }
 

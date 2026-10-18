@@ -29,7 +29,7 @@ import {
 import {
 	DOCUMENT_SCHEMA_VERSION,
 	dropUnreachableMarks,
-	entryValuesOf,
+	type EntryValues,
 	labelFromFilename,
 	localId,
 	marksOnEntry,
@@ -197,8 +197,7 @@ export class MarksheetStore {
 	createFromParse(input: CreateFromParseInput): void {
 		const at = this.#now();
 		const entries: BreakdownEntry[] = input.breakdown.questions.map((question) => {
-			const entry: BreakdownEntry = {
-				id: localId(),
+			const values: EntryValues = {
 				label: question.id,
 				questionNumber: question.questionNumber,
 				marks: question.marks,
@@ -209,8 +208,7 @@ export class MarksheetStore {
 			};
 			// What the parse produced, so the review table can show what has been
 			// changed since.
-			entry.original = entryValuesOf(entry);
-			return entry;
+			return { id: localId(), ...values, original: { ...values } };
 		});
 		const entryIdFor = (label: string | null): string | null => {
 			if (label === null) return null;
@@ -723,21 +721,10 @@ export class MarksheetStore {
 		for (const entryId of entryIds) {
 			const entry = document.breakdown.entries.find((candidate) => candidate.id === entryId);
 			if (!entry) continue;
-			this.#rememberParseValues(entry);
 			edit(entry);
 			edited = true;
 		}
 		if (edited) this.#mutated();
-	}
-
-	/**
-	 * Keep what an entry holds as the parse's values, for an entry imported
-	 * before they were recorded: the edit about to be applied is then the
-	 * difference the table shows, and later edits join it.
-	 */
-	#rememberParseValues(entry: BreakdownEntry): void {
-		if ('original' in entry) return;
-		entry.original = entryValuesOf(entry);
 	}
 
 	/** Take a document, or none, as the one in hand: nothing about the previous one carries over. */

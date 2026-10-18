@@ -2,7 +2,7 @@
 // back. Test-only: nothing in the app imports this. A spec whose scenario
 // wants other defaults wraps these with overrides rather than redefining them.
 
-import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from './document.js';
+import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY, entryValuesOf } from './document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredStudent } from './document.js';
 
 export const NOW = '2026-01-01T10:00:00.000Z';
@@ -13,7 +13,7 @@ export function entry(
 	questionNumber: string,
 	overrides: Partial<BreakdownEntry> = {}
 ): BreakdownEntry {
-	return {
+	const built: BreakdownEntry = {
 		id,
 		label,
 		questionNumber,
@@ -22,8 +22,11 @@ export function entry(
 		specPoint: '3.2.1.4',
 		commandWord: 'Describe',
 		ao: 'AO2',
+		original: null,
 		...overrides
 	};
+	// As the parse leaves it: the entry's own values, until a test says otherwise.
+	return overrides.original === undefined ? { ...built, original: entryValuesOf(built) } : built;
 }
 
 export function student(

@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CORRUPT_KEY_PREFIX, DOCUMENT_SCHEMA_VERSION, STORAGE_KEY, markCount } from './document.js';
+import {
+	CORRUPT_KEY_PREFIX,
+	DOCUMENT_SCHEMA_VERSION,
+	STORAGE_KEY,
+	entryValuesOf,
+	markCount
+} from './document.js';
 import type {
 	BreakdownEntry,
 	EntryValues,
@@ -67,7 +73,8 @@ function storedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDo
 					summary: 'Explain the process shown',
 					specPoint: '3.2.1.4',
 					commandWord: 'Explain',
-					ao: 'AO1'
+					ao: 'AO1',
+					original: originValues()
 				}
 			],
 			warnings: []
@@ -89,7 +96,7 @@ function entry(
 	questionNumber: string,
 	overrides: Partial<BreakdownEntry> = {}
 ): BreakdownEntry {
-	return {
+	const built: BreakdownEntry = {
 		id,
 		label,
 		questionNumber,
@@ -98,8 +105,11 @@ function entry(
 		specPoint: '3.2.1.4',
 		commandWord: 'Explain',
 		ao: 'AO1',
+		original: null,
 		...overrides
 	};
+	// As the parse leaves it: the entry's own values, until a test says otherwise.
+	return overrides.original === undefined ? { ...built, original: entryValuesOf(built) } : built;
 }
 
 /** The values the parse produced for `entry()` after a label edit. */
@@ -400,20 +410,22 @@ describe('load', () => {
 	});
 
 	it('reads a document written before entries recorded the parse’s values', () => {
-		// #35 wrote entries as they are in `storedDocument()`: no recorded values.
-		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument()) });
+		// #35 wrote entries with no recorded values: they are read as the parse's.
+		const written = JSON.parse(JSON.stringify(storedDocument()));
+		delete written.breakdown.entries[0].original;
+		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(written) });
 		const store = storeWith(storage);
 
 		store.load();
 		expect(store.document).not.toBeNull();
 		expect(entryOf(store, 'entry-1')?.label).toBe('2bii');
-		expect(store.document?.breakdown.entries[0]).not.toHaveProperty('original');
+		expect(store.document?.breakdown.entries[0].original).toEqual(originValues());
 	});
 
 	it('treats an entry reciting nonsense as its parse values as unreadable', () => {
 		const raw = JSON.stringify(storedDocument()).replace(
-			'"ao":"AO1"',
-			'"ao":"AO1","original":{"label":7}'
+			'"original":{"label":"2bii"',
+			'"original":{"label":7'
 		);
 		const storage = fakeStorage({ [STORAGE_KEY]: raw });
 
@@ -911,8 +923,7 @@ describe('breakdown edits', () => {
 					specPoint: '3.2.2.1',
 					commandWord: 'State',
 					ao: 'AO3',
-					// The values the entry carried when it was first edited: #35's
-					// stored document recorded none.
+					// The values the entry carried as it was read.
 					original: originValues()
 				}
 			]);
@@ -922,7 +933,7 @@ describe('breakdown edits', () => {
 		}
 	});
 
-	it('leaves an entry the teacher never touched without recorded parse values', () => {
+	it('keeps the values an entry was read with beside an edit to another entry', () => {
 		const { store } = openStore({
 			breakdown: {
 				entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
@@ -932,7 +943,11 @@ describe('breakdown edits', () => {
 
 		store.setEntrySummary('entry-2', 'Something else');
 
-		expect(entryOf(store, 'entry-1')).not.toHaveProperty('original');
+		expect(entryOf(store, 'entry-1')?.original).toEqual({
+			...originValues(),
+			label: '1a',
+			questionNumber: '1'
+		});
 		expect(entryOf(store, 'entry-2')?.original).toEqual({
 			...originValues(),
 			label: '1b',
