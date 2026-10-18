@@ -152,7 +152,17 @@ describe('breakdown page', () => {
 					summary: 'Rate change on cooling',
 					specPoint: '3.2.2.1',
 					commandWord: 'State',
-					ao: 'AO3'
+					ao: 'AO3',
+					// What the parse produced, kept so the changes show as changes.
+					original: {
+						label: '2bii',
+						questionNumber: '2',
+						marks: 4,
+						summary: 'Describe the rate change',
+						specPoint: '3.2.1.4',
+						commandWord: 'Describe',
+						ao: 'AO2'
+					}
 				}
 			]);
 		});
@@ -345,5 +355,144 @@ describe('breakdown page', () => {
 
 		expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
 		expect(goto).not.toHaveBeenCalled();
+	});
+
+	it('adds the entry the paper total is missing, and the breakdown then adds up', async () => {
+		seed(documentOf([entry('entry-1', '1a', '1', { marks: 4 })]));
+		openBreakdownPage();
+
+		await page.getByLabelText('Total marks printed on the paper').fill('10');
+		await expect
+			.element(page.getByText('4 of 10 — 6 marks unaccounted — an entry may be missing.'))
+			.toBeInTheDocument();
+
+		// The parse missed Question 2: a row at the end is a question of its own.
+		await page.getByRole('button', { name: 'Add entry at end' }).click();
+
+		// The row says what it still needs, so a blank question number cannot slip
+		// through to a band headed `Q`.
+		await expect.element(page.getByText('needs a question number')).toBeInTheDocument();
+
+		const label = page.getByLabelText('Label for (no label)');
+		await expect.element(label).toHaveFocus();
+		await label.fill('2a');
+		// Numbering it re-bands the row, which leaves the row's own cells in place.
+		await userEvent.fill(page.getByLabelText('Question number for band (none)'), '2');
+		await userEvent.fill(page.getByLabelText('Marks for 2a'), '6');
+		await userEvent.tab();
+
+		await expect.element(page.getByText('10 of 10 — adds up.')).toBeInTheDocument();
+		await expect.element(page.getByTitle('Added by you')).toBeInTheDocument();
+		await vi.waitFor(() => {
+			expect(
+				storedDocument().breakdown.entries.map((one) => [one.label, one.questionNumber, one.marks])
+			).toEqual([
+				['1a', '1', 4],
+				['2a', '2', 6]
+			]);
+		});
+	});
+
+	it('adds a subquestion from a band, into that band', async () => {
+		seed(
+			documentOf([
+				entry('entry-1', '1a', '1'),
+				entry('entry-2', '2a', '2'),
+				entry('entry-3', '2b', '2')
+			])
+		);
+		openBreakdownPage();
+
+		await page.getByRole('button', { name: 'Add subquestion to question 2' }).click();
+		await page.getByLabelText('Label for (no label)').fill('2c');
+
+		await vi.waitFor(() => {
+			expect(storedDocument().breakdown.entries.map((one) => one.label)).toEqual([
+				'1a',
+				'2a',
+				'2b',
+				'2c'
+			]);
+		});
+		expect(storedDocument().breakdown.entries[3].questionNumber).toBe('2');
+	});
+
+	it('marks the field a teacher changed, and clears it when they change it back', async () => {
+		seed(documentOf([entry('entry-1', '2bii', '2', { summary: 'Describe the rate change' })]));
+		openBreakdownPage();
+
+		await page.getByLabelText('Summary for 2bii').fill('Rate change on cooling');
+
+		await expect.element(page.getByTitle('Edited: Summary')).toBeInTheDocument();
+
+		await page.getByLabelText('Summary for 2bii').fill('Describe the rate change');
+
+		await expect.element(page.getByTitle('Edited: Summary')).not.toBeInTheDocument();
+	});
+
+	it('deletes an entry and puts it back from the undo that stays on screen', async () => {
+		seed(documentOf([entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')]));
+		openBreakdownPage();
+
+		await page.getByRole('button', { name: 'Delete 1a' }).click();
+
+		await expect.element(page.getByText('Deleted 1a.')).toBeInTheDocument();
+		await expect.element(page.getByLabelText('Label for 1a')).not.toBeInTheDocument();
+
+		await page.getByRole('button', { name: 'Undo' }).click();
+
+		await expect.element(page.getByLabelText('Label for 1a')).toHaveValue('1a');
+		await expect.element(page.getByText('Deleted 1a.')).not.toBeInTheDocument();
+		await vi.waitFor(() => {
+			expect(storedDocument().breakdown.entries.map((one) => one.label)).toEqual(['1a', '1b']);
+		});
+	});
+
+	it('moves an entry up and down, both in the table and in what is saved', async () => {
+		seed(documentOf([entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')]));
+		openBreakdownPage();
+
+		// The first row cannot go up, and the last cannot go down.
+		await expect.element(page.getByRole('button', { name: 'Move 1a up' })).toBeDisabled();
+		await expect.element(page.getByRole('button', { name: 'Move 1b down' })).toBeDisabled();
+
+		await page.getByRole('button', { name: 'Move 1b up' }).click();
+
+		await vi.waitFor(() => {
+			expect(storedDocument().breakdown.entries.map((one) => one.label)).toEqual(['1b', '1a']);
+		});
+	});
+
+	it('checks the breakdown against the total printed on the paper', async () => {
+		seed(
+			documentOf([
+				entry('entry-1', '1a', '1', { marks: 4 }),
+				entry('entry-2', '2a', '2', { marks: null })
+			])
+		);
+		openBreakdownPage();
+
+		await expect
+			.element(page.getByText('This breakdown accounts for 4 marks.'))
+			.toBeInTheDocument();
+
+		await page.getByLabelText('Total marks printed on the paper').fill('14');
+
+		await expect
+			.element(
+				page.getByText('4 of 14 — 10 marks unaccounted — 1 entry has no available marks yet.')
+			)
+			.toBeInTheDocument();
+
+		// Give the entry its marks and the shortfall is no entry's missing marks.
+		await userEvent.fill(page.getByLabelText('Marks for 2a'), '6');
+
+		await expect
+			.element(page.getByText('10 of 14 — 4 marks unaccounted — an entry may be missing.'))
+			.toBeInTheDocument();
+
+		await userEvent.fill(page.getByLabelText('Marks for 2a'), '10');
+
+		await expect.element(page.getByText('14 of 14 — adds up.')).toBeInTheDocument();
 	});
 });

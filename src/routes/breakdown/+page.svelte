@@ -11,9 +11,12 @@
 	import NewUploadDialog from '$lib/components/marksheet/NewUploadDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
 	import {
 		entryName,
 		questionCount,
+		isWholeNumber,
+		reconcilePaperTotal,
 		runWarnings,
 		type AttentionItem
 	} from '$lib/marksheet/breakdown.js';
@@ -32,6 +35,13 @@
 	const usage = $derived(store.runUsage);
 	/** Whether the table groups its rows under their question (a bound checkbox needs `let`). */
 	let banded = $state(true);
+	/**
+	 * The total the teacher reads off the paper's cover. It is theirs for this
+	 * visit only: it is not part of the stored document, so it is never restored.
+	 */
+	let paperTotal = $state<number | null>(null);
+
+	const check = $derived(paperTotal === null ? null : reconcilePaperTotal(entries, paperTotal));
 
 	const title = $derived(
 		store.document?.paper.label
@@ -70,6 +80,29 @@
 
 	function onLabelInput(event: Event): void {
 		store.setPaperLabel((event.target as HTMLInputElement).value);
+	}
+
+	/** Take the printed total as it is typed, and refuse anything that is not a whole number. */
+	function onPaperTotalInput(event: Event): void {
+		const input = event.currentTarget as HTMLInputElement;
+		const typed = input.value.trim();
+		if (typed === '') paperTotal = null;
+		else if (isWholeNumber(typed)) paperTotal = Number(typed);
+		else input.value = paperTotal === null ? '' : String(paperTotal);
+	}
+
+	/**
+	 * "3 entries have no available marks yet" — the entries whose marks figure is
+	 * unknown, which is what a shortfall usually turns out to be.
+	 */
+	function entriesWithoutAvailableMarks(count: number): string {
+		const entries = count === 1 ? '1 entry' : `${count} entries`;
+		return `${entries} ${count === 1 ? 'has' : 'have'} no available marks yet`;
+	}
+
+	/** The teacher's word for what the breakdown counts. */
+	function marksNoun(count: number): string {
+		return count === 1 ? 'mark' : 'marks';
 	}
 
 	/** Why an entry is on the list, in the words a teacher would use. */
@@ -149,6 +182,50 @@
 				</section>
 			{/if}
 
+			<section class="space-y-2 rounded-lg border p-3" data-testid="paper-total">
+				<h2 class="text-sm font-semibold">Does it add up?</h2>
+				<Label class="text-xs text-muted-foreground" for="paper-total">
+					Total marks printed on the paper
+				</Label>
+				<Input
+					id="paper-total"
+					class="w-24"
+					type="number"
+					min="0"
+					step="1"
+					inputmode="numeric"
+					placeholder="—"
+					value={paperTotal ?? ''}
+					oninput={onPaperTotalInput}
+				/>
+				{#if check === null}
+					<p class="text-xs text-muted-foreground">
+						This breakdown accounts for <strong>{marks}</strong>
+						{marksNoun(marks)}.
+					</p>
+				{:else if check.status === 'adds-up'}
+					<p class="text-xs text-emerald-700 dark:text-emerald-400">
+						{check.accounted} of {check.paperTotal} — adds up{#if check.noAvailableMarks.length > 0},
+							but {entriesWithoutAvailableMarks(check.noAvailableMarks.length)}{/if}.
+					</p>
+				{:else if check.status === 'unaccounted'}
+					<p class="text-xs text-destructive">
+						{check.accounted} of {check.paperTotal} — {check.unaccounted}
+						{marksNoun(check.unaccounted)} unaccounted —
+						{#if check.noAvailableMarks.length > 0}
+							{entriesWithoutAvailableMarks(check.noAvailableMarks.length)}.
+						{:else}
+							an entry may be missing.
+						{/if}
+					</p>
+				{:else}
+					<p class="text-xs text-destructive">
+						{check.accounted} of {check.paperTotal} — {-check.unaccounted}
+						{marksNoun(-check.unaccounted)} too many — an entry may be duplicated or over-marked.
+					</p>
+				{/if}
+			</section>
+
 			<section class="space-y-1 rounded-lg border p-3">
 				<h2 class="text-sm font-semibold">Needs attention ({attention.length})</h2>
 				<ul class="space-y-0.5">
@@ -208,7 +285,7 @@
 
 			{#if entries.length === 0}
 				<p class="text-sm text-muted-foreground">
-					The parse returned no entries. Start a new upload to try another paper.
+					The parse returned no entries. Add one below, or start a new upload to try another paper.
 				</p>
 			{/if}
 		</div>

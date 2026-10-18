@@ -21,6 +21,7 @@ import {
 	DOCUMENT_SCHEMA_VERSION,
 	STORAGE_KEY,
 	dropUnreachableMarks,
+	entryValuesOf,
 	labelFromFilename,
 	parseStoredDocument
 } from './document.js';
@@ -60,6 +61,20 @@ export type SaveState =
 
 /** The surface the stored state allows. */
 export type BootRoute = '/' | '/breakdown' | '/marksheet';
+
+/**
+ * The one change undo would take back, held in memory for the session. The next
+ * change clears it, so a second click can never take back two things.
+ */
+export type Undoable = {
+	/** The entry as it was, and its place among the others. */
+	entry: BreakdownEntry;
+	index: number;
+	/** The marks its students had gained on it, by student id. */
+	marks: Record<string, number>;
+	/** The parse's findings about it, as the breakdown held them before. */
+	findings: StoredWarning[];
+};
 
 export interface CreateFromParseInput {
 	breakdown: Breakdown;
@@ -135,6 +150,8 @@ export class MarksheetStore {
 	saveState = $state<SaveState>({ kind: 'saved', at: new Date(0) });
 	/** This session's parse cost. Absent after a reload. */
 	runUsage = $state<ParseUsage | null>(null);
+	/** The one change undo would take back, or nothing. */
+	undoable = $state<Undoable | null>(null);
 
 	constructor(deps: MarksheetStoreDeps) {
 		this.#storage = deps.storage;
@@ -222,16 +239,22 @@ export class MarksheetStore {
 	 */
 	createFromParse(input: CreateFromParseInput): void {
 		const at = this.#now();
-		const entries: BreakdownEntry[] = input.breakdown.questions.map((question) => ({
-			id: newEntryId(),
-			label: question.id,
-			questionNumber: question.questionNumber,
-			marks: question.marks,
-			summary: question.summary,
-			specPoint: question.specPoint,
-			commandWord: question.commandWord,
-			ao: question.ao
-		}));
+		const entries: BreakdownEntry[] = input.breakdown.questions.map((question) => {
+			const entry: BreakdownEntry = {
+				id: newEntryId(),
+				label: question.id,
+				questionNumber: question.questionNumber,
+				marks: question.marks,
+				summary: question.summary,
+				specPoint: question.specPoint,
+				commandWord: question.commandWord,
+				ao: question.ao
+			};
+			// What the parse produced, so the review table can show what has been
+			// changed since.
+			entry.original = entryValuesOf(entry);
+			return entry;
+		});
 		const entryIdFor = (label: string | null): string | null => {
 			if (label === null) return null;
 			const matches = input.breakdown.questions.filter((question) => question.id === label);
@@ -339,6 +362,111 @@ export class MarksheetStore {
 	}
 
 	/**
+	 * Insert an entry the parse missed below the entry named, and hand back its
+	 * id. It joins the question of the row it follows, and carries nothing else:
+	 * a blank label and no marks stop it being mistaken for something the parse
+	 * found.
+	 */
+	insertEntryAfter(entryId: string): string | null {
+		const document = this.#editable();
+		if (!document) return null;
+
+		const entries = document.breakdown.entries;
+		const after = entries.findIndex((entry) => entry.id === entryId);
+		if (after === -1) return null;
+
+		const entry = this.#blankEntry(entries[after].questionNumber);
+		entries.splice(after + 1, 0, entry);
+		this.#mutated();
+		return entry.id;
+	}
+
+	/**
+	 * Add an entry at the end of the breakdown, and hand back its id. It is a
+	 * question of its own for the teacher to number — the paper's last question
+	 * is the one a parse most often misses — so numbering it moves no other row.
+	 */
+	appendEntry(): string | null {
+		const document = this.#editable();
+		if (!document) return null;
+
+		const entry = this.#blankEntry('');
+		document.breakdown.entries.push(entry);
+		this.#mutated();
+		return entry.id;
+	}
+
+	/** Delete an entry, leaving it — and what was recorded against it — one undo away. */
+	deleteEntry(entryId: string): boolean {
+		const document = this.#editable();
+		if (!document) return false;
+
+		const entries = document.breakdown.entries;
+		const index = entries.findIndex((entry) => entry.id === entryId);
+		if (index === -1) return false;
+		const [entry] = entries.splice(index, 1);
+
+		// What was recorded against the entry goes with it: nothing can reach it
+		// again, so it would sit in the document unread.
+		const marks: Record<string, number> = {};
+		for (const [studentId, byEntry] of Object.entries(document.marks)) {
+			if (byEntry[entryId] === undefined) continue;
+			marks[studentId] = byEntry[entryId];
+			delete byEntry[entryId];
+		}
+		const findings = document.breakdown.warnings;
+		document.breakdown.warnings = findings.filter((warning) => warning.questionId !== entryId);
+
+		// After the change, since the change itself clears any undo on offer.
+		this.#mutated();
+		this.undoable = {
+			entry: $state.snapshot(entry),
+			index,
+			marks,
+			findings: $state.snapshot(findings)
+		};
+		return true;
+	}
+
+	/**
+	 * Take back the one change undo covers, if there is one, and say whether
+	 * there was: a change the teacher does not want is then one click from gone.
+	 */
+	undo(): boolean {
+		const document = this.#editable();
+		const undoable = this.undoable;
+		if (!document || !undoable) return false;
+
+		const entries = document.breakdown.entries;
+		entries.splice(Math.min(undoable.index, entries.length), 0, undoable.entry);
+		for (const [studentId, mark] of Object.entries(undoable.marks)) {
+			document.marks[studentId] ??= {};
+			document.marks[studentId][undoable.entry.id] = mark;
+		}
+		// Nothing else can have touched them: any later change clears the undo.
+		document.breakdown.warnings = undoable.findings;
+
+		this.#mutated();
+		return true;
+	}
+
+	/** Move an entry one place up or down, to put the columns in the paper's order. */
+	moveEntry(entryId: string, offset: -1 | 1): boolean {
+		const document = this.#editable();
+		if (!document) return false;
+
+		const entries = document.breakdown.entries;
+		const from = entries.findIndex((entry) => entry.id === entryId);
+		const to = from + offset;
+		if (from === -1 || to < 0 || to >= entries.length) return false;
+
+		const [entry] = entries.splice(from, 1);
+		entries.splice(to, 0, entry);
+		this.#mutated();
+		return true;
+	}
+
+	/**
 	 * Confirm the breakdown, unless something blocks the marksheet it would
 	 * build: an entry with no marks, or a blank or repeated label. Returns
 	 * whether the breakdown is confirmed, changing nothing when it is not.
@@ -379,24 +507,59 @@ export class MarksheetStore {
 		);
 	}
 
+	/** An entry the teacher adds: nothing claimed, everything to fill in. */
+	#blankEntry(questionNumber: string): BreakdownEntry {
+		return {
+			id: newEntryId(),
+			label: '',
+			questionNumber,
+			marks: null,
+			summary: '',
+			specPoint: null,
+			commandWord: null,
+			ao: null,
+			original: null
+		};
+	}
+
+	/**
+	 * The document as a command may change it. A confirmed breakdown is
+	 * read-only, and the unlock that makes it editable again is an action of its
+	 * own — so every breakdown edit starts here.
+	 */
+	#editable(): MarksheetDocument | null {
+		const document = this.document;
+		if (!document || document.breakdownConfirmedAt !== null) return null;
+		return document;
+	}
+
 	/**
 	 * Apply one edit to the entries a command targets, then autosave it. An edit
-	 * naming no entry in the document changes nothing; a confirmed breakdown is
-	 * read-only, and the unlock that makes it editable again is an action of its
-	 * own.
+	 * naming no entry in the document changes nothing.
 	 */
 	#editEntries(entryIds: readonly string[], edit: (entry: BreakdownEntry) => void): void {
-		const document = this.document;
-		if (!document || document.breakdownConfirmedAt !== null) return;
+		const document = this.#editable();
+		if (!document) return;
 
 		let edited = false;
 		for (const entryId of entryIds) {
 			const entry = document.breakdown.entries.find((candidate) => candidate.id === entryId);
 			if (!entry) continue;
+			this.#rememberParseValues(entry);
 			edit(entry);
 			edited = true;
 		}
 		if (edited) this.#mutated();
+	}
+
+	/**
+	 * Keep what an entry holds as the parse's values, for an entry imported
+	 * before they were recorded: the edit about to be applied is then the
+	 * difference the table shows, and later edits join it.
+	 */
+	#rememberParseValues(entry: BreakdownEntry): void {
+		if ('original' in entry) return;
+		entry.original = entryValuesOf(entry);
 	}
 
 	/** Adopt the state a load or a wipe found, and hand it back to the caller. */
@@ -406,6 +569,9 @@ export class MarksheetStore {
 		saveState?: SaveState
 	): LoadResult {
 		this.document = document;
+		// Undo covers a change to the document in hand: adopting another one
+		// (a load, or a wipe) leaves nothing behind to take back.
+		this.undoable = null;
 		// A ready result carries the store's own document — the reactive proxy,
 		// not the plain object it was parsed or built from.
 		this.#loadResult =
@@ -420,6 +586,8 @@ export class MarksheetStore {
 	#mutated(): void {
 		const document = this.document;
 		if (!document) return;
+		// Undo covers the change just made, so a later one takes its place.
+		this.undoable = null;
 		document.updatedAt = this.#now().toISOString();
 		this.#unsaved = true;
 		if (this.#failed || this.#unavailable) return;

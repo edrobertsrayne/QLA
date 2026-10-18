@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+	bandName,
 	confirmationBlockers,
+	entryEdits,
 	entryName,
 	isUndivided,
 	needsAttention,
 	questionBands,
 	questionCount,
+	reconcilePaperTotal,
 	runWarnings,
 	warningsForEntry
 } from './breakdown.js';
-import type { BreakdownEntry, StoredWarning } from './document.js';
+import type { BreakdownEntry, EntryValues, StoredWarning } from './document.js';
 
 function entry(
 	id: string,
@@ -87,6 +90,26 @@ describe('isUndivided', () => {
 		const [band] = questionBands([entry('a', '1a', '1'), entry('b', '1b', '1')]);
 
 		expect(isUndivided(band)).toBe(false);
+	});
+
+	it('is not undivided when the entry has no question number yet', () => {
+		const [band] = questionBands([entry('a', '', '')]);
+
+		expect(isUndivided(band)).toBe(false);
+	});
+});
+
+describe('bandName', () => {
+	it('names a band by its question number', () => {
+		const [band] = questionBands([entry('a', '2bii', '2')]);
+
+		expect(bandName(band)).toBe('2');
+	});
+
+	it('stands in for a band whose question number is not there yet', () => {
+		const [band] = questionBands([entry('a', '', '')]);
+
+		expect(bandName(band)).toBe('(none)');
 	});
 });
 
@@ -206,6 +229,102 @@ describe('warnings', () => {
 			'SUMMARY_LENGTH'
 		]);
 		expect(warningsForEntry(warnings, 'b')).toEqual([]);
+	});
+});
+
+/** The values `entry()` holds, as an entry that records its parse values. */
+function parseValues(overrides: Partial<EntryValues> = {}): EntryValues {
+	return {
+		label: '1a',
+		questionNumber: '1',
+		marks: 4,
+		summary: 'Explain the process shown',
+		specPoint: '3.2.1.4',
+		commandWord: 'Explain',
+		ao: 'AO1',
+		...overrides
+	};
+}
+
+describe('entryEdits', () => {
+	it('reports nothing for an entry the parse produced and nobody touched', () => {
+		const untouched = entry('a', '1a', '1', { original: parseValues() });
+
+		expect(entryEdits(untouched)).toEqual({ added: false, fields: [] });
+	});
+
+	it('names each field the teacher has changed since the parse', () => {
+		const edited = entry('a', '2b', '2', {
+			marks: 6,
+			specPoint: null,
+			original: parseValues()
+		});
+
+		expect(entryEdits(edited).fields).toEqual(['label', 'questionNumber', 'marks', 'specPoint']);
+	});
+
+	it('reports an entry the teacher added', () => {
+		expect(entryEdits(entry('a', '', '', { marks: null, original: null }))).toEqual({
+			added: true,
+			fields: []
+		});
+	});
+
+	it('reports nothing for an entry imported before its parse values were recorded', () => {
+		expect(entryEdits(entry('a', '1a', '1'))).toEqual({ added: false, fields: [] });
+	});
+});
+
+describe('reconcilePaperTotal', () => {
+	it('adds up when the entries account for the total printed on the paper', () => {
+		const check = reconcilePaperTotal(
+			[entry('a', '1a', '1', { marks: 4 }), entry('b', '2a', '2', { marks: 6 })],
+			10
+		);
+
+		expect(check).toEqual({
+			paperTotal: 10,
+			accounted: 10,
+			unaccounted: 0,
+			status: 'adds-up',
+			noAvailableMarks: []
+		});
+	});
+
+	it('counts the shortfall, naming the entries with no available marks yet', () => {
+		const withoutMarks = entry('b', '2a', '2', { marks: null });
+
+		const check = reconcilePaperTotal([entry('a', '1a', '1', { marks: 4 }), withoutMarks], 14);
+
+		expect(check.accounted).toBe(4);
+		expect(check.unaccounted).toBe(10);
+		expect(check.status).toBe('unaccounted');
+		expect(check.noAvailableMarks).toEqual([withoutMarks]);
+	});
+
+	it('blames no entry when every entry has its marks', () => {
+		const check = reconcilePaperTotal([entry('a', '1a', '1', { marks: 4 })], 6);
+
+		expect(check.unaccounted).toBe(2);
+		expect(check.status).toBe('unaccounted');
+		expect(check.noAvailableMarks).toEqual([]);
+	});
+
+	it('counts a total the entries exceed as too many', () => {
+		const check = reconcilePaperTotal([entry('a', '1a', '1', { marks: 4 })], 3);
+
+		expect(check.unaccounted).toBe(-1);
+		expect(check.status).toBe('over');
+	});
+
+	it('adds up while entries are still to be marked', () => {
+		const check = reconcilePaperTotal(
+			[entry('a', '1a', '1', { marks: 4 }), entry('b', '2a', '2', { marks: null })],
+			4
+		);
+
+		expect(check.status).toBe('adds-up');
+		expect(check.noAvailableMarks).toHaveLength(1);
 	});
 });
 

@@ -6,7 +6,8 @@
 // state — so the rules are testable on their own and every surface that shows
 // a breakdown derives them the same way.
 
-import type { BreakdownEntry, StoredBreakdown, StoredWarning } from './document.js';
+import type { BreakdownEntry, EditableField, StoredBreakdown, StoredWarning } from './document.js';
+import { EDITABLE_FIELDS, totalMarks } from './document.js';
 
 /** A contiguous run of entries belonging to one question: one band of the table. */
 export interface QuestionBand {
@@ -36,7 +37,12 @@ export function questionBands(entries: readonly BreakdownEntry[]): QuestionBand[
  * own question number (`3`), rather than subquestions under a stem.
  */
 export function isUndivided(band: QuestionBand): boolean {
-	return band.entries.length === 1 && band.entries[0].label.trim() === band.questionNumber;
+	const questionNumber = band.questionNumber.trim();
+	return (
+		questionNumber !== '' &&
+		band.entries.length === 1 &&
+		band.entries[0].label.trim() === questionNumber
+	);
 }
 
 /**
@@ -127,6 +133,78 @@ export function needsAttention(breakdown: StoredBreakdown): AttentionItem[] {
 /** The findings that are not about one entry, so they stay beside the table. */
 export function runWarnings(warnings: readonly StoredWarning[]): StoredWarning[] {
 	return warnings.filter((warning) => warning.questionId === null);
+}
+
+/** How an entry differs from what the parse produced. */
+export interface EntryEdits {
+	/** The teacher supplied this entry; the parse never emitted it. */
+	added: boolean;
+	/** The fields changed since the parse, in `EDITABLE_FIELDS` order. */
+	fields: EditableField[];
+}
+
+/**
+ * What a teacher has changed about an entry, so the review table can mark it.
+ * An entry imported before its parse values were recorded reports nothing:
+ * there is nothing left to compare it against.
+ */
+export function entryEdits(entry: BreakdownEntry): EntryEdits {
+	const original = entry.original;
+	if (original === null) return { added: true, fields: [] };
+	if (original === undefined) return { added: false, fields: [] };
+	return {
+		added: false,
+		fields: EDITABLE_FIELDS.filter((field) => original[field] !== entry[field])
+	};
+}
+
+/** How a breakdown adds up against the total printed on the paper. */
+export interface PaperTotalCheck {
+	/** The total the teacher typed off the paper. */
+	paperTotal: number;
+	/** Marks the breakdown accounts for: the entries whose marks are known. */
+	accounted: number;
+	/** Marks the printed total is missing, negative when the entries overrun it. */
+	unaccounted: number;
+	/** `unaccounted` read as a verdict: nothing, a shortfall, or an overrun. */
+	status: 'adds-up' | 'unaccounted' | 'over';
+	/** The entries with no available marks yet, which may explain the shortfall. */
+	noAvailableMarks: BreakdownEntry[];
+}
+
+/**
+ * Check a breakdown against the total printed on the paper — the only thing
+ * that catches an entry the parse never emitted. The entries with no available
+ * marks yet ride along, so whoever reads the shortfall can say whether it is
+ * waiting on marks or looks like an entry that is missing.
+ */
+export function reconcilePaperTotal(
+	entries: readonly BreakdownEntry[],
+	paperTotal: number
+): PaperTotalCheck {
+	const noAvailableMarks = entries.filter((entry) => entry.marks === null);
+	const accounted = totalMarks(entries);
+	const unaccounted = paperTotal - accounted;
+	return {
+		paperTotal,
+		accounted,
+		unaccounted,
+		status: unaccounted > 0 ? 'unaccounted' : unaccounted < 0 ? 'over' : 'adds-up',
+		noAvailableMarks
+	};
+}
+
+/** What to call a band in prose: its question number, or a stand-in while it has none. */
+export function bandName(band: QuestionBand): string {
+	return band.questionNumber === '' ? '(none)' : band.questionNumber;
+}
+
+/**
+ * Whether typed text is a whole number — the only shape a mark or a printed
+ * total is allowed to take.
+ */
+export function isWholeNumber(typed: string): boolean {
+	return /^\d+$/.test(typed.trim());
 }
 
 /** What to call an entry in prose: its label, or a stand-in while it has none. */

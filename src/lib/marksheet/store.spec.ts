@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CORRUPT_KEY_PREFIX, DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from './document.js';
-import type { BreakdownEntry, MarksheetDocument } from './document.js';
+import type {
+	BreakdownEntry,
+	EntryValues,
+	MarksheetDocument,
+	StoredBreakdown
+} from './document.js';
 import { MarksheetStore } from './store.svelte.js';
 import type { DocumentStorage, LoadResult } from './store.svelte.js';
 
@@ -91,6 +96,19 @@ function entry(
 	};
 }
 
+/** The values the parse produced for `entry()` after a label edit. */
+function originValues(): EntryValues {
+	return {
+		label: '2bii',
+		questionNumber: '2',
+		marks: 4,
+		summary: 'Explain the process shown',
+		specPoint: '3.2.1.4',
+		commandWord: 'Explain',
+		ao: 'AO1'
+	};
+}
+
 /** A loaded store over a seeded document, with its storage alongside. */
 function openStore(overrides: Partial<MarksheetDocument> = {}) {
 	const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument(overrides)) });
@@ -107,6 +125,12 @@ function stored(storage: FakeStorage): MarksheetDocument {
 /** Entries the document keyed by id, so a test can assert the store's state. */
 function entryOf(store: MarksheetStore, id: string): BreakdownEntry | undefined {
 	return store.document?.breakdown.entries.find((candidate) => candidate.id === id);
+}
+
+/** The id a structure command returned, asserting there is one. */
+function idOf(id: string | null): string {
+	if (id === null) throw new Error('expected a new entry id');
+	return id;
 }
 
 /** The key an unreadable document was preserved under, asserting the load found one. */
@@ -255,6 +279,58 @@ describe('load', () => {
 		expect(store.load()).toEqual({ kind: 'ready', document });
 		expect(storage.getItem(STORAGE_KEY)).toBe(JSON.stringify(document));
 	});
+
+	it("reads the parse's own values back with an entry that records them", () => {
+		const origin = originValues();
+		const storage = fakeStorage({
+			[STORAGE_KEY]: JSON.stringify(
+				storedDocument({
+					breakdown: { entries: [entry('e', '2b', '2', { original: origin })], warnings: [] }
+				})
+			)
+		});
+		const store = storeWith(storage);
+
+		store.load();
+
+		expect(store.document?.breakdown.entries[0].original).toEqual(origin);
+	});
+
+	it('reads an entry that records no parse values as added by the teacher', () => {
+		const storage = fakeStorage({
+			[STORAGE_KEY]: JSON.stringify(
+				storedDocument({
+					breakdown: { entries: [entry('e', '', '', { original: null })], warnings: [] }
+				})
+			)
+		});
+		const store = storeWith(storage);
+
+		store.load();
+
+		expect(store.document?.breakdown.entries[0].original).toBeNull();
+	});
+
+	it('reads a document written before entries recorded the parse’s values', () => {
+		// #35 wrote entries as they are in `storedDocument()`: no recorded values.
+		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument()) });
+		const store = storeWith(storage);
+
+		expect(store.load().kind).toBe('ready');
+		expect(entryOf(store, 'entry-1')?.label).toBe('2bii');
+		expect(store.document?.breakdown.entries[0]).not.toHaveProperty('original');
+	});
+
+	it('treats an entry reciting nonsense as its parse values as unreadable', () => {
+		const raw = JSON.stringify(storedDocument()).replace(
+			'"ao":"AO1"',
+			'"ao":"AO1","original":{"label":7}'
+		);
+		const storage = fakeStorage({ [STORAGE_KEY]: raw });
+
+		expect(storeWith(storage).load().kind).toBe('corrupt');
+		expect(storage.getItem(STORAGE_KEY)).toBe(raw);
+	});
 });
 
 describe('createFromParse', () => {
@@ -328,6 +404,34 @@ describe('createFromParse', () => {
 		]);
 
 		expect(storage.getItem(STORAGE_KEY)).not.toContain('promptTokens');
+	});
+
+	it("records the parse's own values with each entry, so an edit shows as a difference", () => {
+		const storage = fakeStorage();
+		const store = storeWith(storage);
+
+		store.createFromParse(input);
+
+		expect(stored(storage).breakdown.entries.map((entry) => entry.original)).toEqual([
+			{
+				label: '1a',
+				questionNumber: '1',
+				marks: 2,
+				summary: 'Explain the process shown',
+				specPoint: null,
+				commandWord: 'Explain',
+				ao: 'AO1'
+			},
+			{
+				label: '2bii',
+				questionNumber: '2',
+				marks: 4,
+				summary: 'Describe the rate change',
+				specPoint: '3.2.1.4',
+				commandWord: 'Describe',
+				ao: null
+			}
+		]);
 	});
 
 	it('keeps this run usage in memory only, and routes to the breakdown', () => {
@@ -630,13 +734,34 @@ describe('breakdown edits', () => {
 					summary: 'Explain the rate change',
 					specPoint: '3.2.2.1',
 					commandWord: 'State',
-					ao: 'AO3'
+					ao: 'AO3',
+					// The values the entry carried when it was first edited: #35's
+					// stored document recorded none.
+					original: originValues()
 				}
 			]);
 			expect(storage.writes.filter((key) => key === STORAGE_KEY)).toEqual([STORAGE_KEY]);
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	it('leaves an entry the teacher never touched without recorded parse values', () => {
+		const { store } = openStore({
+			breakdown: {
+				entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
+				warnings: []
+			}
+		});
+
+		store.setEntrySummary('entry-2', 'Something else');
+
+		expect(entryOf(store, 'entry-1')).not.toHaveProperty('original');
+		expect(entryOf(store, 'entry-2')?.original).toEqual({
+			...originValues(),
+			label: '1b',
+			questionNumber: '1'
+		});
 	});
 
 	it('refuses marks that are not positive whole numbers', () => {
@@ -730,6 +855,260 @@ describe('breakdown edits', () => {
 		store.setEntryAo('entry-1', 'AO3');
 
 		expect(entryOf(store, 'entry-1')).toEqual(storedDocument().breakdown.entries[0]);
+	});
+});
+
+describe('breakdown structure', () => {
+	const threeEntries: Partial<MarksheetDocument> = {
+		breakdown: {
+			entries: [
+				entry('entry-1', '1a', '1'),
+				entry('entry-2', '1b', '1'),
+				entry('entry-3', '2a', '2')
+			],
+			warnings: []
+		}
+	};
+
+	it('inserts a teacher-added entry below the entry named', () => {
+		vi.useFakeTimers();
+		try {
+			const { store, storage } = openStore(threeEntries);
+
+			const id = idOf(store.insertEntryAfter('entry-1'));
+
+			const inserted = entryOf(store, id);
+			expect(inserted).toEqual({
+				id,
+				label: '',
+				// It joins the question it was added under: the number is one edit away
+				// when it belongs to a new one.
+				questionNumber: '1',
+				marks: null,
+				summary: '',
+				specPoint: null,
+				commandWord: null,
+				ao: null,
+				// The teacher's own row, so the table can mark it as added.
+				original: null
+			});
+			expect(store.document?.breakdown.entries.map((one) => one.id)).toEqual([
+				'entry-1',
+				id,
+				'entry-2',
+				'entry-3'
+			]);
+
+			vi.advanceTimersByTime(500);
+			expect(stored(storage).breakdown.entries.map((one) => one.id)).toEqual([
+				'entry-1',
+				id,
+				'entry-2',
+				'entry-3'
+			]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('adds a row at the end as a question of its own', () => {
+		const { store } = openStore(threeEntries);
+
+		const id = idOf(store.appendEntry());
+
+		expect(store.document?.breakdown.entries.map((one) => one.id)).toEqual([
+			'entry-1',
+			'entry-2',
+			'entry-3',
+			id
+		]);
+		// A question of its own, for the paper's last question — the one a parse
+		// most often misses. Numbering it re-numbers nothing else.
+		expect(entryOf(store, id)?.questionNumber).toBe('');
+		expect(store.questionBands.map((band) => band.questionNumber)).toEqual(['1', '2', '']);
+	});
+
+	it('adds a row at the end of a breakdown with no entries', () => {
+		const { store } = openStore({ breakdown: { entries: [], warnings: [] } });
+
+		const id = idOf(store.appendEntry());
+
+		expect(store.document?.breakdown.entries).toHaveLength(1);
+		expect(entryOf(store, id)?.questionNumber).toBe('');
+	});
+
+	it('refuses to insert below an entry that is not there', () => {
+		vi.useFakeTimers();
+		try {
+			const { store, storage } = openStore(threeEntries);
+
+			expect(store.insertEntryAfter('entry-gone')).toBeNull();
+
+			expect(store.document?.breakdown.entries).toHaveLength(3);
+			vi.advanceTimersByTime(500);
+			expect(storage.writes.filter((key) => key === STORAGE_KEY)).toEqual([]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('deletes an entry and takes its marks and findings with it', () => {
+		const { store } = openStore({
+			...threeEntries,
+			students: [{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false }],
+			marks: { 'student-1': { 'entry-2': 3, 'entry-3': 1 } },
+			breakdown: {
+				entries: (threeEntries.breakdown as StoredBreakdown).entries,
+				warnings: [
+					{ questionId: 'entry-2', code: 'SUMMARY_LENGTH', message: 'Two words.' },
+					{ questionId: 'entry-3', code: 'MARKS_UNKNOWN', message: 'No marks read.' },
+					{ questionId: null, code: 'SPEC_UNREADABLE', message: 'No specification.' }
+				]
+			}
+		});
+
+		expect(store.deleteEntry('entry-2')).toBe(true);
+
+		expect(store.document?.breakdown.entries.map((one) => one.id)).toEqual(['entry-1', 'entry-3']);
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-3': 1 } });
+		// The finding was about an entry that is gone: nothing could show it again.
+		expect(store.document?.breakdown.warnings).toEqual([
+			{ questionId: 'entry-3', code: 'MARKS_UNKNOWN', message: 'No marks read.' },
+			{ questionId: null, code: 'SPEC_UNREADABLE', message: 'No specification.' }
+		]);
+	});
+
+	it('offers one deletion to undo, back where it was with its marks and findings', () => {
+		const { store } = openStore({
+			...threeEntries,
+			students: [{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false }],
+			marks: { 'student-1': { 'entry-2': 3 } },
+			breakdown: {
+				entries: (threeEntries.breakdown as StoredBreakdown).entries,
+				warnings: [
+					{ questionId: 'entry-2', code: 'SUMMARY_LENGTH', message: 'Two words.' },
+					{ questionId: null, code: 'SPEC_UNREADABLE', message: 'No specification.' }
+				]
+			}
+		});
+
+		store.deleteEntry('entry-2');
+		expect(store.undoable).toMatchObject({ index: 1 });
+
+		expect(store.undo()).toBe(true);
+
+		expect(store.document?.breakdown.entries.map((one) => one.id)).toEqual([
+			'entry-1',
+			'entry-2',
+			'entry-3'
+		]);
+		expect(entryOf(store, 'entry-2')?.label).toBe('1b');
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-2': 3 } });
+		expect(store.document?.breakdown.warnings.map((warning) => warning.questionId)).toEqual([
+			'entry-2',
+			null
+		]);
+		expect(store.undoable).toBeNull();
+	});
+
+	it('takes nothing back twice', () => {
+		const { store } = openStore(threeEntries);
+
+		store.deleteEntry('entry-2');
+		store.undo();
+		store.undo();
+
+		expect(store.document?.breakdown.entries).toHaveLength(3);
+	});
+
+	it('clears the undo at the next change', () => {
+		const { store } = openStore(threeEntries);
+
+		store.deleteEntry('entry-2');
+		store.setPaperLabel('10X/Ph1');
+		expect(store.undoable).toBeNull();
+
+		expect(store.undo()).toBe(false);
+		expect(store.document?.breakdown.entries.map((one) => one.id)).toEqual(['entry-1', 'entry-3']);
+	});
+
+	it('keeps the undo when a change is refused', () => {
+		const { store } = openStore(threeEntries);
+
+		store.deleteEntry('entry-2');
+		// Refused: a mark that is not a whole number, and an entry that is not there.
+		store.setEntryMarks('entry-1', 2.5);
+		store.setEntryLabel('entry-gone', '9z');
+
+		expect(store.undoable).not.toBeNull();
+		expect(store.undo()).toBe(true);
+		expect(store.document?.breakdown.entries.map((one) => one.id)).toEqual([
+			'entry-1',
+			'entry-2',
+			'entry-3'
+		]);
+	});
+
+	it('drops the undo with the document it belongs to', () => {
+		const { store } = openStore(threeEntries);
+
+		store.deleteEntry('entry-2');
+		store.wipe();
+
+		expect(store.undoable).toBeNull();
+		expect(store.undo()).toBe(false);
+	});
+
+	it('moves an entry up and down', () => {
+		const { store } = openStore(threeEntries);
+
+		expect(store.moveEntry('entry-2', 1)).toBe(true);
+		expect(store.document?.breakdown.entries.map((one) => one.id)).toEqual([
+			'entry-1',
+			'entry-3',
+			'entry-2'
+		]);
+
+		expect(store.moveEntry('entry-2', -1)).toBe(true);
+		expect(store.document?.breakdown.entries.map((one) => one.id)).toEqual([
+			'entry-1',
+			'entry-2',
+			'entry-3'
+		]);
+	});
+
+	it('refuses to move an entry past either end, or one that is not there', () => {
+		vi.useFakeTimers();
+		try {
+			const { store, storage } = openStore(threeEntries);
+
+			expect(store.moveEntry('entry-1', -1)).toBe(false);
+			expect(store.moveEntry('entry-3', 1)).toBe(false);
+			expect(store.moveEntry('entry-gone', -1)).toBe(false);
+
+			expect(store.document?.breakdown.entries.map((one) => one.id)).toEqual([
+				'entry-1',
+				'entry-2',
+				'entry-3'
+			]);
+			vi.advanceTimersByTime(500);
+			expect(storage.writes.filter((key) => key === STORAGE_KEY)).toEqual([]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('leaves a confirmed breakdown alone', () => {
+		const { store } = openStore({ ...threeEntries, breakdownConfirmedAt: NOW.toISOString() });
+
+		expect(store.insertEntryAfter('entry-1')).toBeNull();
+		expect(store.appendEntry()).toBeNull();
+		expect(store.deleteEntry('entry-1')).toBe(false);
+		expect(store.moveEntry('entry-1', 1)).toBe(false);
+		expect(store.undo()).toBe(false);
+
+		expect(store.document?.breakdown.entries).toHaveLength(3);
+		expect(store.undoable).toBeNull();
 	});
 });
 

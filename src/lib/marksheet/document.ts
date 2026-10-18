@@ -20,12 +20,10 @@ export const CORRUPT_KEY_PREFIX = 'qla:marksheet:corrupt:';
 export const DOCUMENT_SCHEMA_VERSION = 1;
 
 /**
- * One column of a marksheet: an undivided question or a marked subquestion.
- * `id` is generated on this device and is the stable key marks are filed under —
- * it is never the label, so editing a label moves no marks.
+ * The editable values of one entry, as the parse produced them and as the
+ * teacher leaves them.
  */
-export interface BreakdownEntry {
-	id: string;
+export interface EntryValues {
 	/** Verbatim label from the parse, editable, display only. */
 	label: string;
 	/** The question this entry bands under (ADR 0002). */
@@ -36,6 +34,21 @@ export interface BreakdownEntry {
 	specPoint: string | null;
 	commandWord: string | null;
 	ao: AssessmentObjective | null;
+}
+
+/**
+ * One column of a marksheet: an undivided question or a marked subquestion.
+ * `id` is generated on this device and is the stable key marks are filed under —
+ * it is never the label, so editing a label moves no marks.
+ */
+export interface BreakdownEntry extends EntryValues {
+	id: string;
+	/**
+	 * The parse's own values, so the table can show what the teacher has
+	 * changed: `null` for an entry the teacher added, absent on an entry
+	 * imported before values were recorded, otherwise the parse's values.
+	 */
+	original?: EntryValues | null;
 }
 
 /**
@@ -93,6 +106,50 @@ function isAssessmentObjective(value: unknown): value is AssessmentObjective {
 	return typeof value === 'string' && assessmentObjectiveOf(value) !== null;
 }
 
+/**
+ * The fields a teacher can change, listed as a record over `EntryValues` so a
+ * field added to an entry cannot be forgotten.
+ */
+const FIELDS: Record<keyof EntryValues, true> = {
+	label: true,
+	questionNumber: true,
+	marks: true,
+	summary: true,
+	specPoint: true,
+	commandWord: true,
+	ao: true
+};
+
+/** The editable fields, in a fixed order. */
+export const EDITABLE_FIELDS = Object.keys(FIELDS) as EditableField[];
+
+/** One field of an entry. */
+export type EditableField = keyof EntryValues;
+
+/** Whether a value is a set of editable values: an entry, or an entry's remembered parse values. */
+function isEntryValues(value: unknown): value is EntryValues {
+	if (!isRecord(value)) return false;
+	const { label, questionNumber, marks, summary, specPoint, commandWord, ao } = value;
+	if (typeof label !== 'string' || typeof questionNumber !== 'string') return false;
+	if (marks !== null && !(typeof marks === 'number' && Number.isInteger(marks))) return false;
+	if (typeof summary !== 'string') return false;
+	if (!isStringOrNull(specPoint) || !isStringOrNull(commandWord)) return false;
+	return ao === null || isAssessmentObjective(ao);
+}
+
+/** The editable values of an entry, or of an entry's remembered parse values, as they stand. */
+export function entryValuesOf(entry: EntryValues): EntryValues {
+	return {
+		label: entry.label,
+		questionNumber: entry.questionNumber,
+		marks: entry.marks,
+		summary: entry.summary,
+		specPoint: entry.specPoint,
+		commandWord: entry.commandWord,
+		ao: entry.ao
+	};
+}
+
 /** Parse every item, or nothing: one unreadable item makes the whole document unreadable. */
 function parseAll<T>(values: unknown[], parse: (value: unknown) => T | null): T[] | null {
 	const parsed: T[] = [];
@@ -106,23 +163,17 @@ function parseAll<T>(values: unknown[], parse: (value: unknown) => T | null): T[
 
 function parseEntry(value: unknown): BreakdownEntry | null {
 	if (!isRecord(value)) return null;
-	const { id, label, questionNumber, marks, summary, specPoint, commandWord, ao } = value;
+	const { id, original } = value;
 	if (typeof id !== 'string' || id === '') return null;
-	if (typeof label !== 'string') return null;
-	if (typeof questionNumber !== 'string') return null;
-	if (marks !== null && !(typeof marks === 'number' && Number.isInteger(marks))) return null;
-	if (typeof summary !== 'string') return null;
-	if (!isStringOrNull(specPoint) || !isStringOrNull(commandWord)) return null;
-	if (ao !== null && !isAssessmentObjective(ao)) return null;
+	// Absent, null (added by the teacher) or the parse's values — nothing else.
+	if (original !== undefined && original !== null && !isEntryValues(original)) return null;
+	if (!isEntryValues(value)) return null;
 	return {
 		id,
-		label,
-		questionNumber,
-		marks: marks as number | null,
-		summary,
-		specPoint,
-		commandWord,
-		ao
+		...entryValuesOf(value),
+		...(original === undefined
+			? {}
+			: { original: original === null ? null : entryValuesOf(original) })
 	};
 }
 
@@ -245,7 +296,7 @@ export function dropUnreachableMarks(document: MarksheetDocument): MarksheetDocu
 }
 
 /** What the breakdown adds up to: the marks a marksheet's columns carry. */
-export function totalMarks(entries: BreakdownEntry[]): number {
+export function totalMarks(entries: readonly BreakdownEntry[]): number {
 	return entries.reduce((sum, entry) => sum + (entry.marks ?? 0), 0);
 }
 
