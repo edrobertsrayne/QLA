@@ -186,6 +186,44 @@ function trimOrNull(value: string | null): string | null {
 	return trimmed === '' ? null : trimmed;
 }
 
+/** A new student on this device, unmarked and present. */
+function newStudent(name: StudentName): StoredStudent {
+	return { id: localId(), firstName: name.firstName, surname: name.surname, absent: false };
+}
+
+/**
+ * Put a mark on a cell, and say whether the cell changed: the mark already
+ * there is not a change, so re-entering it spends no undo and bumps nothing.
+ */
+function putMark(
+	marks: MarksheetDocument['marks'],
+	studentId: string,
+	entryId: string,
+	mark: number
+): boolean {
+	if (marks[studentId]?.[entryId] === mark) return false;
+	marks[studentId] ??= {};
+	marks[studentId][entryId] = mark;
+	return true;
+}
+
+/**
+ * Clear a cell back to unmarked, and say whether it held a mark. A student with
+ * nothing left on the sheet leaves nothing behind: marks are sparse, so an
+ * empty record is not kept for them.
+ */
+function removeMark(
+	marks: MarksheetDocument['marks'],
+	studentId: string,
+	entryId: string
+): boolean {
+	const studentMarks = marks[studentId];
+	if (!studentMarks || studentMarks[entryId] === undefined) return false;
+	delete studentMarks[entryId];
+	if (Object.keys(studentMarks).length === 0) delete marks[studentId];
+	return true;
+}
+
 export class MarksheetStore {
 	readonly #storage: DocumentStorage;
 	readonly #now: () => Date;
@@ -389,8 +427,7 @@ export class MarksheetStore {
 	setPaperLabel(label: string): void {
 		const document = this.document;
 		if (!document) return;
-		const trimmed = label.trim();
-		document.paper.label = trimmed === '' ? null : trimmed;
+		document.paper.label = trimOrNull(label);
 		this.#mutated();
 	}
 
@@ -398,8 +435,7 @@ export class MarksheetStore {
 	setClassName(name: string): void {
 		const document = this.document;
 		if (!document) return;
-		const trimmed = name.trim();
-		document.paper.className = trimmed === '' ? null : trimmed;
+		document.paper.className = trimOrNull(name);
 		this.#mutated();
 	}
 
@@ -592,15 +628,14 @@ export class MarksheetStore {
 		const document = this.document;
 		if (!document) return null;
 
-		const student: StoredStudent = {
-			id: localId(),
-			firstName: name.firstName,
-			surname: name.surname,
-			absent: false
-		};
+		const student = newStudent(name);
 		document.students.push(student);
 		this.#mutated();
 		return student.id;
+	}
+
+	#studentById(studentId: string): StoredStudent | undefined {
+		return this.document?.students.find((candidate) => candidate.id === studentId);
 	}
 
 	/**
@@ -609,9 +644,7 @@ export class MarksheetStore {
 	 * nothing.
 	 */
 	renameStudent(studentId: string, name: StudentName): void {
-		const document = this.document;
-		if (!document) return;
-		const student = document.students.find((candidate) => candidate.id === studentId);
+		const student = this.#studentById(studentId);
 		if (!student) return;
 
 		student.firstName = name.firstName;
@@ -625,9 +658,7 @@ export class MarksheetStore {
 	 * again.
 	 */
 	setStudentAbsent(studentId: string, absent: boolean): void {
-		const document = this.document;
-		if (!document) return;
-		const student = document.students.find((candidate) => candidate.id === studentId);
+		const student = this.#studentById(studentId);
 		if (!student) return;
 
 		student.absent = absent;
@@ -688,7 +719,7 @@ export class MarksheetStore {
 
 		const parsed = parseNameList(names);
 		for (const name of parsed) {
-			document.students.push({ id: localId(), ...name, absent: false });
+			document.students.push(newStudent(name));
 		}
 		if (parsed.length > 0) this.#mutated();
 		return parsed.length;
@@ -706,10 +737,7 @@ export class MarksheetStore {
 		if (!document) return;
 		// The mark already there is not a change: re-entering it must not spend the
 		// undo the teacher still wants, or bump the document's timestamp.
-		if (document.marks[studentId]?.[entryId] === mark) return;
-
-		document.marks[studentId] ??= {};
-		document.marks[studentId][entryId] = mark;
+		if (!putMark(document.marks, studentId, entryId, mark)) return;
 		this.#mutated();
 	}
 
@@ -719,13 +747,7 @@ export class MarksheetStore {
 	 */
 	clearMark(studentId: string, entryId: string): void {
 		const document = this.#markable(studentId, entryId);
-		const marks = document?.marks[studentId];
-		if (!document || !marks || marks[entryId] === undefined) return;
-
-		delete marks[entryId];
-		// A student with nothing left on the sheet leaves nothing behind: marks
-		// are sparse, so an empty record is not kept for them.
-		if (Object.keys(marks).length === 0) delete document.marks[studentId];
+		if (!document || !removeMark(document.marks, studentId, entryId)) return;
 		this.#mutated();
 	}
 
@@ -796,7 +818,7 @@ export class MarksheetStore {
 					result.rowsDropped += 1;
 					return;
 				}
-				target = { id: localId(), ...parsedName, absent: false };
+				target = newStudent(parsedName);
 				document.students.push(target);
 				result.studentsAdded += 1;
 				changed = true;
@@ -811,12 +833,9 @@ export class MarksheetStore {
 				const typed = raw.trim();
 
 				if (typed === '') {
-					const studentMarks = document.marks[target.id];
-					if (!studentMarks || studentMarks[entry.id] === undefined) continue;
-					delete studentMarks[entry.id];
+					if (!removeMark(document.marks, target.id, entry.id)) continue;
 					result.marksCleared += 1;
 					changed = true;
-					if (Object.keys(studentMarks).length === 0) delete document.marks[target.id];
 					continue;
 				}
 
@@ -830,9 +849,7 @@ export class MarksheetStore {
 				}
 
 				const mark = Number(typed);
-				if (document.marks[target.id]?.[entry.id] === mark) continue;
-				document.marks[target.id] ??= {};
-				document.marks[target.id][entry.id] = mark;
+				if (!putMark(document.marks, target.id, entry.id, mark)) continue;
 				result.marksStored += 1;
 				changed = true;
 				if (entry.marks !== null && mark > entry.marks) result.overMax += 1;
