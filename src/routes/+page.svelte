@@ -38,15 +38,16 @@
 	let specUrl = $state('');
 	let specUrlError = $state<string | null>(null);
 	let running = $state(false);
-	/**
-	 * The upload surface is the gate's, so reaching it means nothing is stored.
-	 * A run that stores its breakdown keeps this page up for one deliberate
-	 * click through to `/breakdown` — no marks exist yet to clobber.
-	 */
-	let storedEntryCount = $state<number | null>(null);
 	let fatal = $state<FatalError | null>(null);
 
 	const store = marksheetStore();
+	/**
+	 * The upload surface is the gate's, so reaching it means nothing is stored.
+	 * A run that stores its breakdown keeps this page up for one deliberate
+	 * click through to `/breakdown` — no marks exist yet to clobber. The card
+	 * follows the store, so New upload (same route, no remount) clears it.
+	 */
+	const storedEntryCount = $derived(store.document?.breakdown.entries.length ?? null);
 
 	const paperFileName = $derived(assessmentPaper?.name ?? null);
 	const markschemeFileName = $derived(markscheme?.name ?? null);
@@ -140,7 +141,6 @@
 	async function run(): Promise<void> {
 		if (!canRun) return;
 		running = true;
-		storedEntryCount = null;
 		fatal = null;
 		try {
 			const form = new FormData();
@@ -171,9 +171,8 @@
 						(name): name is string => name !== undefined
 					)
 				});
-				storedEntryCount = run.breakdown.questions.length;
 				toast.success('Breakdown stored', {
-					description: `${storedEntryCount} entries saved in this browser.`
+					description: `${run.breakdown.questions.length} entries saved in this browser.`
 				});
 			}
 		} catch (error) {

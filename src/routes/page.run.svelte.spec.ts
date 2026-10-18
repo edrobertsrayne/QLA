@@ -2,6 +2,7 @@ import { page } from 'vitest/browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { STORAGE_KEY } from '$lib/marksheet/document.js';
+import { marksheetStore } from '$lib/marksheet/index.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import Page from './+page.svelte';
 
@@ -44,6 +45,7 @@ const parsedRun = {
 
 describe('+page.svelte run handler', () => {
 	beforeEach(() => {
+		marksheetStore().wipe();
 		localStorage.clear();
 		vi.stubGlobal(
 			'fetch',
@@ -115,5 +117,23 @@ describe('+page.svelte run handler', () => {
 		expect(screen.container.textContent).not.toContain('breakdown.json');
 		expect(screen.container.textContent).not.toContain('Explain the process shown');
 		expect(page.getByRole('button', { name: /copy|download/i }).elements()).toHaveLength(0);
+	});
+
+	it('drops the stored-breakdown card when New upload wipes the store', async () => {
+		vi.stubGlobal('fetch', stubFetch(parsedRun));
+
+		render(Page);
+
+		await page.getByLabelText('Assessment paper (PDF)').upload(pdfFile());
+		await page.getByRole('button', { name: 'Run' }).click();
+		await expect.element(page.getByRole('link', { name: 'Open breakdown' })).toBeVisible();
+
+		// New upload: same route, no remount.
+		marksheetStore().wipe();
+
+		await expect
+			.element(page.getByRole('link', { name: 'Open breakdown' }))
+			.not.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Run' })).toBeEnabled();
 	});
 });
