@@ -53,6 +53,10 @@ _Avoid_: Marked leaf, leaf, item
 Anything below a question, at any depth: `2a` and `2bii` are equally subquestions of Question 2, and the model has no levels in between. Only subquestions carrying their own marks reach a breakdown — an unmarked stem such as `2b`, whose marks sit on `2bi` and `2bii`, is not an entry.
 _Avoid_: Sub-question, part, item, leaf
 
+**Question band**:
+A run of contiguous breakdown entries sharing a stored question number, shown under that question's heading on the breakdown page and the marksheet. Unrelated to a **RAG band**; say "band" alone only where the context is unmistakable.
+_Avoid_: Group, section, bare "band" next to RAG colours
+
 **Facility index**:
 The proportion of a question or subquestion's available marks that a class actually gained (mean mark ÷ available marks) — the measure Phase 2's analysis ranks and RAG-colours to surface poorly answered questions. Computed per breakdown entry over marks entered, excluding absent students, unmarked cells and marks above the entry's available marks.
 _Avoid_: Difficulty, average score, success rate, % marks
