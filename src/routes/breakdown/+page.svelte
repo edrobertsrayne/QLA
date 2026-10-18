@@ -8,7 +8,6 @@
 	import { resolve } from '$app/paths';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import BreakdownTable from '$lib/components/marksheet/BreakdownTable.svelte';
-	import NewUploadDialog from '$lib/components/marksheet/NewUploadDialog.svelte';
 	import BackupCard from '$lib/components/shell/BackupCard.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -160,7 +159,6 @@
 						· this run: {usage.totalTokens} tokens · ${usage.estCost.toFixed(4)}{/if}
 				</p>
 			</div>
-			<NewUploadDialog />
 		</div>
 		<BackupCard />
 	</header>

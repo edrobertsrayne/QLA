@@ -281,7 +281,7 @@
 				<Card.Title>Breakdown stored</Card.Title>
 				<Card.Description>
 					{storedEntryCount} entries saved in this browser. Check them against the paper before you start
-					entering marks; another paper starts from New upload on the breakdown page.
+					entering marks; another paper starts from New upload in the nav.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>

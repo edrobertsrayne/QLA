@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
+import AppNav from '$lib/components/shell/AppNav.svelte';
 import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from '$lib/marksheet/document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredStudent } from '$lib/marksheet/document.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
@@ -78,13 +79,16 @@ function storedDocument(): MarksheetDocument {
 	return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
 }
 
+/** The nav is where "New upload…" lives now, so the page is rendered under it. */
 function openMarksheetPage() {
 	marksheetLoad();
+	render(AppNav);
 	return render(MarksheetPage);
 }
 
 function openBreakdownPage() {
 	breakdownLoad();
+	render(AppNav);
 	return render(BreakdownPage);
 }
 

@@ -6,7 +6,6 @@
 <script lang="ts">
 	import AnalysisView from '$lib/components/marksheet/AnalysisView.svelte';
 	import MarksheetGrid from '$lib/components/marksheet/MarksheetGrid.svelte';
-	import NewUploadDialog from '$lib/components/marksheet/NewUploadDialog.svelte';
 	import BackupCard from '$lib/components/shell/BackupCard.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { totalMarks } from '$lib/marksheet/document.js';
@@ -33,6 +32,10 @@
 		].join(' · ')
 	);
 
+	function onLabelInput(event: Event): void {
+		store.setPaperLabel((event.currentTarget as HTMLInputElement).value);
+	}
+
 	function onClassNameInput(event: Event): void {
 		store.setClassName((event.currentTarget as HTMLInputElement).value);
 	}
@@ -51,18 +54,24 @@
 <main class="mx-auto max-w-6xl space-y-4 p-6 pb-[calc(var(--status-bar-height)+1.5rem)]">
 	{#if view === 'grid'}
 		<header class="space-y-3">
-			<div class="flex items-start justify-between gap-4">
-				<div class="space-y-2">
+			<div class="space-y-1">
+				<Input
+					aria-label="Paper label"
+					class="h-auto border-transparent bg-transparent px-1 text-2xl font-bold tracking-tight shadow-none hover:border-input"
+					placeholder="Name this paper"
+					value={store.document?.paper.label ?? ''}
+					oninput={onLabelInput}
+				/>
+				<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
 					<Input
 						aria-label="Class name"
-						class="h-auto border-transparent bg-transparent px-1 text-2xl font-bold tracking-tight shadow-none hover:border-input"
+						class="h-8 w-40 border-transparent bg-transparent px-1 shadow-none hover:border-input"
 						placeholder="Name this class"
 						value={className ?? ''}
 						oninput={onClassNameInput}
 					/>
-					<p class="px-1 text-sm text-muted-foreground">{summary}</p>
+					<p class="text-sm text-muted-foreground">{summary}</p>
 				</div>
-				<NewUploadDialog />
 			</div>
 			<BackupCard />
 		</header>

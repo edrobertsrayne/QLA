@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
+import AppNav from '$lib/components/shell/AppNav.svelte';
 import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY, markCount } from '$lib/marksheet/document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredWarning } from '$lib/marksheet/document.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
@@ -343,6 +344,7 @@ describe('breakdown page', () => {
 		seed(parsedDocument());
 		localStorage.setItem('qla:theme', 'dark');
 
+		render(AppNav);
 		openBreakdownPage();
 		await page.getByRole('button', { name: 'New upload…' }).click();
 		await page.getByRole('button', { name: 'Delete and start again' }).click();
@@ -355,6 +357,7 @@ describe('breakdown page', () => {
 	it('keeps working when the new-upload dialog is dismissed', async () => {
 		seed(parsedDocument());
 
+		render(AppNav);
 		openBreakdownPage();
 		await page.getByRole('button', { name: 'New upload…' }).click();
 		await page.getByRole('button', { name: 'Keep working' }).click();
