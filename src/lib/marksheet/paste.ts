@@ -8,18 +8,21 @@
 // and separate from the store, so the store's block application can be tested
 // over plain rows.
 
+import { isOverMax, putMark, readMarkText, removeMark } from './document.js';
+import type { MarksheetDocument } from './document.js';
+import { newStudent, readName } from './students.js';
+
 /** The part of `DataTransfer` a paste needs: both flavours of the same block. */
 export interface ClipboardDataLike {
 	getData(type: string): string;
 }
 
-/** Where a pasted block starts: a student's row, in a mark column or the name column. */
-export interface PasteAnchor {
-	/** The row the block starts on; null starts below the last student, which is how an empty class is built. */
-	studentId: string | null;
-	/** The entry the first mark column lands on; null when the block starts with names. */
-	entryId: string | null;
-}
+/** Where a pasted block starts. */
+export type PasteAnchor =
+	/** A block whose first column is names, from a student's row or (null) below the class. */
+	| { kind: 'names'; studentId: string | null }
+	/** A block of marks from one cell onwards. */
+	| { kind: 'marks'; studentId: string; entryId: string };
 
 /** One pasted value that was not a mark, and where in the block it sat. */
 export interface RefusedPasteCell {
@@ -91,7 +94,7 @@ function htmlGrid(html: string): string[][] {
 }
 
 /** Tab-separated text, with Windows and old-Mac line endings read as line breaks. */
-function textGrid(text: string): string[][] {
+export function textGrid(text: string): string[][] {
 	return text
 		.replace(/\r\n?/g, '\n')
 		.split('\n')
@@ -124,4 +127,137 @@ export function trimPasteGrid(rows: readonly (readonly string[])[]): string[][] 
 		trimmed.pop();
 	}
 	return trimmed;
+}
+
+/**
+ * Apply a block to the document in place, and say what it did. A block anchored
+ * in the name column reads its first column as names, mapped the way a pasted
+ * class list is; every other block reads every column as marks from the
+ * anchor's entry onwards.
+ *
+ * Pasted rows past the class become students when there is a name to give
+ * them. Columns past the last entry are clipped. A cell that is not a whole
+ * number is refused on its own and leaves the sheet as it was, while an empty
+ * cell clears a mark — the same rules as typing, applied a block at a time.
+ */
+export function applyPaste(
+	document: MarksheetDocument,
+	rows: readonly (readonly string[])[],
+	anchor: PasteAnchor
+): PasteResult {
+	const result = emptyPasteResult();
+
+	// No student to anchor on starts the block below the class: only a block
+	// that begins with names can do that, and it is how an empty class is built.
+	const anchorRow =
+		anchor.studentId === null
+			? document.students.length
+			: document.students.findIndex((student) => student.id === anchor.studentId);
+	if (anchorRow === -1) return result;
+
+	const entries = document.breakdown.entries;
+	const startsWithName = anchor.kind === 'names';
+	const firstEntry = startsWithName ? 0 : entries.findIndex((entry) => entry.id === anchor.entryId);
+	if (firstEntry === -1) return result;
+
+	const block = trimPasteGrid(rows);
+	if (block.length === 0) return result;
+
+	const entriesFromAnchor = entries.slice(firstEntry);
+	/** The first column of each row that holds a mark: past the name, or the block itself. */
+	const firstMarkColumn = startsWithName ? 1 : 0;
+	const pastedMarkColumns = Math.max(...block.map((row) => row.length - firstMarkColumn), 0);
+	result.columnsClipped = Math.max(0, pastedMarkColumns - entriesFromAnchor.length);
+
+	block.forEach((row, rowIndex) => {
+		const name = startsWithName ? (row[0] ?? '') : '';
+		let target = document.students[anchorRow + rowIndex];
+
+		if (!target) {
+			// A mark-anchored block has no name for a student it would add; a
+			// name-anchored one does — but only when the row names someone. A
+			// blank cell, or one that is punctuation, is not a student.
+			const parsedName = startsWithName ? readName(name) : null;
+			if (!parsedName) {
+				result.rowsDropped += 1;
+				return;
+			}
+			target = newStudent(parsedName);
+			document.students.push(target);
+			result.studentsAdded += 1;
+			result.changed = true;
+		}
+
+		for (let column = 0; column < pastedMarkColumns; column++) {
+			const entry = entriesFromAnchor[column];
+			if (!entry) break;
+
+			const raw = row[firstMarkColumn + column];
+			if (raw === undefined) continue;
+			const read = readMarkText(raw);
+
+			if (read.kind === 'clear') {
+				if (!removeMark(document.marks, target.id, entry.id)) continue;
+				result.marksCleared += 1;
+				result.changed = true;
+				continue;
+			}
+
+			if (read.kind === 'refused') {
+				result.refused.push({
+					row: rowIndex + 1,
+					column: firstMarkColumn + column + 1,
+					value: raw
+				});
+				continue;
+			}
+
+			if (!putMark(document.marks, target.id, entry.id, read.mark)) continue;
+			result.marksStored += 1;
+			result.changed = true;
+			if (isOverMax(read.mark, entry)) result.overMax += 1;
+		}
+	});
+
+	return result;
+}
+
+/** What a paste did, in sentences: the headline, and what it could not do. */
+export function describePaste(result: PasteResult): { summary: string; losses: string[] } {
+	const parts: string[] = [];
+	if (result.marksStored > 0) {
+		parts.push(`pasted ${result.marksStored} mark${result.marksStored === 1 ? '' : 's'}`);
+	}
+	if (result.marksCleared > 0) {
+		parts.push(`cleared ${result.marksCleared} mark${result.marksCleared === 1 ? '' : 's'}`);
+	}
+	if (result.studentsAdded > 0) {
+		parts.push(`added ${result.studentsAdded} student${result.studentsAdded === 1 ? '' : 's'}`);
+	}
+	let summary = 'Nothing was pasted.';
+	if (parts.length > 0) {
+		const sentence = parts.join(', ');
+		summary = `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+	}
+
+	const losses: string[] = [];
+	if (result.columnsClipped > 0) {
+		const count = result.columnsClipped;
+		losses.push(
+			`${count} column${count === 1 ? '' : 's'} past the last entry ${count === 1 ? 'was' : 'were'} dropped.`
+		);
+	}
+	if (result.rowsDropped > 0) {
+		const count = result.rowsDropped;
+		losses.push(
+			`${count} pasted row${count === 1 ? '' : 's'} had no name to make a student, so ${count === 1 ? 'it was' : 'they were'} not added.`
+		);
+	}
+	if (result.overMax > 0) {
+		const count = result.overMax;
+		losses.push(
+			`${count} mark${count === 1 ? '' : 's'} above the available marks ${count === 1 ? 'is' : 'are'} flagged in the grid.`
+		);
+	}
+	return { summary, losses };
 }

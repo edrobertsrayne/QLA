@@ -45,7 +45,7 @@
 	} from '$lib/marksheet/document.js';
 	import { resolveCell, type GridCell } from '$lib/marksheet/grid-cursor.js';
 	import { exportMarksNow, marksheetStore } from '$lib/marksheet/index.js';
-	import { clipboardGrid, type PasteResult } from '$lib/marksheet/paste.js';
+	import { clipboardGrid, describePaste } from '$lib/marksheet/paste.js';
 	import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
 	import {
 		progressOf,
@@ -70,6 +70,7 @@
 	const hardest = $derived(analysis.hardest);
 	/** What the last paste did, cleared by the change that clears the undo it offered. */
 	const pasteNotice = $derived(store.pasteNotice);
+	const described = $derived(pasteNotice ? describePaste(pasteNotice) : null);
 
 	/** Where the cursor is: a mark cell, or a row's name cell when `entryId` is null. */
 	let cursor = $state<GridCell | null>(null);
@@ -440,7 +441,12 @@
 		}
 
 		clearRefusal();
-		store.pasteMarks(rows, anchor);
+		store.pasteMarks(
+			rows,
+			anchor.entryId === null
+				? { kind: 'names', studentId: anchor.studentId }
+				: { kind: 'marks', studentId: anchor.studentId, entryId: anchor.entryId }
+		);
 	}
 
 	/** A paste aimed at the grid rather than the proxy: the proxy's own is already taken. */
@@ -452,47 +458,6 @@
 	/** A block taken back: the store clears its account along with the undo. */
 	function undoPaste(): void {
 		store.undo();
-	}
-
-	/** What one paste did, in one sentence: the marks, the students. */
-	function pasteSummary(result: PasteResult): string {
-		const parts: string[] = [];
-		if (result.marksStored > 0) {
-			parts.push(`pasted ${result.marksStored} mark${result.marksStored === 1 ? '' : 's'}`);
-		}
-		if (result.marksCleared > 0) {
-			parts.push(`cleared ${result.marksCleared} mark${result.marksCleared === 1 ? '' : 's'}`);
-		}
-		if (result.studentsAdded > 0) {
-			parts.push(`added ${result.studentsAdded} student${result.studentsAdded === 1 ? '' : 's'}`);
-		}
-		if (parts.length === 0) return 'Nothing was pasted.';
-		const sentence = parts.join(', ');
-		return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
-	}
-
-	/** Why a paste could not use part of the block, one line per kind of loss. */
-	function pasteLosses(result: PasteResult): string[] {
-		const losses: string[] = [];
-		if (result.columnsClipped > 0) {
-			const count = result.columnsClipped;
-			losses.push(
-				`${count} column${count === 1 ? '' : 's'} past the last entry ${count === 1 ? 'was' : 'were'} dropped.`
-			);
-		}
-		if (result.rowsDropped > 0) {
-			const count = result.rowsDropped;
-			losses.push(
-				`${count} pasted row${count === 1 ? '' : 's'} had no name to make a student, so ${count === 1 ? 'it was' : 'they were'} not added.`
-			);
-		}
-		if (result.overMax > 0) {
-			const count = result.overMax;
-			losses.push(
-				`${count} mark${count === 1 ? '' : 's'} above the available marks ${count === 1 ? 'is' : 'are'} flagged in the grid.`
-			);
-		}
-		return losses;
 	}
 
 	/** Clicking a band moves the cursor to its first column, on the row it is on. */
@@ -663,7 +628,7 @@
 				<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
 			</Alert>
 		{/if}
-		{#if pasteNotice}
+		{#if pasteNotice && described}
 			<!-- What a block did, beside the grid: the sheet under it has already
 			     changed, so the account has to be where the teacher can read it. -->
 			<Alert
@@ -671,10 +636,10 @@
 				data-testid="paste-notice"
 			>
 				<AlertDescription class="space-y-1">
-					<p>{pasteSummary(pasteNotice)}</p>
-					{#if pasteLosses(pasteNotice).length > 0}
+					<p>{described.summary}</p>
+					{#if described.losses.length > 0}
 						<ul class="list-disc space-y-0.5 pl-4">
-							{#each pasteLosses(pasteNotice) as loss (loss)}
+							{#each described.losses as loss (loss)}
 								<li>{loss}</li>
 							{/each}
 						</ul>

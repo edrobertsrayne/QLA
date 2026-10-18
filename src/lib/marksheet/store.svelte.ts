@@ -19,19 +19,17 @@ import {
 	type QuestionBand
 } from './breakdown.js';
 import { backupFile, marksCsvFile, type QlaFile } from './download.js';
-import { emptyPasteResult, trimPasteGrid, type PasteAnchor, type PasteResult } from './paste.js';
+import { applyPaste, emptyPasteResult, type PasteAnchor, type PasteResult } from './paste.js';
 import {
 	DOCUMENT_SCHEMA_VERSION,
 	dropUnreachableMarks,
 	entryValuesOf,
-	isOverMax,
 	labelFromFilename,
 	localId,
 	marksOnEntry,
 	marksOverMax,
 	parseStoredDocument,
 	putMark,
-	readMarkText,
 	removeMark
 } from './document.js';
 import type {
@@ -50,7 +48,6 @@ import {
 import {
 	newStudent,
 	parseNameList,
-	readName,
 	sortStudentsByName,
 	studentName,
 	type StudentName,
@@ -501,7 +498,7 @@ export class MarksheetStore {
 			const rows = names.replace(/\r\n?/g, '\n').split('\n');
 			return this.pasteMarks(
 				rows.map((line) => line.split('\t')),
-				{ studentId: null, entryId: null }
+				{ kind: 'names', studentId: null }
 			).studentsAdded;
 		}
 
@@ -540,120 +537,30 @@ export class MarksheetStore {
 	}
 
 	/**
-	 * Paste a block of cells from a spreadsheet, starting at the anchor cell and
-	 * reading down and right. A block anchored in the name column reads its first
-	 * column as names, mapped the way a pasted class list is; every other block
-	 * reads every column as marks from the anchor's entry onwards.
-	 *
-	 * Pasted rows past the class become students when there is a name to give
-	 * them. Columns past the last entry are clipped. A cell that is not a whole
-	 * number is refused on its own and leaves the sheet as it was, while an empty
-	 * cell clears a mark — the same rules as typing, applied a block at a time.
+	 * Paste a block of cells from a spreadsheet at the anchor, by the rules in
+	 * `applyPaste`, and keep the account of it for the notice beside the grid. A
+	 * paste that changes nothing keeps no undo of its own.
 	 */
 	pasteMarks(rows: readonly (readonly string[])[], anchor: PasteAnchor): PasteResult {
-		const result = emptyPasteResult();
 		const document = this.document;
-		if (!document) return result;
-
-		// No student to anchor on starts the block below the class: only a block
-		// that begins with names can do that, and it is how an empty class is built.
-		if (anchor.studentId === null && anchor.entryId !== null) return result;
-		const anchorRow =
-			anchor.studentId === null
-				? document.students.length
-				: document.students.findIndex((student) => student.id === anchor.studentId);
-		if (anchorRow === -1) return result;
-
-		const entries = document.breakdown.entries;
-		const startsWithName = anchor.entryId === null;
-		const firstEntry = startsWithName
-			? 0
-			: entries.findIndex((entry) => entry.id === anchor.entryId);
-		if (firstEntry === -1) return result;
-
-		const block = trimPasteGrid(rows);
-		if (block.length === 0) return result;
-
-		const entriesFromAnchor = entries.slice(firstEntry);
-		/** The first column of each row that holds a mark: past the name, or the block itself. */
-		const firstMarkColumn = startsWithName ? 1 : 0;
-		const pastedMarkColumns = Math.max(...block.map((row) => row.length - firstMarkColumn), 0);
-		result.columnsClipped = Math.max(0, pastedMarkColumns - entriesFromAnchor.length);
+		if (!document) return emptyPasteResult();
 
 		// Taken before the first cell lands: undo puts back the document exactly as
 		// the teacher had it, added students included.
 		const before = copyOf(document);
-		let changed = false;
-
-		block.forEach((row, rowIndex) => {
-			const student = document.students[anchorRow + rowIndex];
-			const name = startsWithName ? (row[0] ?? '') : '';
-			let target = student;
-
-			if (!target) {
-				// A mark-anchored block has no name for a student it would add; a
-				// name-anchored one does — but only when the row names someone. A
-				// blank cell, or one that is punctuation, is not a student.
-				if (!startsWithName) {
-					result.rowsDropped += 1;
-					return;
-				}
-				const parsedName = readName(name);
-				if (!parsedName) {
-					result.rowsDropped += 1;
-					return;
-				}
-				target = newStudent(parsedName);
-				document.students.push(target);
-				result.studentsAdded += 1;
-				changed = true;
-			}
-
-			for (let column = 0; column < pastedMarkColumns; column++) {
-				const entry = entriesFromAnchor[column];
-				if (!entry) break;
-
-				const raw = row[firstMarkColumn + column];
-				if (raw === undefined) continue;
-				const read = readMarkText(raw);
-
-				if (read.kind === 'clear') {
-					if (!removeMark(document.marks, target.id, entry.id)) continue;
-					result.marksCleared += 1;
-					changed = true;
-					continue;
-				}
-
-				if (read.kind === 'refused') {
-					result.refused.push({
-						row: rowIndex + 1,
-						column: firstMarkColumn + column + 1,
-						value: raw
-					});
-					continue;
-				}
-
-				if (!putMark(document.marks, target.id, entry.id, read.mark)) continue;
-				result.marksStored += 1;
-				changed = true;
-				if (isOverMax(read.mark, entry)) result.overMax += 1;
-			}
-		});
-
+		const result = applyPaste(document, rows, anchor);
+		if (result.changed) {
+			this.#mutated();
+			this.undoable = { kind: 'mark-paste', before };
+		}
 		// A paste with nothing to say — every cell already held what was pasted —
 		// leaves no notice behind.
 		const worthNoticing =
-			changed || result.refused.length > 0 || result.columnsClipped > 0 || result.rowsDropped > 0;
-
-		if (!changed) {
-			this.pasteNotice = worthNoticing ? result : null;
-			return result;
-		}
-
-		result.changed = true;
-		this.#mutated();
-		this.undoable = { kind: 'mark-paste', before };
-		this.pasteNotice = result;
+			result.changed ||
+			result.refused.length > 0 ||
+			result.columnsClipped > 0 ||
+			result.rowsDropped > 0;
+		this.pasteNotice = worthNoticing ? result : null;
 		return result;
 	}
 
