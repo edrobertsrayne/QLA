@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from '$lib/marksheet/document.js';
+import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY, markCount } from '$lib/marksheet/document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredWarning } from '$lib/marksheet/document.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { load as breakdownLoad } from './+page.js';
@@ -78,6 +78,12 @@ beforeEach(() => {
 	localStorage.clear();
 	goto.mockClear();
 });
+
+/** How many marks the marksheet holds now, as the store has them. */
+function marksStored(): number {
+	const document = marksheetStore().document;
+	return document === null ? 0 : markCount(document);
+}
 
 /** The route's load guard reads storage before the page renders. */
 function openBreakdownPage() {
@@ -446,6 +452,80 @@ describe('breakdown page', () => {
 		await vi.waitFor(() => {
 			expect(storedDocument().breakdown.entries.map((one) => one.label)).toEqual(['1a', '1b']);
 		});
+	});
+
+	it('warns before deleting an entry that has marks, naming how many go with it', async () => {
+		seed(
+			parsedDocument({
+				students: [{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false }],
+				marks: { 'student-1': { 'entry-1': 3 } }
+			})
+		);
+		openBreakdownPage();
+
+		await page.getByRole('button', { name: 'Delete 2bii' }).click();
+
+		// The number is in the question, so the click that removes marks says how many.
+		await expect
+			.element(page.getByTestId('delete-loss'))
+			.toHaveTextContent('1 mark is entered against it');
+		await page.getByRole('button', { name: 'Keep the entry' }).click();
+
+		await expect.element(page.getByLabelText('Label for 2bii')).toHaveValue('2bii');
+		expect(storedDocument().marks['student-1']['entry-1']).toBe(3);
+
+		await page.getByRole('button', { name: 'Delete 2bii' }).click();
+		await page.getByRole('button', { name: 'Delete 2bii and 1 mark' }).click();
+
+		await expect.element(page.getByLabelText('Label for 2bii')).not.toBeInTheDocument();
+		await vi.waitFor(() => expect(marksStored()).toBe(0));
+
+		// The undo still offers the entry back, with the marks that went with it.
+		await page.getByRole('button', { name: 'Undo' }).click();
+
+		await expect.element(page.getByLabelText('Label for 2bii')).toHaveValue('2bii');
+		expect(marksStored()).toBe(1);
+	});
+
+	it('warns when an entry is given fewer marks than a mark already entered', async () => {
+		seed(
+			parsedDocument({
+				students: [{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false }],
+				marks: { 'student-1': { 'entry-1': 3 } }
+			})
+		);
+		openBreakdownPage();
+		const marks = page.getByLabelText('Marks for 2bii');
+
+		await userEvent.fill(marks, '6');
+		await userEvent.tab();
+
+		// Raising the entry's available marks leaves nothing above them: nothing to
+		// warn about.
+		await expect.element(page.getByTestId('over-max-marks')).not.toBeInTheDocument();
+
+		// A total is saved keystroke by keystroke, so the entry being typed in is
+		// not judged yet: a raise typed digit by digit cannot flash a warning.
+		await userEvent.fill(marks, '1');
+		await expect.element(page.getByTestId('over-max-marks')).not.toBeInTheDocument();
+
+		await userEvent.tab();
+
+		await expect
+			.element(page.getByTestId('over-max-marks'))
+			.toHaveTextContent('1 mark entered on 2bii is above its 1 available mark.');
+
+		// Nothing was clamped: the mark the student gained stands as it was entered.
+		await vi.waitFor(() => {
+			expect(storedDocument().breakdown.entries[0].marks).toBe(1);
+			expect(storedDocument().marks['student-1']['entry-1']).toBe(3);
+		});
+
+		// Available marks the mark still fits under clear the warning.
+		await userEvent.fill(marks, '3');
+		await userEvent.tab();
+
+		await expect.element(page.getByTestId('over-max-marks')).not.toBeInTheDocument();
 	});
 
 	it('moves an entry up and down, both in the table and in what is saved', async () => {

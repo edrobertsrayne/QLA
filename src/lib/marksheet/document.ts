@@ -308,6 +308,38 @@ export function markCount(document: MarksheetDocument): number {
 	);
 }
 
+/**
+ * How many marks the document holds on one entry: what deleting that entry takes
+ * with it. Every one of them goes, whether or not it counts towards a figure —
+ * an absent student's marks are kept, and are removed with the entry they were
+ * entered on.
+ */
+export function marksOnEntry(document: MarksheetDocument, entryId: string): number {
+	let recorded = 0;
+	for (const byEntry of Object.values(document.marks)) {
+		if (byEntry[entryId] !== undefined) recorded += 1;
+	}
+	return recorded;
+}
+
+/**
+ * How many of an entry's marks sit above the available marks it offers. Marks
+ * are never clamped, so these are the ones no figure can count until the entry's
+ * available marks are raised or the mark is corrected. An entry with no
+ * available marks has nothing for a mark to be above.
+ */
+export function marksOverMax(document: MarksheetDocument, entryId: string): number {
+	const available = document.breakdown.entries.find((entry) => entry.id === entryId)?.marks ?? null;
+	if (available === null) return 0;
+
+	let over = 0;
+	for (const byEntry of Object.values(document.marks)) {
+		const mark = byEntry[entryId];
+		if (mark !== undefined && mark > available) over += 1;
+	}
+	return over;
+}
+
 /** Seed the paper label from an uploaded filename: `10X Ph1.pdf` → `10X Ph1`. */
 export function labelFromFilename(filename: string | undefined): string | null {
 	if (filename === undefined) return null;

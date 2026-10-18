@@ -27,6 +27,8 @@ import {
 	dropUnreachableMarks,
 	entryValuesOf,
 	labelFromFilename,
+	marksOnEntry,
+	marksOverMax,
 	parseStoredDocument
 } from './document.js';
 import type {
@@ -839,6 +841,41 @@ export class MarksheetStore {
 		document.breakdownConfirmedAt = this.#now().toISOString();
 		this.#mutated();
 		return true;
+	}
+
+	/**
+	 * Unlock a confirmed breakdown: the one action that makes it editable again,
+	 * so a mistake found mid-marking is fixable without wiping the marks. The
+	 * marks are left exactly as they are — nothing is clamped — and what a change
+	 * costs them is put to the teacher before they make it.
+	 */
+	unlockBreakdown(): boolean {
+		const document = this.document;
+		if (!document || document.breakdownConfirmedAt === null) return false;
+
+		document.breakdownConfirmedAt = null;
+		this.#mutated();
+		return true;
+	}
+
+	/**
+	 * How many marks students have recorded against an entry: what deleting it
+	 * takes with it.
+	 */
+	marksOnEntry(entryId: string): number {
+		const document = this.document;
+		return document === null ? 0 : marksOnEntry(document, entryId);
+	}
+
+	/**
+	 * How many of an entry's marks sit above the available marks it now offers:
+	 * what lowering them leaves behind, and what no figure counts until the entry
+	 * is raised back or the mark corrected. Nothing is ever clamped, so this is
+	 * what the teacher has to be told about rather than have fixed for them.
+	 */
+	marksOverMax(entryId: string): number {
+		const document = this.document;
+		return document === null ? 0 : marksOverMax(document, entryId);
 	}
 
 	/** Write anything pending now: a hidden or closing tab must not lose keystrokes. */

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CORRUPT_KEY_PREFIX, DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from './document.js';
+import { CORRUPT_KEY_PREFIX, DOCUMENT_SCHEMA_VERSION, STORAGE_KEY, markCount } from './document.js';
 import type {
 	BreakdownEntry,
 	EntryValues,
@@ -1298,6 +1298,147 @@ describe('confirm breakdown', () => {
 
 		expect(store.confirmBreakdown()).toBe(true);
 		expect(store.route()).toBe('/marksheet');
+	});
+});
+
+describe('unlocking the breakdown', () => {
+	/** A confirmed marksheet with one student and one mark: what an unlock must not disturb. */
+	function openConfirmed(overrides: Partial<MarksheetDocument> = {}) {
+		return openStore({
+			breakdownConfirmedAt: NOW.toISOString(),
+			students: [student('student-1', 'Ada', 'Lovelace')],
+			marks: { 'student-1': { 'entry-1': 3 } },
+			...overrides
+		});
+	}
+
+	it('makes a confirmed breakdown editable again, leaving the marks exactly as they were', () => {
+		vi.useFakeTimers();
+		try {
+			const { store, storage } = openConfirmed();
+
+			// Answered before the unlock: a confirmed breakdown is what marks are keyed
+			// against, so an edit is refused until the teacher says so.
+			store.setEntryLabel('entry-1', 'nope');
+			expect(entryOf(store, 'entry-1')?.label).toBe('2bii');
+
+			expect(store.unlockBreakdown()).toBe(true);
+			vi.advanceTimersByTime(500);
+
+			expect(entryOf(store, 'entry-1')?.label).toBe('2bii');
+			expect(store.route()).toBe('/breakdown');
+			expect(stored(storage).breakdownConfirmedAt).toBeNull();
+
+			// Editable now, and the edits take: a wrong entry is fixable mid-marking.
+			store.setEntryLabel('entry-1', '2b');
+			store.setEntryMarks('entry-1', 6);
+			expect(entryOf(store, 'entry-1')?.label).toBe('2b');
+			expect(entryOf(store, 'entry-1')?.marks).toBe(6);
+			expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is already done when the breakdown was never confirmed', () => {
+		vi.useFakeTimers();
+		try {
+			const { store, storage } = openStore();
+
+			expect(store.unlockBreakdown()).toBe(false);
+
+			expect(store.document?.breakdownConfirmedAt).toBeNull();
+			expect(store.route()).toBe('/breakdown');
+			vi.advanceTimersByTime(500);
+			expect(storage.writes.filter((key) => key === STORAGE_KEY)).toEqual([]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('does nothing when no marksheet is stored', () => {
+		const store = storeWith(fakeStorage());
+
+		expect(store.unlockBreakdown()).toBe(false);
+
+		expect(store.document).toBeNull();
+	});
+});
+
+describe('what changing the breakdown costs the marks', () => {
+	/**
+	 * An unlocked breakdown over two students — one absent — with marks on the
+	 * four-mark first entry, one of them above it: the state the unlock exists to
+	 * leave teachers in.
+	 */
+	function openUnlocked() {
+		return openStore({
+			students: [
+				student('student-1', 'Ada', 'Lovelace'),
+				{ id: 'student-2', firstName: 'Grace', surname: 'Hopper', absent: true }
+			],
+			marks: { 'student-1': { 'entry-1': 5 }, 'student-2': { 'entry-1': 2 } }
+		});
+	}
+
+	it('says how many marks deleting an entry would take with it, absent students included', () => {
+		const { store } = openUnlocked();
+
+		// Every mark filed against the entry goes with it, whether or not it counts
+		// towards a figure: an absent student's marks are kept, and removed with it.
+		const loss = store.marksOnEntry('entry-1');
+		expect(loss).toBe(2);
+		expect(store.marksOnEntry('entry-gone')).toBe(0);
+
+		store.deleteEntry('entry-1');
+
+		// The count was the loss: the entry's marks are gone, and only its marks.
+		expect(store.document).not.toBeNull();
+		expect(markCount(store.document as MarksheetDocument)).toBe(0);
+	});
+
+	it('says how many marks are left above an entry’s available marks', () => {
+		const { store } = openUnlocked();
+
+		// Five and two are entered against an entry offering four: one is above it.
+		expect(store.marksOverMax('entry-1')).toBe(1);
+
+		// Raising the available marks is the common, harmless fix, and leaves
+		// nothing above them.
+		store.setEntryMarks('entry-1', 6);
+		expect(store.marksOverMax('entry-1')).toBe(0);
+
+		// Lowering it under the marks entered leaves them all above it.
+		store.setEntryMarks('entry-1', 1);
+		expect(store.marksOverMax('entry-1')).toBe(2);
+
+		// Correcting the mark clears the one it was: nothing is left above.
+		store.setMark('student-1', 'entry-1', 1);
+		expect(store.marksOverMax('entry-1')).toBe(1);
+
+		// An entry with no available marks has nothing for a mark to be above —
+		// that is the missing marks confirmation blocks on — and an entry that is
+		// not there has no marks at all.
+		store.setEntryMarks('entry-1', null);
+		expect(store.marksOverMax('entry-1')).toBe(0);
+		expect(store.marksOverMax('entry-gone')).toBe(0);
+		expect(store.marksOnEntry('entry-1')).toBe(2);
+	});
+
+	it('leaves the marks entered where they are when the available marks are lowered', () => {
+		const { store } = openUnlocked();
+
+		store.setEntryMarks('entry-1', 2);
+
+		// Never clamped: the marks stay exactly as the teacher entered them, and the
+		// entry is flagged as one no figure can count.
+		expect(entryOf(store, 'entry-1')?.marks).toBe(2);
+		expect(store.document?.marks).toEqual({
+			'student-1': { 'entry-1': 5 },
+			'student-2': { 'entry-1': 2 }
+		});
+		const row = store.analysis.entries.find((one) => one.entry.id === 'entry-1');
+		expect(row?.overMax).toBe(1);
 	});
 });
 

@@ -12,9 +12,10 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
-	import { Alert, AlertDescription } from '$lib/components/ui/alert';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Table from '$lib/components/ui/table';
 	import {
@@ -43,6 +44,32 @@
 	const bands = $derived(store.questionBands);
 	const warnings = $derived(store.document?.breakdown.warnings ?? []);
 	const undoable = $derived(store.undoable);
+	/**
+	 * The entry whose marks field the cursor is in. It is left out of the warning
+	 * below while it is being typed in: a total is saved keystroke by keystroke,
+	 * so a raise typed digit by digit would flash a warning on its way up.
+	 */
+	let editingMarks = $state<string | null>(null);
+	/**
+	 * Entries carrying marks above the available marks they now offer, and how
+	 * many: what lowering an entry's available marks leaves behind, and what no
+	 * figure counts until it is raised back or the mark is corrected. Nothing is
+	 * clamped, so the marks stay exactly as they were entered and the teacher is
+	 * told rather than have them rewritten.
+	 */
+	const overMax = $derived(
+		entries
+			.filter((entry) => entry.id !== editingMarks)
+			.map((entry) => ({ entry, above: store.marksOverMax(entry.id) }))
+			.filter((row) => row.above > 0)
+	);
+	/**
+	 * The entry whose deletion is waiting on the teacher's yes. Deleting an entry
+	 * takes its marks with it, so the number is said before the click lands rather
+	 * than left to the one-level undo.
+	 */
+	let pendingDelete = $state<BreakdownEntry | null>(null);
+	const pendingLoss = $derived(pendingDelete === null ? 0 : store.marksOnEntry(pendingDelete.id));
 
 	/** A cell reads as plain text until hovered or focused: no box, no background. */
 	const plain =
@@ -108,6 +135,25 @@
 			entry.marks === null ? '' : String(entry.marks);
 	}
 
+	/**
+	 * Delete an entry, or ask first when it has marks: the number goes in the
+	 * question, since those marks cannot be read again once the entry is gone.
+	 */
+	function askDelete(entry: BreakdownEntry): void {
+		if (store.marksOnEntry(entry.id) === 0) {
+			store.deleteEntry(entry.id);
+			return;
+		}
+		pendingDelete = entry;
+	}
+
+	/** The teacher's yes: the entry and its marks go, with the undo beside the table. */
+	function confirmDelete(): void {
+		const entry = pendingDelete;
+		pendingDelete = null;
+		if (entry !== null) store.deleteEntry(entry.id);
+	}
+
 	/** What the band is: a whole question, subquestions of one, or a row to number. */
 	function bandSummary(band: QuestionBand): string {
 		if (band.questionNumber === '') return 'needs a question number';
@@ -150,7 +196,7 @@
 				size="icon-xs"
 				class="text-destructive"
 				aria-label={`Delete ${entryName(entry)}`}
-				onclick={() => store.deleteEntry(entry.id)}
+				onclick={() => askDelete(entry)}
 			>
 				<Trash2Icon class="size-3.5" />
 			</Button>
@@ -222,6 +268,8 @@
 				value={entry.marks ?? ''}
 				oninput={(event) => onMarksInput(entry, event)}
 				onchange={(event) => onMarksChange(entry, event)}
+				onfocus={() => (editingMarks = entry.id)}
+				onblur={() => (editingMarks = null)}
 			/>
 		</Table.Cell>
 		<Table.Cell class="px-1">
@@ -284,6 +332,34 @@
 			Deleted <strong>{entryName(undoable.entry)}</strong>.
 		</AlertDescription>
 		<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
+	</Alert>
+{/if}
+
+{#if overMax.length > 0}
+	<!-- A standing fact about the sheet rather than a report of one keystroke: an
+	     entry's available marks were lowered under marks already entered, and no
+	     figure counts those marks until one of the two is corrected. It clears
+	     itself the moment there is nothing above. -->
+	<Alert variant="destructive" data-testid="over-max-marks">
+		<AlertTitle>Marks above the available marks</AlertTitle>
+		<AlertDescription>
+			<ul class="list-disc space-y-0.5 pl-4">
+				{#each overMax as row (row.entry.id)}
+					<li>
+						{row.above} mark{row.above === 1 ? '' : 's'} entered on
+						<strong>{entryName(row.entry)}</strong>
+						{row.above === 1 ? 'is' : 'are'} above its {row.entry.marks} available mark{row.entry
+							.marks === 1
+							? ''
+							: 's'}.
+					</li>
+				{/each}
+			</ul>
+			<p class="mt-1">
+				They are kept exactly as they were entered — nothing is clamped — and no figure counts them
+				until the entry's available marks are raised or the mark is corrected.
+			</p>
+		</AlertDescription>
 	</Alert>
 {/if}
 
@@ -356,3 +432,31 @@
 <Button variant="outline" size="sm" onclick={() => addRow(() => store.appendEntry())}>
 	<PlusIcon class="size-4" /> Add entry at end
 </Button>
+
+{#if pendingDelete !== null}
+	<!-- Opened only over an entry that has marks: deleting it takes them, so the
+	     number is said before the click lands rather than left to the undo. -->
+	<Dialog.Root
+		open
+		onOpenChange={(isOpen) => {
+			if (!isOpen) pendingDelete = null;
+		}}
+	>
+		<Dialog.Content>
+			<Dialog.Header>
+				<Dialog.Title>Delete {entryName(pendingDelete)}?</Dialog.Title>
+				<Dialog.Description data-testid="delete-loss">
+					{pendingLoss} mark{pendingLoss === 1 ? '' : 's'}
+					{pendingLoss === 1 ? 'is' : 'are'} entered against it, and every one goes with the entry. The
+					undo beside the table puts the entry, and its marks, back.
+				</Dialog.Description>
+			</Dialog.Header>
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (pendingDelete = null)}>Keep the entry</Button>
+				<Button variant="destructive" onclick={confirmDelete}>
+					Delete {entryName(pendingDelete)} and {pendingLoss} mark{pendingLoss === 1 ? '' : 's'}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}

@@ -21,6 +21,7 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import EditBreakdownDialog from '$lib/components/marksheet/EditBreakdownDialog.svelte';
 	import {
 		facilityPercent,
 		notScoredLabel,
@@ -748,11 +749,15 @@
 			</Popover.Content>
 		</Popover.Root>
 	{/if}
-	<!-- At the far end from View analysis: a data tool, never mistaken for the
-	     page's own backup. -->
-	<Button variant="outline" size="xs" class="ml-auto" onclick={exportMarksNow}>
-		<FileSpreadsheetIcon class="size-3.5" /> Export marks to spreadsheet (.csv)
-	</Button>
+	<!-- The way back to the entries the marks are keyed against, and at the far
+	     end from View analysis beside the marks export: a data tool, never
+	     mistaken for the page's own backup. -->
+	<div class="ml-auto flex items-center gap-2">
+		<EditBreakdownDialog />
+		<Button variant="outline" size="xs" onclick={exportMarksNow}>
+			<FileSpreadsheetIcon class="size-3.5" /> Export marks to spreadsheet (.csv)
+		</Button>
+	</div>
 </div>
 
 {#if students.length === 0}
