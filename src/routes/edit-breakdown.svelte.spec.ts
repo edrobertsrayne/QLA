@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
-import { render } from 'vitest-browser-svelte';
+import { goto } from '$app/navigation';
 import { markCount } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import {
@@ -12,29 +12,17 @@ import {
 	student
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
+import { openPage } from './spec-helpers.js';
 import BreakdownPage from './breakdown/+page.svelte';
 import MarksheetPage from './marksheet/+page.svelte';
-
-const goto = vi.hoisted(() => vi.fn());
-
-vi.mock('$app/navigation', () => ({ goto }));
 
 /** A confirmed marksheet with one mark entered: the state a teacher unlocks from. */
 function confirmedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({
-		paper: {
-			label: '10X Ph1',
-			className: '10C1',
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW
-		},
+		paper: { ...confirmed().paper, className: '10C1' },
 		breakdown: {
 			entries: [
-				entry('entry-1', '2bii', '2', {
-					summary: 'Explain the process shown',
-					commandWord: 'Explain',
-					ao: 'AO1'
-				}),
+				entry('entry-1', '2bii', '2'),
 				entry('entry-2', '2biii', '2', {
 					marks: 3,
 					summary: 'Name the gas produced',
@@ -54,29 +42,10 @@ function confirmedDocument(overrides: Partial<MarksheetDocument> = {}): Markshee
 	});
 }
 
-/** The route's load guard reads storage before the page renders. */
-function openMarksheetPage() {
-	marksheetStore().load();
-	return render(MarksheetPage);
-}
-
-function openBreakdownPage() {
-	marksheetStore().load();
-	return render(BreakdownPage);
-}
-
-beforeEach(() => {
-	// A fresh surface: the store keeps changes the tab has not written, so a
-	// previous test's document is wiped rather than carried into this one.
-	marksheetStore().wipe();
-	localStorage.clear();
-	goto.mockClear();
-});
-
 describe('editing the breakdown after confirming it', () => {
 	it('unlocks it behind a warning, and re-confirming keeps the marks that survive', async () => {
 		seed(confirmedDocument());
-		const marksheet = openMarksheetPage();
+		const marksheet = openPage(MarksheetPage);
 
 		await page.getByRole('button', { name: 'Edit breakdown' }).click();
 
@@ -101,7 +70,7 @@ describe('editing the breakdown after confirming it', () => {
 		// The wrong entry is deleted on the review page — which asks first, since two
 		// marks are entered against it — and the breakdown confirmed again.
 		marksheet.unmount();
-		const breakdown = openBreakdownPage();
+		const breakdown = openPage(BreakdownPage);
 		await page.getByRole('button', { name: 'Delete 2bii', exact: true }).click();
 		await expect
 			.element(page.getByTestId('delete-loss'))
@@ -123,7 +92,7 @@ describe('editing the breakdown after confirming it', () => {
 
 		// And the surviving mark is in its cell on the marksheet it was entered on.
 		breakdown.unmount();
-		const screen = openMarksheetPage();
+		const screen = openPage(MarksheetPage);
 		const cell = screen.container.querySelector<HTMLElement>(
 			'[data-testid="mark-cell"][data-student-id="student-1"][data-entry-id="entry-2"]'
 		);
@@ -132,7 +101,7 @@ describe('editing the breakdown after confirming it', () => {
 
 	it('leaves the breakdown confirmed when the teacher changes their mind', async () => {
 		seed(confirmedDocument());
-		openMarksheetPage();
+		openPage(MarksheetPage);
 
 		await page.getByRole('button', { name: 'Edit breakdown' }).click();
 		await page.getByRole('button', { name: 'Keep marking' }).click();

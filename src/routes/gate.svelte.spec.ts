@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { STORAGE_KEY } from '$lib/marksheet/document.js';
 import { NOW, parsed, seed } from '$lib/marksheet/fixtures.spec-helpers.js';
@@ -16,11 +16,6 @@ function redirectFrom(path: string): { status: number; location: string } | null
 		return error as { status: number; location: string };
 	}
 }
-
-beforeEach(() => {
-	marksheetStore().wipe();
-	localStorage.clear();
-});
 
 describe('boot gate', () => {
 	it('lets every surface through when the stored state allows it', () => {

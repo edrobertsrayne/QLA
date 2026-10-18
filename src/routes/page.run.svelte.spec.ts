@@ -45,8 +45,6 @@ const parsedRun = {
 
 describe('+page.svelte run handler', () => {
 	beforeEach(() => {
-		marksheetStore().wipe();
-		localStorage.clear();
 		vi.stubGlobal(
 			'fetch',
 			stubFetch({

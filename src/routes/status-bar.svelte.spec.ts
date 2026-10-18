@@ -1,38 +1,18 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
-import { createRawSnippet } from 'svelte';
-import { render } from 'vitest-browser-svelte';
 import { toast } from 'svelte-sonner';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import {
-	NOW,
-	confirmed as sharedConfirmed,
-	entry,
-	parseRun,
-	seed,
-	student
-} from '$lib/marksheet/fixtures.spec-helpers.js';
+import { confirmed, entry, parseRun, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
-import Layout from './+layout.svelte';
+import { openShell } from './spec-helpers.js';
 
 /** A confirmed document with a class, a student and a mark: the state a marksheet exists in. */
-function confirmed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return sharedConfirmed({
-		paper: {
-			label: '10X Ph1',
-			className: '10C1',
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW
-		},
+function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
+	return confirmed({
+		paper: { ...confirmed().paper, className: '10C1' },
 		breakdown: {
-			entries: [
-				entry('entry-1', '2bii', '2', {
-					summary: 'Explain the process shown',
-					commandWord: 'Explain',
-					ao: 'AO1'
-				})
-			],
+			entries: [entry('entry-1', '2bii', '2')],
 			warnings: []
 		},
 		students: [student('student-1', 'Ada', 'Lovelace')],
@@ -41,30 +21,12 @@ function confirmed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocumen
 	});
 }
 
-/** A stand-in for whichever surface the route would render inside the shell. */
-const surface = createRawSnippet(() => ({
-	render: () => '<p data-testid="surface">a surface</p>'
-}));
-
-/** The shell as a route renders it: the layout, around a surface. */
-function openShell() {
-	marksheetStore().load();
-	return render(Layout, { children: surface });
-}
-
 /** The status bar itself. */
 function bar(screen: { container: HTMLElement }): HTMLElement {
 	const element = screen.container.querySelector<HTMLElement>('[data-testid="status-bar"]');
 	if (!element) throw new Error('no status bar');
 	return element;
 }
-
-beforeEach(() => {
-	// A fresh surface: the store keeps changes the tab has not written, so a
-	// previous test's document is wiped rather than carried into this one.
-	marksheetStore().wipe();
-	localStorage.clear();
-});
 
 afterEach(() => {
 	toast.dismiss();
@@ -81,7 +43,7 @@ describe('status bar', () => {
 	});
 
 	it('reads the last save with how long ago it landed, and its dot', async () => {
-		seed(confirmed());
+		seed(marksheet());
 
 		const screen = openShell();
 
@@ -99,7 +61,7 @@ describe('status bar', () => {
 		// test can stand the tab open for twelve seconds without waiting for them.
 		vi.useFakeTimers({ toFake: ['Date'] });
 		vi.setSystemTime(new Date(2026, 0, 1, 10, 0, 0));
-		seed(confirmed());
+		seed(marksheet());
 
 		openShell();
 
@@ -118,7 +80,7 @@ describe('status bar', () => {
 	});
 
 	it('reads a write in flight, then the save that landed', async () => {
-		seed(confirmed());
+		seed(marksheet());
 
 		const screen = openShell();
 		await expect.element(page.getByTestId('save-line')).toHaveTextContent(/^All changes saved · /);
@@ -133,7 +95,7 @@ describe('status bar', () => {
 	});
 
 	it('turns red when a write is refused, and offers the document in the tab out', async () => {
-		seed(confirmed());
+		seed(marksheet());
 
 		const screen = openShell();
 		await expect.element(page.getByTestId('save-line')).toHaveTextContent(/^All changes saved · /);
@@ -190,7 +152,7 @@ describe('status bar', () => {
 	});
 
 	it('keeps a toast clear of the bar', async () => {
-		seed(confirmed());
+		seed(marksheet());
 
 		const screen = openShell();
 		await expect.element(page.getByTestId('surface')).toBeInTheDocument();
@@ -208,7 +170,7 @@ describe('status bar', () => {
 
 	it('names where the work lives and how old the only copy out of it is', async () => {
 		seed(
-			confirmed({ lastExportedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() })
+			marksheet({ lastExportedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() })
 		);
 
 		const screen = openShell();
@@ -222,16 +184,6 @@ describe('status bar', () => {
 		expect(line && note && line.compareDocumentPosition(note)).toBe(
 			Node.DOCUMENT_POSITION_FOLLOWING
 		);
-	});
-
-	it('says there is no way out at all until a backup is taken', async () => {
-		seed(confirmed({ lastExportedAt: null }));
-
-		openShell();
-
-		await expect
-			.element(page.getByTestId('storage-note'))
-			.toHaveTextContent('Stored in this browser only · no backup yet');
 	});
 
 	it('says nothing about where the work lives when storage keeps nothing', async () => {

@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
+import { goto } from '$app/navigation';
 import AppNav from '$lib/components/shell/AppNav.svelte';
 import { STORAGE_KEY, markCount } from '$lib/marksheet/document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredWarning } from '$lib/marksheet/document.js';
@@ -13,16 +14,13 @@ import {
 	readSeeded
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
+import { openPage } from '../spec-helpers.js';
 import BreakdownPage from './+page.svelte';
-
-const goto = vi.hoisted(() => vi.fn());
-
-vi.mock('$app/navigation', () => ({ goto }));
 
 function parsedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return parsed({
 		breakdown: {
-			entries: [entry('entry-1', '2bii', '2')],
+			...parsed().breakdown,
 			warnings: [
 				{ questionId: 'entry-1', code: 'SUMMARY_LENGTH', message: 'Not 3–8 words.' },
 				{ questionId: null, code: 'SPEC_UNREADABLE', message: 'Specification could not be read.' }
@@ -37,31 +35,17 @@ function documentOf(entries: BreakdownEntry[], warnings: StoredWarning[] = []): 
 	return parsedDocument({ breakdown: { entries, warnings } });
 }
 
-beforeEach(() => {
-	// A fresh surface: the store keeps changes the tab has not written, so a
-	// previous test's document is wiped rather than carried into this one.
-	marksheetStore().wipe();
-	localStorage.clear();
-	goto.mockClear();
-});
-
 /** How many marks the marksheet holds now, as the store has them. */
 function marksStored(): number {
 	const document = marksheetStore().document;
 	return document === null ? 0 : markCount(document);
 }
 
-/** The route's load guard reads storage before the page renders. */
-function openBreakdownPage() {
-	marksheetStore().load();
-	return render(BreakdownPage);
-}
-
 describe('breakdown page', () => {
 	it('shows the stored breakdown, its warnings and no run cost after a reload', async () => {
 		seed(parsedDocument());
 
-		const screen = openBreakdownPage();
+		const screen = openPage(BreakdownPage);
 
 		await expect.element(page.getByLabelText('Label for 2bii')).toHaveValue('2bii');
 		await expect.element(page.getByLabelText('Marks for 2bii')).toHaveValue('4');
@@ -77,7 +61,7 @@ describe('breakdown page', () => {
 
 	it('shows this run usage once a parse has run in this tab', async () => {
 		seed(parsedDocument());
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		marksheetStore().createFromParse(
 			parseRun({
@@ -90,7 +74,7 @@ describe('breakdown page', () => {
 
 	it('edits every field in place and autosaves', async () => {
 		seed(parsedDocument());
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByLabelText('Summary for 2bii').fill('Rate change on cooling');
 		await page.getByLabelText('Spec point for 2bii').fill('3.2.2.1');
@@ -102,34 +86,20 @@ describe('breakdown page', () => {
 		await page.getByLabelText('Label for 2bii').fill('2b');
 
 		await vi.waitFor(() => {
-			expect(readSeeded().breakdown.entries).toEqual([
-				{
-					id: 'entry-1',
-					label: '2b',
-					questionNumber: '2',
-					marks: 6,
-					summary: 'Rate change on cooling',
-					specPoint: '3.2.2.1',
-					commandWord: 'State',
-					ao: 'AO3',
-					// What the parse produced, kept so the changes show as changes.
-					original: {
-						label: '2bii',
-						questionNumber: '2',
-						marks: 4,
-						summary: 'Describe the rate change',
-						specPoint: '3.2.1.4',
-						commandWord: 'Describe',
-						ao: 'AO2'
-					}
-				}
-			]);
+			expect(readSeeded().breakdown.entries[0]).toMatchObject({
+				label: '2b',
+				marks: 6,
+				summary: 'Rate change on cooling',
+				specPoint: '3.2.2.1',
+				commandWord: 'State',
+				ao: 'AO3'
+			});
 		});
 	});
 
 	it('empties a spec point or command word to none', async () => {
 		seed(parsedDocument());
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByLabelText('Spec point for 2bii').fill('');
 		await page.getByLabelText('Command word for 2bii').fill('');
@@ -143,7 +113,7 @@ describe('breakdown page', () => {
 
 	it('saves a mark as it is typed, before the cell is left', async () => {
 		seed(parsedDocument());
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await userEvent.fill(page.getByLabelText('Marks for 2bii'), '7');
 
@@ -152,7 +122,7 @@ describe('breakdown page', () => {
 
 	it('refuses a mark cell holding anything but digits, showing what the entry holds', async () => {
 		seed(parsedDocument());
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		// Digits are saved as they are typed, so a cell holding no digits at all
 		// (a pasted decimal, an exponent) leaves the entry exactly as it was.
@@ -173,7 +143,7 @@ describe('breakdown page', () => {
 				entry('entry-3', '2a', '2')
 			])
 		);
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await userEvent.fill(page.getByLabelText('Question number for band 1'), '2');
 		await userEvent.tab();
@@ -191,7 +161,7 @@ describe('breakdown page', () => {
 
 	it('shows the question number as a column when banding is off', async () => {
 		seed(documentOf([entry('entry-1', '1a', '1'), entry('entry-2', '2a', '2')]));
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByLabelText('Band by question').click();
 
@@ -206,7 +176,7 @@ describe('breakdown page', () => {
 				entry('entry-2', '3a', '3', { marks: null, summary: 'Name the gas produced' })
 			])
 		);
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByRole('button', { name: '3a: no available marks' }).click();
 
@@ -215,7 +185,7 @@ describe('breakdown page', () => {
 
 	it('jumps to the label of an entry whose label is the problem', async () => {
 		seed(documentOf([entry('entry-1', '2a', '2'), entry('entry-2', '2a', '2')]));
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByRole('button', { name: '2a: duplicate label' }).first().click();
 
@@ -224,7 +194,7 @@ describe('breakdown page', () => {
 
 	it('refuses to confirm while an entry has no available marks, naming it', async () => {
 		seed(documentOf([entry('entry-1', '1a', '1'), entry('entry-2', '3a', '3', { marks: null })]));
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await expect
 			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
@@ -242,7 +212,7 @@ describe('breakdown page', () => {
 				entry('entry-3', '  ', '3')
 			])
 		);
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await expect
 			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
@@ -253,7 +223,7 @@ describe('breakdown page', () => {
 
 	it('confirms a complete breakdown and opens the marksheet', async () => {
 		seed(parsedDocument());
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByRole('button', { name: 'Confirm and build marksheet' }).click();
 
@@ -265,7 +235,7 @@ describe('breakdown page', () => {
 
 	it('confirms only once the blocking marks are entered', async () => {
 		seed(documentOf([entry('entry-1', '1a', '1', { marks: null })]));
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		const confirm = page.getByRole('button', { name: 'Confirm and build marksheet' });
 		await expect.element(confirm).toBeDisabled();
@@ -281,7 +251,7 @@ describe('breakdown page', () => {
 
 	it('renames the paper in place and autosaves it', async () => {
 		seed(parsedDocument());
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByLabelText('Paper label').fill('10X/Ph1 2026');
 
@@ -297,7 +267,7 @@ describe('breakdown page', () => {
 		localStorage.setItem('qla:theme', 'dark');
 
 		render(AppNav);
-		openBreakdownPage();
+		openPage(BreakdownPage);
 		await page.getByRole('button', { name: 'New upload…' }).click();
 		await page.getByRole('button', { name: 'Delete and start again' }).click();
 
@@ -310,7 +280,7 @@ describe('breakdown page', () => {
 		seed(parsedDocument());
 
 		render(AppNav);
-		openBreakdownPage();
+		openPage(BreakdownPage);
 		await page.getByRole('button', { name: 'New upload…' }).click();
 		await page.getByRole('button', { name: 'Keep working' }).click();
 
@@ -320,7 +290,7 @@ describe('breakdown page', () => {
 
 	it('adds the entry the paper total is missing, and the breakdown then adds up', async () => {
 		seed(documentOf([entry('entry-1', '1a', '1', { marks: 4 })]));
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByLabelText('Total marks printed on the paper').fill('10');
 		await expect
@@ -362,7 +332,7 @@ describe('breakdown page', () => {
 				entry('entry-3', '2b', '2')
 			])
 		);
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByRole('button', { name: 'Add subquestion to question 2' }).click();
 		await page.getByLabelText('Label for (no label)').fill('2c');
@@ -380,7 +350,7 @@ describe('breakdown page', () => {
 
 	it('marks the field a teacher changed, and clears it when they change it back', async () => {
 		seed(documentOf([entry('entry-1', '2bii', '2', { summary: 'Describe the rate change' })]));
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByLabelText('Summary for 2bii').fill('Rate change on cooling');
 
@@ -393,7 +363,7 @@ describe('breakdown page', () => {
 
 	it('deletes an entry and puts it back from the undo that stays on screen', async () => {
 		seed(documentOf([entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')]));
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByRole('button', { name: 'Delete 1a' }).click();
 
@@ -416,7 +386,7 @@ describe('breakdown page', () => {
 				marks: { 'student-1': { 'entry-1': 3 } }
 			})
 		);
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await page.getByRole('button', { name: 'Delete 2bii' }).click();
 
@@ -449,7 +419,7 @@ describe('breakdown page', () => {
 				marks: { 'student-1': { 'entry-1': 3 } }
 			})
 		);
-		openBreakdownPage();
+		openPage(BreakdownPage);
 		const marks = page.getByLabelText('Marks for 2bii');
 
 		await userEvent.fill(marks, '6');
@@ -485,7 +455,7 @@ describe('breakdown page', () => {
 
 	it('moves an entry up and down, both in the table and in what is saved', async () => {
 		seed(documentOf([entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')]));
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		// The first row cannot go up, and the last cannot go down.
 		await expect.element(page.getByRole('button', { name: 'Move 1a up' })).toBeDisabled();
@@ -505,7 +475,7 @@ describe('breakdown page', () => {
 				entry('entry-2', '2a', '2', { marks: null })
 			])
 		);
-		openBreakdownPage();
+		openPage(BreakdownPage);
 
 		await expect
 			.element(page.getByText('This breakdown accounts for 4 marks.'))

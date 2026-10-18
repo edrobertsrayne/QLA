@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
-import { createRawSnippet } from 'svelte';
 import { render } from 'vitest-browser-svelte';
+import { goto } from '$app/navigation';
 import { STORAGE_KEY } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import {
@@ -13,11 +13,7 @@ import {
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import BreakdownPage from './breakdown/+page.svelte';
-import Layout from './+layout.svelte';
-
-const goto = vi.hoisted(() => vi.fn());
-
-vi.mock('$app/navigation', () => ({ goto }));
+import { openShell } from './spec-helpers.js';
 
 /** A parse nobody has confirmed: no class yet. */
 function parsed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
@@ -30,21 +26,9 @@ function parsed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	});
 }
 
-/** A stand-in for whichever surface the route would render inside the shell. */
-const surface = createRawSnippet(() => ({
-	render: () => '<p data-testid="surface">a surface</p>'
-}));
-
-/** The shell as a route renders it: the layout, around a surface. */
-function openShell() {
-	marksheetStore().load();
-	return render(Layout, { children: surface });
-}
-
 /** The shell with the breakdown page, whose heading is the paper label's input. */
 function openShellOnBreakdown() {
-	marksheetStore().load();
-	const shell = render(Layout, { children: surface });
+	const shell = openShell();
 	render(BreakdownPage);
 	return shell;
 }
@@ -54,12 +38,7 @@ function breadcrumb() {
 }
 
 beforeEach(() => {
-	// A fresh surface: the store keeps changes the tab has not written, so a
-	// previous test's document is wiped rather than carried into this one.
-	marksheetStore().wipe();
-	localStorage.clear();
 	document.documentElement.classList.remove('dark');
-	goto.mockClear();
 });
 
 describe('the breadcrumb', () => {

@@ -1,17 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
-import { render } from 'vitest-browser-svelte';
+import { goto } from '$app/navigation';
 import { STORAGE_KEY } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import { NOW, confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import MarksheetPage from './marksheet/+page.svelte';
+import { openPage } from './spec-helpers.js';
 import UploadPage from './+page.svelte';
-
-const goto = vi.hoisted(() => vi.fn());
-
-vi.mock('$app/navigation', () => ({ goto }));
 
 /**
  * A moment the teacher read off a clock, as the document records it. Aged
@@ -32,20 +29,9 @@ function daysAgo(days: number): string {
 /** A marksheet with a mark in it: the work a backup is for. */
 function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({
-		paper: {
-			label: '10X Ph1',
-			className: '10C1',
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW
-		},
+		paper: { ...confirmed().paper, className: '10C1' },
 		breakdown: {
-			entries: [
-				entry('entry-1', '2bii', '2', {
-					summary: 'Explain the process shown',
-					commandWord: 'Explain',
-					ao: 'AO1'
-				})
-			],
+			entries: [entry('entry-1', '2bii', '2')],
 			warnings: []
 		},
 		students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
@@ -61,30 +47,11 @@ function backupFile(
 	return new File([JSON.stringify(stored)], filename, { type: 'application/json' });
 }
 
-/** The route's load guard reads storage before the page renders. */
-function openMarksheetPage() {
-	marksheetStore().load();
-	return render(MarksheetPage);
-}
-
-function openUploadPage() {
-	marksheetStore().load();
-	return render(UploadPage);
-}
-
-beforeEach(() => {
-	// A fresh surface: the store keeps changes the tab has not written, so a
-	// previous test's document is wiped rather than carried into this one.
-	marksheetStore().wipe();
-	localStorage.clear();
-	goto.mockClear();
-});
-
 describe('the backup card', () => {
 	it('reads how old the last backup is, and stays quiet about it', async () => {
 		seed(marksheet({ lastExportedAt: hoursAgo(1) }));
 
-		openMarksheetPage();
+		openPage(MarksheetPage);
 
 		await expect.element(page.getByTestId('backup-card')).toHaveTextContent('Last backup: 1 h ago');
 		expect(page.getByTestId('backup-banner').query()).toBeNull();
@@ -93,7 +60,7 @@ describe('the backup card', () => {
 	it('says none yet for a document that has never been backed up', async () => {
 		seed(marksheet({ lastExportedAt: null, students: [], marks: {} }));
 
-		openMarksheetPage();
+		openPage(MarksheetPage);
 
 		await expect
 			.element(page.getByTestId('backup-card'))
@@ -105,7 +72,7 @@ describe('the backup card', () => {
 
 	it('stands amber once marks are entered with no backup at all', async () => {
 		seed(marksheet({ lastExportedAt: null }));
-		openMarksheetPage();
+		openPage(MarksheetPage);
 
 		await expect
 			.element(page.getByTestId('backup-banner'))
@@ -118,7 +85,7 @@ describe('the backup card', () => {
 	it('stands amber once the last backup is past the eviction window', async () => {
 		seed(marksheet({ lastExportedAt: daysAgo(8) }));
 
-		openMarksheetPage();
+		openPage(MarksheetPage);
 
 		await expect
 			.element(page.getByTestId('backup-banner'))
@@ -130,7 +97,7 @@ describe('the backup card', () => {
 
 	it('stands the banner down for the session, leaving the card amber instead', async () => {
 		seed(marksheet({ lastExportedAt: null }));
-		openMarksheetPage();
+		openPage(MarksheetPage);
 		await expect.element(page.getByTestId('backup-banner')).toBeInTheDocument();
 
 		await page.getByRole('button', { name: 'Remind me later' }).click();
@@ -143,7 +110,7 @@ describe('the backup card', () => {
 
 	it('backs the marksheet up from the banner and records the moment', async () => {
 		seed(marksheet({ lastExportedAt: null }));
-		openMarksheetPage();
+		openPage(MarksheetPage);
 		const file = captureDownload();
 
 		await page.getByRole('button', { name: 'Back up now' }).click();
@@ -162,7 +129,7 @@ describe('the backup card', () => {
 
 describe('restoring a backup on the upload surface', () => {
 	it('names what the file holds before it is restored', async () => {
-		openUploadPage();
+		openPage(UploadPage);
 
 		await page
 			.getByLabelText('Backup file')
@@ -177,7 +144,7 @@ describe('restoring a backup on the upload surface', () => {
 	});
 
 	it('brings a confirmed marksheet back and lands on it', async () => {
-		openUploadPage();
+		openPage(UploadPage);
 
 		await page
 			.getByLabelText('Backup file')
@@ -192,7 +159,7 @@ describe('restoring a backup on the upload surface', () => {
 	});
 
 	it('lands an unconfirmed breakdown back on the breakdown page', async () => {
-		openUploadPage();
+		openPage(UploadPage);
 
 		await page
 			.getByLabelText('Backup file')
@@ -204,7 +171,7 @@ describe('restoring a backup on the upload surface', () => {
 	});
 
 	it('refuses a file that is not a backup, leaving everything as it was', async () => {
-		const screen = openUploadPage();
+		const screen = openPage(UploadPage);
 
 		await page.getByLabelText('Backup file').upload(new File(['notes'], 'notes.json'));
 
@@ -217,7 +184,7 @@ describe('restoring a backup on the upload surface', () => {
 	});
 
 	it('changes nothing when the teacher cancels the confirm', async () => {
-		openUploadPage();
+		openPage(UploadPage);
 
 		await page.getByLabelText('Backup file').upload(backupFile(marksheet()));
 		await page.getByRole('button', { name: 'Cancel' }).click();

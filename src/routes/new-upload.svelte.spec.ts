@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import AppNav from '$lib/components/shell/AppNav.svelte';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import {
 	NOW,
-	confirmed as sharedConfirmed,
+	confirmed,
 	entry,
 	seed,
 	readSeeded,
@@ -16,19 +16,10 @@ import { marksheetStore } from '$lib/marksheet/index.js';
 import BreakdownPage from './breakdown/+page.svelte';
 import MarksheetPage from './marksheet/+page.svelte';
 
-const goto = vi.hoisted(() => vi.fn());
-
-vi.mock('$app/navigation', () => ({ goto }));
-
 /** A confirmed marksheet: the surface a teacher wipes from with work in hand. */
-function confirmed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return sharedConfirmed({
-		paper: {
-			label: '10X Ph1',
-			className: '10C1',
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW
-		},
+function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
+	return confirmed({
+		paper: { ...confirmed().paper, className: '10C1' },
 		students: [student('student-1', 'Ada', 'Lovelace')],
 		marks: { 'student-1': { 'entry-1': 3 } },
 		...overrides
@@ -37,7 +28,7 @@ function confirmed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocumen
 
 /** A parse nobody has confirmed: the state the breakdown page exists for. */
 function parsed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return confirmed({ breakdownConfirmedAt: null, students: [], marks: {}, ...overrides });
+	return marksheet({ breakdownConfirmedAt: null, students: [], marks: {}, ...overrides });
 }
 
 /** A moment before now, as the document records it: aged against the real clock. */
@@ -64,18 +55,10 @@ async function openNewUpload() {
 	return page.getByRole('dialog');
 }
 
-beforeEach(() => {
-	// A fresh surface: the store keeps changes the tab has not written, so a
-	// previous test's document is wiped rather than carried into this one.
-	marksheetStore().wipe();
-	localStorage.clear();
-	goto.mockClear();
-});
-
 describe('the new-upload dialog', () => {
 	it('names the marks and the students a wipe would take', async () => {
 		seed(
-			confirmed({
+			marksheet({
 				breakdown: {
 					entries: [entry('entry-1', '2bii', '2'), entry('entry-2', '3a', '3', { marks: 2 })],
 					warnings: []
@@ -104,7 +87,7 @@ describe('the new-upload dialog', () => {
 
 	it('names the class and the breakdown when nothing has been marked yet', async () => {
 		seed(
-			confirmed({
+			marksheet({
 				students: [
 					student('student-1', 'Ada', 'Lovelace'),
 					student('student-2', 'Grace', 'Hopper')
@@ -158,7 +141,7 @@ describe('the new-upload dialog', () => {
 	});
 
 	it('takes a backup from inside the dialog, and says so once it is taken', async () => {
-		seed(confirmed());
+		seed(marksheet());
 		openMarksheetPage();
 		await openNewUpload();
 		await expect.element(page.getByTestId('wipe-backup')).toHaveTextContent('Never backed up');
@@ -174,7 +157,7 @@ describe('the new-upload dialog', () => {
 	});
 
 	it('offers the marks as a CSV beside it, labelled as the thing it is not', async () => {
-		seed(confirmed());
+		seed(marksheet());
 		openMarksheetPage();
 		await openNewUpload();
 
@@ -193,7 +176,7 @@ describe('the new-upload dialog', () => {
 	});
 
 	it('reports the backup’s real age when the dialog is opened again', async () => {
-		seed(confirmed({ lastExportedAt: daysAgo(3) }));
+		seed(marksheet({ lastExportedAt: daysAgo(3) }));
 		openMarksheetPage();
 		await openNewUpload();
 		await expect.element(page.getByTestId('wipe-backup')).toHaveTextContent('Last one 3 days ago');
