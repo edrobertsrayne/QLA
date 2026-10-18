@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { createRawSnippet } from 'svelte';
 import { render } from 'vitest-browser-svelte';
-import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from '$lib/marksheet/document.js';
+import { STORAGE_KEY } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import { NOW, entry, parsed as sharedParsed, seed } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { load as breakdownLoad } from './breakdown/+page.js';
 import BreakdownPage from './breakdown/+page.svelte';
@@ -13,45 +14,15 @@ const goto = vi.hoisted(() => vi.fn());
 
 vi.mock('$app/navigation', () => ({ goto }));
 
-const NOW = '2026-01-01T10:00:00.000Z';
-
 /** A parse nobody has confirmed: no class yet. */
 function parsed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return {
-		schemaVersion: DOCUMENT_SCHEMA_VERSION,
-		createdAt: NOW,
-		updatedAt: NOW,
-		breakdownConfirmedAt: null,
-		lastExportedAt: null,
-		paper: {
-			label: '10X Ph1',
-			className: null,
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW
-		},
+	return sharedParsed({
 		breakdown: {
-			entries: [
-				{
-					id: 'entry-1',
-					label: '1a',
-					questionNumber: '1',
-					marks: 4,
-					summary: 'Describe the rate change',
-					specPoint: null,
-					commandWord: null,
-					ao: null
-				}
-			],
+			entries: [entry('entry-1', '1a', '1', { specPoint: null, commandWord: null, ao: null })],
 			warnings: []
 		},
-		students: [],
-		marks: {},
 		...overrides
-	};
-}
-
-function seed(stored: MarksheetDocument): void {
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+	});
 }
 
 /** A stand-in for whichever surface the route would render inside the shell. */

@@ -4,66 +4,18 @@ import { render } from 'vitest-browser-svelte';
 // The frozen columns and truncated names are Tailwind classes, so the
 // stylesheet has to be in the page for their computed styles to mean anything.
 import '../../app.css';
-import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from '$lib/marksheet/document.js';
-import type { BreakdownEntry, MarksheetDocument, StoredStudent } from '$lib/marksheet/document.js';
+import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import {
+	confirmed,
+	entry,
+	seed,
+	storedDocument,
+	student
+} from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { load as marksheetLoad } from './+page.js';
 import MarksheetPage from './+page.svelte';
-
-const NOW = '2026-01-01T10:00:00.000Z';
-
-function entry(
-	id: string,
-	label: string,
-	questionNumber: string,
-	overrides: Partial<BreakdownEntry> = {}
-): BreakdownEntry {
-	return {
-		id,
-		label,
-		questionNumber,
-		marks: 4,
-		summary: 'Describe the rate change',
-		specPoint: '3.2.1.4',
-		commandWord: 'Describe',
-		ao: 'AO2',
-		...overrides
-	};
-}
-
-function student(id: string, firstName: string, surname: string, absent = false): StoredStudent {
-	return { id, firstName, surname, absent };
-}
-
-/** A confirmed document: the state the marksheet route exists for. */
-function confirmed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return {
-		schemaVersion: DOCUMENT_SCHEMA_VERSION,
-		createdAt: NOW,
-		updatedAt: NOW,
-		breakdownConfirmedAt: NOW,
-		lastExportedAt: null,
-		paper: {
-			label: '10X Ph1',
-			className: null,
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW
-		},
-		breakdown: { entries: [entry('entry-1', '2bii', '2')], warnings: [] },
-		students: [],
-		marks: {},
-		...overrides
-	};
-}
-
-function seed(stored: MarksheetDocument): void {
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-}
-
-function storedDocument(): MarksheetDocument {
-	return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
-}
 
 /** The class as the grid shows it, in the order it shows them. */
 function rowNames(screen: { container: HTMLElement }): string[] {

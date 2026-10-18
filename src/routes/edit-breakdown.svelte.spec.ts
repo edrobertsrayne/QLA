@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY, markCount } from '$lib/marksheet/document.js';
+import { markCount } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import {
+	NOW,
+	confirmed,
+	entry,
+	seed,
+	storedDocument,
+	student
+} from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { load as breakdownLoad } from './breakdown/+page.js';
 import BreakdownPage from './breakdown/+page.svelte';
@@ -13,16 +21,9 @@ const goto = vi.hoisted(() => vi.fn());
 
 vi.mock('$app/navigation', () => ({ goto }));
 
-const NOW = '2026-01-01T10:00:00.000Z';
-
 /** A confirmed marksheet with one mark entered: the state a teacher unlocks from. */
 function confirmedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return {
-		schemaVersion: DOCUMENT_SCHEMA_VERSION,
-		createdAt: NOW,
-		updatedAt: NOW,
-		breakdownConfirmedAt: NOW,
-		lastExportedAt: null,
+	return confirmed({
 		paper: {
 			label: '10X Ph1',
 			className: '10C1',
@@ -31,47 +32,28 @@ function confirmedDocument(overrides: Partial<MarksheetDocument> = {}): Markshee
 		},
 		breakdown: {
 			entries: [
-				{
-					id: 'entry-1',
-					label: '2bii',
-					questionNumber: '2',
-					marks: 4,
+				entry('entry-1', '2bii', '2', {
 					summary: 'Explain the process shown',
-					specPoint: '3.2.1.4',
 					commandWord: 'Explain',
 					ao: 'AO1'
-				},
-				{
-					id: 'entry-2',
-					label: '2biii',
-					questionNumber: '2',
+				}),
+				entry('entry-2', '2biii', '2', {
 					marks: 3,
 					summary: 'Name the gas produced',
 					specPoint: null,
 					commandWord: 'Name',
 					ao: null
-				}
+				})
 			],
 			warnings: []
 		},
-		students: [
-			{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false },
-			{ id: 'student-2', firstName: 'Grace', surname: 'Hopper', absent: false }
-		],
+		students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
 		marks: {
 			'student-1': { 'entry-1': 3, 'entry-2': 1 },
 			'student-2': { 'entry-1': 2 }
 		},
 		...overrides
-	};
-}
-
-function seed(stored: MarksheetDocument): void {
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-}
-
-function storedDocument(): MarksheetDocument {
-	return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
+	});
 }
 
 /** The route's load guard reads storage before the page renders. */

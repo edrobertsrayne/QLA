@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from '$lib/marksheet/document.js';
+import { STORAGE_KEY } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import { NOW, confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { load as marksheetLoad } from './marksheet/+page.js';
@@ -13,8 +14,6 @@ import UploadPage from './+page.svelte';
 const goto = vi.hoisted(() => vi.fn());
 
 vi.mock('$app/navigation', () => ({ goto }));
-
-const NOW = '2026-01-01T10:00:00.000Z';
 
 /**
  * A moment the teacher read off a clock, as the document records it. Aged
@@ -34,12 +33,7 @@ function daysAgo(days: number): string {
 
 /** A marksheet with a mark in it: the work a backup is for. */
 function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return {
-		schemaVersion: DOCUMENT_SCHEMA_VERSION,
-		createdAt: NOW,
-		updatedAt: NOW,
-		breakdownConfirmedAt: NOW,
-		lastExportedAt: null,
+	return confirmed({
 		paper: {
 			label: '10X Ph1',
 			className: '10C1',
@@ -48,30 +42,18 @@ function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocumen
 		},
 		breakdown: {
 			entries: [
-				{
-					id: 'entry-1',
-					label: '2bii',
-					questionNumber: '2',
-					marks: 4,
+				entry('entry-1', '2bii', '2', {
 					summary: 'Explain the process shown',
-					specPoint: '3.2.1.4',
 					commandWord: 'Explain',
 					ao: 'AO1'
-				}
+				})
 			],
 			warnings: []
 		},
-		students: [
-			{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false },
-			{ id: 'student-2', firstName: 'Grace', surname: 'Hopper', absent: false }
-		],
+		students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
 		marks: { 'student-1': { 'entry-1': 3 } },
 		...overrides
-	};
-}
-
-function seed(stored: MarksheetDocument): void {
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+	});
 }
 
 function backupFile(

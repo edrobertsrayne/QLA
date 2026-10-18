@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import AppNav from '$lib/components/shell/AppNav.svelte';
-import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY, markCount } from '$lib/marksheet/document.js';
+import { STORAGE_KEY, markCount } from '$lib/marksheet/document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredWarning } from '$lib/marksheet/document.js';
+import { NOW, entry, parsed, seed, storedDocument } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { load as breakdownLoad } from './+page.js';
 import BreakdownPage from './+page.svelte';
@@ -12,40 +13,8 @@ const goto = vi.hoisted(() => vi.fn());
 
 vi.mock('$app/navigation', () => ({ goto }));
 
-const NOW = '2026-01-01T10:00:00.000Z';
-
-function entry(
-	id: string,
-	label: string,
-	questionNumber: string,
-	overrides: Partial<BreakdownEntry> = {}
-): BreakdownEntry {
-	return {
-		id,
-		label,
-		questionNumber,
-		marks: 4,
-		summary: 'Describe the rate change',
-		specPoint: '3.2.1.4',
-		commandWord: 'Describe',
-		ao: 'AO2',
-		...overrides
-	};
-}
-
 function parsedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return {
-		schemaVersion: DOCUMENT_SCHEMA_VERSION,
-		createdAt: NOW,
-		updatedAt: NOW,
-		breakdownConfirmedAt: null,
-		lastExportedAt: null,
-		paper: {
-			label: '10X Ph1',
-			className: null,
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW
-		},
+	return parsed({
 		breakdown: {
 			entries: [entry('entry-1', '2bii', '2')],
 			warnings: [
@@ -53,23 +22,13 @@ function parsedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDo
 				{ questionId: null, code: 'SPEC_UNREADABLE', message: 'Specification could not be read.' }
 			]
 		},
-		students: [],
-		marks: {},
 		...overrides
-	};
+	});
 }
 
 /** A document whose entries and warnings are the point of the test. */
 function documentOf(entries: BreakdownEntry[], warnings: StoredWarning[] = []): MarksheetDocument {
 	return parsedDocument({ breakdown: { entries, warnings } });
-}
-
-function seed(stored: MarksheetDocument): void {
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-}
-
-function storedDocument(): MarksheetDocument {
-	return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
 }
 
 beforeEach(() => {

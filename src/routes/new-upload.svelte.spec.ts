@@ -2,8 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import AppNav from '$lib/components/shell/AppNav.svelte';
-import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from '$lib/marksheet/document.js';
-import type { BreakdownEntry, MarksheetDocument, StoredStudent } from '$lib/marksheet/document.js';
+import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import {
+	NOW,
+	confirmed as sharedConfirmed,
+	entry,
+	seed,
+	storedDocument,
+	student
+} from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { load as breakdownLoad } from './breakdown/+page.js';
@@ -15,50 +22,19 @@ const goto = vi.hoisted(() => vi.fn());
 
 vi.mock('$app/navigation', () => ({ goto }));
 
-const NOW = '2026-01-01T10:00:00.000Z';
-
-function entry(
-	id: string,
-	label: string,
-	questionNumber: string,
-	overrides: Partial<BreakdownEntry> = {}
-): BreakdownEntry {
-	return {
-		id,
-		label,
-		questionNumber,
-		marks: 4,
-		summary: 'Describe the rate change',
-		specPoint: '3.2.1.4',
-		commandWord: 'Describe',
-		ao: 'AO2',
-		...overrides
-	};
-}
-
-function student(id: string, firstName: string, surname: string, absent = false): StoredStudent {
-	return { id, firstName, surname, absent };
-}
-
 /** A confirmed marksheet: the surface a teacher wipes from with work in hand. */
 function confirmed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return {
-		schemaVersion: DOCUMENT_SCHEMA_VERSION,
-		createdAt: NOW,
-		updatedAt: NOW,
-		breakdownConfirmedAt: NOW,
-		lastExportedAt: null,
+	return sharedConfirmed({
 		paper: {
 			label: '10X Ph1',
 			className: '10C1',
 			sourceFilenames: ['10X Ph1.pdf'],
 			parsedAt: NOW
 		},
-		breakdown: { entries: [entry('entry-1', '2bii', '2')], warnings: [] },
 		students: [student('student-1', 'Ada', 'Lovelace')],
 		marks: { 'student-1': { 'entry-1': 3 } },
 		...overrides
-	};
+	});
 }
 
 /** A parse nobody has confirmed: the state the breakdown page exists for. */
@@ -66,17 +42,9 @@ function parsed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({ breakdownConfirmedAt: null, students: [], marks: {}, ...overrides });
 }
 
-function seed(stored: MarksheetDocument): void {
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-}
-
 /** A moment before now, as the document records it: aged against the real clock. */
 function daysAgo(days: number): string {
 	return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-}
-
-function storedDocument(): MarksheetDocument {
-	return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
 }
 
 /** The nav is where "New upload…" lives now, so the page is rendered under it. */

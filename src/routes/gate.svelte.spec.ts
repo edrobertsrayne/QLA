@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from '$lib/marksheet/document.js';
-import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import { STORAGE_KEY } from '$lib/marksheet/document.js';
+import { NOW, parsed, seed } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { load as breakdownLoad } from './breakdown/+page.js';
 import BreakdownPage from './breakdown/+page.svelte';
 import { load as marksheetLoad } from './marksheet/+page.js';
@@ -9,46 +9,8 @@ import MarksheetPage from './marksheet/+page.svelte';
 import { load as uploadLoad } from './+page.js';
 import UploadPage from './+page.svelte';
 
-const NOW = '2026-01-01T10:00:00.000Z';
-
 // Named for what it is: `document` is the DOM.
-function marksheetDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return {
-		schemaVersion: DOCUMENT_SCHEMA_VERSION,
-		createdAt: NOW,
-		updatedAt: NOW,
-		breakdownConfirmedAt: null,
-		lastExportedAt: null,
-		paper: {
-			label: '10X Ph1',
-			className: null,
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW
-		},
-		breakdown: {
-			entries: [
-				{
-					id: 'entry-1',
-					label: '2bii',
-					questionNumber: '2',
-					marks: 4,
-					summary: 'Describe the rate change',
-					specPoint: '3.2.1.4',
-					commandWord: 'Describe',
-					ao: 'AO2'
-				}
-			],
-			warnings: []
-		},
-		students: [],
-		marks: {},
-		...overrides
-	};
-}
-
-function seed(stored: MarksheetDocument): void {
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-}
+const marksheetDocument = parsed;
 
 function redirectFrom(load: () => unknown): { status: number; location: string } | null {
 	try {
