@@ -19,8 +19,8 @@
 	/** The entry the analysis was opened at, to outline and scroll to, or null for all of them. */
 	let highlighted = $state<string | null>(null);
 
-	const entries = $derived(store.document?.breakdown.entries ?? []);
-	const students = $derived(store.document?.students ?? []);
+	const entries = $derived(store.entries);
+	const students = $derived(store.students);
 	const marks = $derived(totalMarks(entries));
 	const className = $derived(store.document?.paper.className ?? null);
 	const title = $derived(className ? `${className} · Marksheet · QLA` : 'Marksheet · QLA');

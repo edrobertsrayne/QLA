@@ -39,9 +39,9 @@
 	let { banded = true }: { banded?: boolean } = $props();
 
 	const store = marksheetStore();
-	const entries = $derived(store.document?.breakdown.entries ?? []);
+	const entries = $derived(store.entries);
 	const bands = $derived(store.questionBands);
-	const warnings = $derived(store.document?.breakdown.warnings ?? []);
+	const warnings = $derived(store.warnings);
 	const undoable = $derived(store.undoable);
 	/**
 	 * The entry whose marks field the cursor is in. It is left out of the warning

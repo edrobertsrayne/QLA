@@ -3,7 +3,7 @@
 
 import { goto } from '$app/navigation';
 import { resolve } from '$app/paths';
-import { saveFile } from './download.js';
+import { marksCsvFile, saveFile } from './download.js';
 import type { DocumentStorage } from './persistence.svelte.js';
 import { MarksheetStore } from './store.svelte.js';
 
@@ -63,6 +63,6 @@ export function backUpNow(): boolean {
  * nothing it does touches the age of the backup that can.
  */
 export function exportMarksNow(): void {
-	const file = marksheetStore().exportMarksCsv();
-	if (file) saveFile(file);
+	const document = marksheetStore().document;
+	if (document) saveFile(marksCsvFile(document));
 }

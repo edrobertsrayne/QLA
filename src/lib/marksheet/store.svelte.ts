@@ -8,17 +8,9 @@
 
 import type { Breakdown, ParseUsage, ParseWarning } from '$lib/server/parse/schema.js';
 import type { AssessmentObjective } from '$lib/parse/assessment-objectives.js';
-import { analyseMarksheet, type MarksheetAnalysis } from './analysis.js';
-import {
-	confirmationBlockers,
-	entryName,
-	needsAttention,
-	questionBands,
-	type AttentionItem,
-	type ConfirmationBlockers,
-	type QuestionBand
-} from './breakdown.js';
-import { backupFile, marksCsvFile, type QlaFile } from './download.js';
+import { analyseMarksheet } from './analysis.js';
+import { confirmationBlockers, entryName, needsAttention, questionBands } from './breakdown.js';
+import { backupFile, type QlaFile } from './download.js';
 import {
 	applyPaste,
 	emptyPasteResult,
@@ -110,6 +102,9 @@ export class MarksheetStore {
 	readonly #persistence: DocumentPersistence;
 
 	document = $state<MarksheetDocument | null>(null);
+	entries = $derived(this.document?.breakdown.entries ?? []);
+	students = $derived(this.document?.students ?? []);
+	warnings = $derived(this.document?.breakdown.warnings ?? []);
 	/** The stored document that could not be read, if the last read found one. */
 	unreadable = $state<Unreadable | null>(null);
 	/** This session's parse cost. Absent after a reload. */
@@ -164,29 +159,20 @@ export class MarksheetStore {
 	}
 
 	/** The bands the breakdown table groups its rows under. */
-	get questionBands(): QuestionBand[] {
-		return questionBands(this.document?.breakdown.entries ?? []);
-	}
+	questionBands = $derived(questionBands(this.entries));
 
 	/** What stops the breakdown being confirmed right now. */
-	get blockers(): ConfirmationBlockers {
-		return confirmationBlockers(this.document?.breakdown.entries ?? []);
-	}
+	blockers = $derived(confirmationBlockers(this.entries));
 
 	/** The entries worth a second look before confirming, in document order. */
-	get attention(): AttentionItem[] {
-		const breakdown = this.document?.breakdown;
-		return breakdown ? needsAttention(breakdown) : [];
-	}
+	attention = $derived(this.document ? needsAttention(this.document.breakdown) : []);
 
 	/**
 	 * What the marks say about every entry: facility, band and coverage, worst
 	 * first. Derived from the document as it stands, so it is current on every
 	 * change and there is nothing to run or to go out of date.
 	 */
-	get analysis(): MarksheetAnalysis {
-		return analyseMarksheet(this.document);
-	}
+	analysis = $derived(analyseMarksheet(this.document));
 
 	/**
 	 * The parse handoff: a run that validated becomes the stored document at
@@ -622,19 +608,6 @@ export class MarksheetStore {
 		document.updatedAt = at;
 		this.#persistence.writeNow();
 		return backupFile(document, this.#now());
-	}
-
-	/**
-	 * Hand the marks out as a spreadsheet reads them. Lossy and one-way, so it
-	 * deliberately neither stamps `lastExportedAt` nor writes: taking marks into
-	 * a spreadsheet is not having a copy that brings the marksheet back, and the
-	 * backup the teacher still needs must not look fresher for it.
-	 */
-	exportMarksCsv(): QlaFile | null {
-		const document = this.document;
-		if (!document) return null;
-
-		return marksCsvFile(document);
 	}
 
 	/** Say no to the reminder for this session. The next document asks again. */

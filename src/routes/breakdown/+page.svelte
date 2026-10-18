@@ -24,8 +24,8 @@
 	// The route's load guard has read storage by the time this renders.
 	const store = marksheetStore();
 
-	const entries = $derived(store.document?.breakdown.entries ?? []);
-	const runLevelWarnings = $derived(runWarnings(store.document?.breakdown.warnings ?? []));
+	const entries = $derived(store.entries);
+	const runLevelWarnings = $derived(runWarnings(store.warnings));
 	const attention = $derived(store.attention);
 	const blockers = $derived(store.blockers);
 	const questions = $derived(questionCount(entries));

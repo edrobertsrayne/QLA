@@ -58,10 +58,10 @@
 	let { onViewAnalysis }: { onViewAnalysis: (entryId: string | null) => void } = $props();
 
 	const store = marksheetStore();
-	const entries = $derived(store.document?.breakdown.entries ?? []);
-	const students = $derived(store.document?.students ?? []);
+	const entries = $derived(store.entries);
+	const students = $derived(store.students);
 	const marks = $derived(store.document?.marks ?? {});
-	const warnings = $derived(store.document?.breakdown.warnings ?? []);
+	const warnings = $derived(store.warnings);
 	const bands = $derived(store.questionBands);
 	const fallbacks = $derived(fallbackBands(bands, warnings));
 	const undoable = $derived(store.undoable);
