@@ -2,43 +2,31 @@
 	The marksheet: the class against the confirmed breakdown. The breakdown is
 	read-only here — its columns are keyed against by the marks — so the class is
 	the editable half of this surface.
+
+	PROTOTYPE (wayfinder #54): three report generation/editing/print flows, switchable
+	via `?variant=A|B|C` on this route. Report state is a stub, in memory only.
 -->
 <script lang="ts">
-	import AnalysisView from '$lib/components/marksheet/AnalysisView.svelte';
-	import MarksheetGrid from '$lib/components/marksheet/MarksheetGrid.svelte';
-	import BackupCard from '$lib/components/shell/BackupCard.svelte';
-	import PaperLabelInput from '$lib/components/shell/PaperLabelInput.svelte';
-	import { Input } from '$lib/components/ui/input';
-	import { totalMarks } from '$lib/marksheet/document.js';
+	import { page } from '$app/state';
+	import PrototypeSwitcher from '$lib/components/prototype/PrototypeSwitcher.svelte';
+	import PrintRoot from '$lib/prototypes/report-flow/PrintRoot.svelte';
+	import StubPanel from '$lib/prototypes/report-flow/StubPanel.svelte';
+	import VariantA from '$lib/prototypes/report-flow/VariantA.svelte';
+	import VariantB from '$lib/prototypes/report-flow/VariantB.svelte';
+	import VariantC from '$lib/prototypes/report-flow/VariantC.svelte';
 	import { marksheetStore } from '$lib/marksheet/index.js';
-	import { count } from '$lib/prose.js';
+
+	const VARIANTS = [
+		{ key: 'A', label: 'Reports view, list + editor' },
+		{ key: 'B', label: 'On the marksheet, roster + modal' },
+		{ key: 'C', label: 'Steps, then the printed pages' }
+	];
 
 	// The route's load guard has read storage by the time this renders.
 	const store = marksheetStore();
-
-	/** Which half of the sheet is on screen: the grid, or the whole sheet's figures. */
-	let view = $state<'grid' | 'analysis'>('grid');
-	/** The entry the analysis was opened at, to outline and scroll to, or null for all of them. */
-	let highlighted = $state<string | null>(null);
-
-	const entries = $derived(store.entries);
-	const students = $derived(store.students);
-	const marks = $derived(totalMarks(entries));
+	const variant = $derived(page.url.searchParams.get('variant') ?? 'A');
 	const className = $derived(store.document?.paper.className ?? null);
 	const title = $derived(className ? `${className} · Marksheet · QLA` : 'Marksheet · QLA');
-	const summary = $derived(
-		[
-			count(students.length, 'student'),
-			count(entries.length, 'entry', 'entries'),
-			`${marks} marks`
-		].join(' · ')
-	);
-
-	/** Open the analysis, at one entry when the teacher asked from that entry's figure. */
-	function openAnalysis(entryId: string | null): void {
-		highlighted = entryId;
-		view = 'analysis';
-	}
 </script>
 
 <svelte:head>
@@ -46,26 +34,16 @@
 </svelte:head>
 
 <main class="mx-auto max-w-6xl space-y-4 p-6">
-	{#if view === 'grid'}
-		<header class="space-y-3">
-			<div class="space-y-1">
-				<PaperLabelInput />
-				<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-					<Input
-						aria-label="Class name"
-						class="h-8 w-40 border-transparent bg-transparent px-1 shadow-none hover:border-input"
-						placeholder="Name this class"
-						value={className ?? ''}
-						oninput={(event) => store.setClassName(event.currentTarget.value)}
-					/>
-					<p class="text-sm text-muted-foreground">{summary}</p>
-				</div>
-			</div>
-			<BackupCard />
-		</header>
-
-		<MarksheetGrid onViewAnalysis={openAnalysis} />
+	{#if !store.document}
+		<!-- A wipe empties the store a frame before the redirect lands. -->
+	{:else if variant === 'B'}
+		<VariantB />
+	{:else if variant === 'C'}
+		<VariantC />
 	{:else}
-		<AnalysisView highlight={highlighted} onBack={() => (view = 'grid')} />
+		<VariantA />
 	{/if}
 </main>
+<PrintRoot />
+<StubPanel />
+<PrototypeSwitcher variants={VARIANTS} current={variant} />
