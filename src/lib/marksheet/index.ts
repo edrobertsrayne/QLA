@@ -4,7 +4,6 @@
 import { goto } from '$app/navigation';
 import { resolve } from '$app/paths';
 import { saveFile } from './download.js';
-import { flushOnHide } from './flush.js';
 import type { DocumentStorage } from './persistence.svelte.js';
 import { MarksheetStore } from './store.svelte.js';
 
@@ -31,13 +30,11 @@ export function marksheetStore(): MarksheetStore {
 	if (instance) return instance;
 
 	const store = new MarksheetStore({ storage: browserStorage(), now: () => new Date() });
-	flushOnHide(() => store.flush(), {
-		isHidden: () => document.visibilityState === 'hidden',
-		on: (type, listener) => {
-			if (type === 'visibilitychange') document.addEventListener(type, listener);
-			else window.addEventListener(type, listener);
-		}
+	// A debounced write loses the last keystrokes when the tab is hidden or closed.
+	document.addEventListener('visibilitychange', () => {
+		if (document.visibilityState === 'hidden') store.flush();
 	});
+	window.addEventListener('pagehide', () => store.flush());
 	instance = store;
 	return store;
 }
