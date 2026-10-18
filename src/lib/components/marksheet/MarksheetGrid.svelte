@@ -622,9 +622,15 @@
 	}
 
 	/** Enter keeps the rename, Escape drops it, and leaving the cell commits it. */
-	function onRenameKeydown(event: KeyboardEvent): void {
+	async function onRenameKeydown(event: KeyboardEvent): Promise<void> {
+		const studentId = renaming?.studentId;
 		if (event.key === 'Enter') commitRename();
 		else if (event.key === 'Escape') renaming = null;
+		else return;
+		// The input unmounts with the rename, taking the keyboard with it: put it
+		// back on the row's name cell.
+		await tick();
+		if (studentId !== undefined) focusCell(studentId, null);
 	}
 
 	/** A pasted column of names becomes the class, or joins it when there is one. */
@@ -1007,7 +1013,7 @@
 									oninput={(event) => {
 										if (renaming) renaming.firstName = event.currentTarget.value;
 									}}
-									onkeydown={onRenameKeydown}
+									onkeydown={(event) => void onRenameKeydown(event)}
 								/>
 								<input
 									data-rename-field="surname"
@@ -1021,7 +1027,7 @@
 										// overwrite of the whole name.
 										renaming.replace = false;
 									}}
-									onkeydown={onRenameKeydown}
+									onkeydown={(event) => void onRenameKeydown(event)}
 								/>
 							{:else}
 								<span

@@ -196,6 +196,24 @@ describe('marksheet page', () => {
 		await expect.element(page.getByLabelText('Surname of Ada Lovelace')).toHaveValue('Lovelace');
 	});
 
+	it.each(['Enter', 'Escape'])(
+		'keeps the keyboard on the name cell after %s in a rename',
+		async (key) => {
+			seed(confirmed({ students: [student('student-1', 'Ada', 'Lovelace')] }));
+
+			openMarksheetPage();
+
+			await page.getByTestId('name-cell').click();
+			await userEvent.keyboard('{F2}');
+			await page.getByLabelText('First name of Ada Lovelace').fill('Grace');
+			await userEvent.keyboard(`{${key}}`);
+
+			await vi.waitFor(() =>
+				expect(focusedCell()).toBe(document.querySelector('[data-testid="name-cell"]'))
+			);
+		}
+	);
+
 	it('replaces a name with what is typed over it', async () => {
 		seed(confirmed({ students: [student('student-1', 'Ada', 'Lovelace')] }));
 
