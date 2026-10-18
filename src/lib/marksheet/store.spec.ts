@@ -9,6 +9,7 @@ import type {
 } from './document.js';
 import { MarksheetStore } from './store.svelte.js';
 import type { DocumentStorage, LoadResult } from './store.svelte.js';
+import { progressOf } from './students.js';
 
 const NOW = new Date('2026-01-01T10:00:00.000Z');
 
@@ -1375,6 +1376,124 @@ describe('class', () => {
 		expect(store.addStudent({ firstName: 'Ada', surname: 'Lovelace' })).toBeNull();
 		expect(store.pasteNames('Ada Lovelace')).toBe(0);
 		expect(store.removeStudent('student-1')).toBe(false);
+		expect(store.document).toBeNull();
+	});
+});
+
+describe('marks', () => {
+	/** A confirmed marksheet with one student and one four-mark entry. */
+	function openMarksheet(overrides: Partial<MarksheetDocument> = {}) {
+		return openStore({
+			breakdownConfirmedAt: NOW.toISOString(),
+			students: [student('student-1', 'Ada', 'Lovelace')],
+			...overrides
+		});
+	}
+
+	it('files a mark under the student and the entry it belongs to', () => {
+		vi.useFakeTimers();
+		try {
+			const { store, storage } = openMarksheet();
+
+			store.setMark('student-1', 'entry-1', 3);
+			vi.advanceTimersByTime(500);
+
+			expect(stored(storage).marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('replaces a mark already entered rather than adding to it', () => {
+		const { store } = openMarksheet({ marks: { 'student-1': { 'entry-1': 3 } } });
+
+		store.setMark('student-1', 'entry-1', 4);
+
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 4 } });
+	});
+
+	it('keeps a mark of zero apart from a cell nobody has marked', () => {
+		const { store } = openMarksheet();
+		const marksFor = () => store.document?.marks['student-1'];
+		const entries = () => store.document?.breakdown.entries ?? [];
+
+		store.setMark('student-1', 'entry-1', 0);
+
+		expect(marksFor()).toEqual({ 'entry-1': 0 });
+		// Zero is a mark the student gained: their row counts it as filled in.
+		expect(progressOf(marksFor(), entries())).toEqual({ marked: 1, total: 1 });
+
+		store.clearMark('student-1', 'entry-1');
+
+		// Cleared is no entry at all, so nothing says the cell was ever marked.
+		expect(store.document?.marks).toEqual({});
+		expect(progressOf(marksFor(), entries())).toEqual({ marked: 0, total: 1 });
+	});
+
+	it('stores a mark above the entry’s available marks, never clamping it', () => {
+		const { store } = openMarksheet();
+
+		store.setMark('student-1', 'entry-1', 40);
+
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 40 } });
+		// What the entry offers is the teacher's: the mark does not change it back.
+		expect(entryOf(store, 'entry-1')?.marks).toBe(4);
+	});
+
+	it('refuses a mark that is not a whole number', () => {
+		const { store } = openMarksheet({ marks: { 'student-1': { 'entry-1': 2 } } });
+
+		for (const refused of [2.5, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+			store.setMark('student-1', 'entry-1', refused);
+			expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 2 } });
+		}
+	});
+
+	it('ignores a mark aimed at a student or an entry that is not there', () => {
+		const { store } = openMarksheet({ marks: { 'student-1': { 'entry-1': 3 } } });
+
+		store.setMark('student-gone', 'entry-1', 3);
+		store.setMark('student-1', 'entry-gone', 3);
+		store.clearMark('student-gone', 'entry-1');
+		store.clearMark('student-1', 'entry-gone');
+
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+	});
+
+	it('leaves the undo alone when the mark entered is the one already there', () => {
+		const { store } = openMarksheet({
+			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
+			marks: { 'student-1': { 'entry-1': 3 } }
+		});
+
+		store.removeStudent('student-2');
+		store.setMark('student-1', 'entry-1', 3);
+
+		// Nothing changed, so nothing the teacher could take back was spent.
+		expect(store.undoable).not.toBeNull();
+		expect(store.undo()).toBe(true);
+		expect(store.document?.students.map(({ id }) => id)).toEqual(['student-1', 'student-2']);
+	});
+
+	it('takes the change undo was covering, since entering a mark takes its place', () => {
+		const { store } = openMarksheet({
+			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')]
+		});
+
+		store.removeStudent('student-2');
+		expect(store.undoable).not.toBeNull();
+
+		store.setMark('student-1', 'entry-1', 3);
+
+		expect(store.undoable).toBeNull();
+	});
+
+	it('does nothing when no marksheet is stored', () => {
+		const store = storeWith(fakeStorage());
+
+		store.setMark('student-1', 'entry-1', 3);
+		store.clearMark('student-1', 'entry-1');
+
 		expect(store.document).toBeNull();
 	});
 });

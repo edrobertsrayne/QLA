@@ -614,6 +614,41 @@ export class MarksheetStore {
 	}
 
 	/**
+	 * Record the mark one student gained on one entry. Whole numbers only, and
+	 * never clamped to the entry's available marks: a typo is stored and flagged
+	 * rather than quietly rewritten into a mark the teacher never gave. Zero is a
+	 * mark; a cell with none is not in the map at all.
+	 */
+	setMark(studentId: string, entryId: string, mark: number): void {
+		if (!Number.isInteger(mark) || mark < 0) return;
+		const document = this.#markable(studentId, entryId);
+		if (!document) return;
+		// The mark already there is not a change: re-entering it must not spend the
+		// undo the teacher still wants, or bump the document's timestamp.
+		if (document.marks[studentId]?.[entryId] === mark) return;
+
+		document.marks[studentId] ??= {};
+		document.marks[studentId][entryId] = mark;
+		this.#mutated();
+	}
+
+	/**
+	 * Clear a mark back to unmarked, so the cell is one the teacher has not got
+	 * to yet rather than one they gave nothing.
+	 */
+	clearMark(studentId: string, entryId: string): void {
+		const document = this.#markable(studentId, entryId);
+		const marks = document?.marks[studentId];
+		if (!document || !marks || marks[entryId] === undefined) return;
+
+		delete marks[entryId];
+		// A student with nothing left on the sheet leaves nothing behind: marks
+		// are sparse, so an empty record is not kept for them.
+		if (Object.keys(marks).length === 0) delete document.marks[studentId];
+		this.#mutated();
+	}
+
+	/**
 	 * Confirm the breakdown, unless something blocks the marksheet it would
 	 * build: an entry with no marks, or a blank or repeated label. Returns
 	 * whether the breakdown is confirmed, changing nothing when it is not.
@@ -677,6 +712,19 @@ export class MarksheetStore {
 	#editable(): MarksheetDocument | null {
 		const document = this.document;
 		if (!document || document.breakdownConfirmedAt !== null) return null;
+		return document;
+	}
+
+	/**
+	 * The document a mark may be filed in. A mark is reached through a student
+	 * and an entry, so both have to be there: one pointing at either that is gone
+	 * could never be read again.
+	 */
+	#markable(studentId: string, entryId: string): MarksheetDocument | null {
+		const document = this.document;
+		if (!document) return null;
+		if (!document.students.some((student) => student.id === studentId)) return null;
+		if (!document.breakdown.entries.some((entry) => entry.id === entryId)) return null;
 		return document;
 	}
 
