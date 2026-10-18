@@ -104,30 +104,16 @@ describe('applying a block', () => {
 		});
 	});
 
-	it('ignores a pasted row with no name to make a student from', () => {
+	// A cell with nothing readable as a name makes no student, whether it is
+	// blank or only punctuation, and the marks beside it are not filed.
+	it.each(['', ','])('does not make a student of a row whose name cell is %j', (name) => {
 		const document = pasteSheet();
 
 		const result = applyPaste(
 			document,
 			[
 				['', ''],
-				['', '3']
-			],
-			{ kind: 'names', studentId: 'student-2' }
-		);
-
-		expect(result).toMatchObject({ changed: false, studentsAdded: 0, rowsDropped: 1 });
-		expect(document.students).toHaveLength(2);
-	});
-
-	it('does not make a student out of a name cell holding only punctuation', () => {
-		const document = pasteSheet();
-
-		const result = applyPaste(
-			document,
-			[
-				['', ''],
-				[',', '3']
+				[name, '3']
 			],
 			{ kind: 'names', studentId: 'student-2' }
 		);

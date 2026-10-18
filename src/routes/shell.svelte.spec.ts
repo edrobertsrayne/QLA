@@ -4,7 +4,13 @@ import { createRawSnippet } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { STORAGE_KEY } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import { NOW, entry, parsed as sharedParsed, seed } from '$lib/marksheet/fixtures.spec-helpers.js';
+import {
+	NOW,
+	entry,
+	parseRun,
+	parsed as sharedParsed,
+	seed
+} from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import BreakdownPage from './breakdown/+page.svelte';
 import Layout from './+layout.svelte';
@@ -83,12 +89,9 @@ describe('the breadcrumb', () => {
 	});
 
 	it('shows the label seeded from the uploaded filename', async () => {
-		marksheetStore().createFromParse({
-			breakdown: { questions: [] },
-			warnings: [],
-			usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 },
-			filenames: ['Year 10 Chemistry.pdf']
-		});
+		marksheetStore().createFromParse(
+			parseRun({ breakdown: { questions: [] }, filenames: ['Year 10 Chemistry.pdf'] })
+		);
 		openShell();
 
 		await expect.element(breadcrumb()).toHaveTextContent(/^QLA\s*\/\s*Year 10 Chemistry$/);

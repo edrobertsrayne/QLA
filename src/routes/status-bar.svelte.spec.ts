@@ -8,6 +8,7 @@ import {
 	NOW,
 	confirmed as sharedConfirmed,
 	entry,
+	parseRun,
 	seed,
 	student
 } from '$lib/marksheet/fixtures.spec-helpers.js';
@@ -180,24 +181,7 @@ describe('status bar', () => {
 
 		// A parse is worth keeping whatever the browser will do with it, so it
 		// lands in the tab and can be handed out from there.
-		store.createFromParse({
-			breakdown: {
-				questions: [
-					{
-						id: '2bii',
-						questionNumber: '2',
-						marks: 4,
-						summary: 'Explain the process shown',
-						specPoint: '3.2.1.4',
-						commandWord: 'Explain',
-						ao: 'AO1'
-					}
-				]
-			},
-			warnings: [],
-			usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 },
-			filenames: ['10X Ph1.pdf']
-		});
+		store.createFromParse(parseRun());
 
 		await expect
 			.element(page.getByRole('button', { name: 'Download backup now' }))

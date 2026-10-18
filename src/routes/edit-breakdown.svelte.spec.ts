@@ -8,7 +8,7 @@ import {
 	confirmed,
 	entry,
 	seed,
-	storedDocument,
+	readSeeded,
 	student
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
@@ -88,14 +88,14 @@ describe('editing the breakdown after confirming it', () => {
 
 		await vi.waitFor(() => {
 			expect(goto).toHaveBeenCalledWith('/breakdown');
-			expect(storedDocument().breakdownConfirmedAt).toBeNull();
+			expect(readSeeded().breakdownConfirmedAt).toBeNull();
 		});
 		// An unlock changes nothing but the lock: the marks are exactly as they were.
-		expect(storedDocument().marks).toEqual({
+		expect(readSeeded().marks).toEqual({
 			'student-1': { 'entry-1': 3, 'entry-2': 1 },
 			'student-2': { 'entry-1': 2 }
 		});
-		expect(storedDocument().students).toHaveLength(2);
+		expect(readSeeded().students).toHaveLength(2);
 		expect(marksheetStore().route()).toBe('/breakdown');
 
 		// The wrong entry is deleted on the review page — which asks first, since two
@@ -111,7 +111,7 @@ describe('editing the breakdown after confirming it', () => {
 
 		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/marksheet'));
 		await vi.waitFor(() => {
-			const reconfirmed = storedDocument();
+			const reconfirmed = readSeeded();
 			expect(reconfirmed.breakdownConfirmedAt).not.toBeNull();
 			expect(reconfirmed.breakdown.entries.map((one) => one.label)).toEqual(['2biii']);
 			// The class survives whole, and so do the marks the deleted entry never
@@ -138,7 +138,7 @@ describe('editing the breakdown after confirming it', () => {
 		await page.getByRole('button', { name: 'Keep marking' }).click();
 
 		await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
-		expect(storedDocument().breakdownConfirmedAt).toBe(NOW);
+		expect(readSeeded().breakdownConfirmedAt).toBe(NOW);
 		expect(marksheetStore().route()).toBe('/marksheet');
 		expect(goto).not.toHaveBeenCalled();
 	});

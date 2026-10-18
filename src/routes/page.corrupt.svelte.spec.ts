@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { CORRUPT_KEY_PREFIX, STORAGE_KEY } from '$lib/marksheet/document.js';
+import { parseRun } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import UploadPage from './+page.svelte';
@@ -55,24 +56,7 @@ describe('an unreadable stored document', () => {
 		render(UploadPage);
 		await expect.element(page.getByTestId('corrupt-alert')).toBeInTheDocument();
 
-		marksheetStore().createFromParse({
-			breakdown: {
-				questions: [
-					{
-						id: '2bii',
-						questionNumber: '2',
-						marks: 4,
-						summary: 'Explain the process shown',
-						specPoint: '3.2.1.4',
-						commandWord: 'Explain',
-						ao: 'AO1'
-					}
-				]
-			},
-			warnings: [],
-			usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 },
-			filenames: ['10X Ph1.pdf']
-		});
+		marksheetStore().createFromParse(parseRun());
 
 		await expect.element(page.getByTestId('corrupt-alert')).not.toBeInTheDocument();
 	});

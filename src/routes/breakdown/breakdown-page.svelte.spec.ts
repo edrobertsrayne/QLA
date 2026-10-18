@@ -4,7 +4,14 @@ import { render } from 'vitest-browser-svelte';
 import AppNav from '$lib/components/shell/AppNav.svelte';
 import { STORAGE_KEY, markCount } from '$lib/marksheet/document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredWarning } from '$lib/marksheet/document.js';
-import { NOW, entry, parsed, seed, storedDocument } from '$lib/marksheet/fixtures.spec-helpers.js';
+import {
+	NOW,
+	entry,
+	parseRun,
+	parsed,
+	seed,
+	readSeeded
+} from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import BreakdownPage from './+page.svelte';
 
@@ -72,24 +79,11 @@ describe('breakdown page', () => {
 		seed(parsedDocument());
 		openBreakdownPage();
 
-		marksheetStore().createFromParse({
-			breakdown: {
-				questions: [
-					{
-						id: '2bii',
-						questionNumber: '2',
-						marks: 4,
-						summary: 'Describe the rate change',
-						specPoint: '3.2.1.4',
-						commandWord: 'Describe',
-						ao: 'AO2'
-					}
-				]
-			},
-			warnings: [],
-			usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30, estCost: 0.001 },
-			filenames: ['10X Ph1.pdf']
-		});
+		marksheetStore().createFromParse(
+			parseRun({
+				usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30, estCost: 0.001 }
+			})
+		);
 
 		await expect.element(page.getByText(/this run: 30 tokens · \$0\.0010/)).toBeInTheDocument();
 	});
@@ -108,7 +102,7 @@ describe('breakdown page', () => {
 		await page.getByLabelText('Label for 2bii').fill('2b');
 
 		await vi.waitFor(() => {
-			expect(storedDocument().breakdown.entries).toEqual([
+			expect(readSeeded().breakdown.entries).toEqual([
 				{
 					id: 'entry-1',
 					label: '2b',
@@ -141,7 +135,7 @@ describe('breakdown page', () => {
 		await page.getByLabelText('Command word for 2bii').fill('');
 
 		await vi.waitFor(() => {
-			const stored = storedDocument().breakdown.entries[0];
+			const stored = readSeeded().breakdown.entries[0];
 			expect(stored.specPoint).toBeNull();
 			expect(stored.commandWord).toBeNull();
 		});
@@ -153,7 +147,7 @@ describe('breakdown page', () => {
 
 		await userEvent.fill(page.getByLabelText('Marks for 2bii'), '7');
 
-		await vi.waitFor(() => expect(storedDocument().breakdown.entries[0].marks).toBe(7));
+		await vi.waitFor(() => expect(readSeeded().breakdown.entries[0].marks).toBe(7));
 	});
 
 	it('refuses a mark cell holding anything but digits, showing what the entry holds', async () => {
@@ -167,7 +161,7 @@ describe('breakdown page', () => {
 			await userEvent.tab();
 
 			await expect.element(page.getByLabelText('Marks for 2bii')).toHaveValue('4');
-			expect(storedDocument().breakdown.entries[0].marks).toBe(4);
+			expect(readSeeded().breakdown.entries[0].marks).toBe(4);
 		}
 	});
 
@@ -187,7 +181,7 @@ describe('breakdown page', () => {
 		await expect.element(page.getByText('3 subquestions')).toBeInTheDocument();
 		await expect.element(page.getByLabelText('Question number for band 1')).not.toBeInTheDocument();
 		await vi.waitFor(() => {
-			expect(storedDocument().breakdown.entries.map((one) => one.questionNumber)).toEqual([
+			expect(readSeeded().breakdown.entries.map((one) => one.questionNumber)).toEqual([
 				'2',
 				'2',
 				'2'
@@ -265,7 +259,7 @@ describe('breakdown page', () => {
 
 		await vi.waitFor(() => {
 			expect(goto).toHaveBeenCalledWith('/marksheet');
-			expect(storedDocument().breakdownConfirmedAt).not.toBeNull();
+			expect(readSeeded().breakdownConfirmedAt).not.toBeNull();
 		});
 	});
 
@@ -292,7 +286,7 @@ describe('breakdown page', () => {
 		await page.getByLabelText('Paper label').fill('10X/Ph1 2026');
 
 		await vi.waitFor(() => {
-			const stored = storedDocument();
+			const stored = readSeeded();
 			expect(stored.paper.label).toBe('10X/Ph1 2026');
 			expect(stored.updatedAt).not.toBe(NOW);
 		});
@@ -352,7 +346,7 @@ describe('breakdown page', () => {
 		await expect.element(page.getByTitle('Added by you')).toBeInTheDocument();
 		await vi.waitFor(() => {
 			expect(
-				storedDocument().breakdown.entries.map((one) => [one.label, one.questionNumber, one.marks])
+				readSeeded().breakdown.entries.map((one) => [one.label, one.questionNumber, one.marks])
 			).toEqual([
 				['1a', '1', 4],
 				['2a', '2', 6]
@@ -374,14 +368,14 @@ describe('breakdown page', () => {
 		await page.getByLabelText('Label for (no label)').fill('2c');
 
 		await vi.waitFor(() => {
-			expect(storedDocument().breakdown.entries.map((one) => one.label)).toEqual([
+			expect(readSeeded().breakdown.entries.map((one) => one.label)).toEqual([
 				'1a',
 				'2a',
 				'2b',
 				'2c'
 			]);
 		});
-		expect(storedDocument().breakdown.entries[3].questionNumber).toBe('2');
+		expect(readSeeded().breakdown.entries[3].questionNumber).toBe('2');
 	});
 
 	it('marks the field a teacher changed, and clears it when they change it back', async () => {
@@ -411,7 +405,7 @@ describe('breakdown page', () => {
 		await expect.element(page.getByLabelText('Label for 1a')).toHaveValue('1a');
 		await expect.element(page.getByText('Deleted 1a.')).not.toBeInTheDocument();
 		await vi.waitFor(() => {
-			expect(storedDocument().breakdown.entries.map((one) => one.label)).toEqual(['1a', '1b']);
+			expect(readSeeded().breakdown.entries.map((one) => one.label)).toEqual(['1a', '1b']);
 		});
 	});
 
@@ -433,7 +427,7 @@ describe('breakdown page', () => {
 		await page.getByRole('button', { name: 'Keep the entry' }).click();
 
 		await expect.element(page.getByLabelText('Label for 2bii')).toHaveValue('2bii');
-		expect(storedDocument().marks['student-1']['entry-1']).toBe(3);
+		expect(readSeeded().marks['student-1']['entry-1']).toBe(3);
 
 		await page.getByRole('button', { name: 'Delete 2bii' }).click();
 		await page.getByRole('button', { name: 'Delete 2bii and 1 mark' }).click();
@@ -478,8 +472,8 @@ describe('breakdown page', () => {
 
 		// Nothing was clamped: the mark the student gained stands as it was entered.
 		await vi.waitFor(() => {
-			expect(storedDocument().breakdown.entries[0].marks).toBe(1);
-			expect(storedDocument().marks['student-1']['entry-1']).toBe(3);
+			expect(readSeeded().breakdown.entries[0].marks).toBe(1);
+			expect(readSeeded().marks['student-1']['entry-1']).toBe(3);
 		});
 
 		// Available marks the mark still fits under clear the warning.
@@ -500,7 +494,7 @@ describe('breakdown page', () => {
 		await page.getByRole('button', { name: 'Move 1b up' }).click();
 
 		await vi.waitFor(() => {
-			expect(storedDocument().breakdown.entries.map((one) => one.label)).toEqual(['1b', '1a']);
+			expect(readSeeded().breakdown.entries.map((one) => one.label)).toEqual(['1b', '1a']);
 		});
 	});
 

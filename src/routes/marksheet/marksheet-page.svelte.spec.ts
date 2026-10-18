@@ -9,7 +9,7 @@ import {
 	confirmed,
 	entry,
 	seed,
-	storedDocument,
+	readSeeded,
 	student
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
@@ -256,7 +256,7 @@ describe('marksheet page', () => {
 
 		expect(rowNames(screen)).toEqual(['Grace Hopper']);
 		expect(marksheetStore().document?.marks).toEqual({});
-		await vi.waitFor(() => expect(storedDocument().students).toHaveLength(1));
+		await vi.waitFor(() => expect(readSeeded().students).toHaveLength(1));
 
 		await page.getByTestId('undo').getByRole('button', { name: 'Undo' }).click();
 

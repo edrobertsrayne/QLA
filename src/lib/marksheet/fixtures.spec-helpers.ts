@@ -4,6 +4,7 @@
 
 import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY, entryValuesOf } from './document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredStudent } from './document.js';
+import type { CreateFromParseInput } from './store.svelte.js';
 
 export const NOW = '2026-01-01T10:00:00.000Z';
 
@@ -68,6 +69,33 @@ export function seed(stored: MarksheetDocument): void {
 	localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
 }
 
-export function storedDocument(): MarksheetDocument {
+export function readSeeded(): MarksheetDocument {
 	return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
+}
+
+type ParsedQuestion = CreateFromParseInput['breakdown']['questions'][number];
+
+/** One question as the parse returns it: the one-entry paper `confirmed()` is built from. */
+export function question(overrides: Partial<ParsedQuestion> = {}): ParsedQuestion {
+	return {
+		id: '2bii',
+		questionNumber: '2',
+		marks: 4,
+		summary: 'Describe the rate change',
+		specPoint: '3.2.1.4',
+		commandWord: 'Describe',
+		ao: 'AO2',
+		...overrides
+	};
+}
+
+/** A finished parse run, as the upload page hands it to the store. */
+export function parseRun(overrides: Partial<CreateFromParseInput> = {}): CreateFromParseInput {
+	return {
+		breakdown: { questions: [question()] },
+		warnings: [],
+		usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 },
+		filenames: ['10X Ph1.pdf'],
+		...overrides
+	};
 }

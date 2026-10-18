@@ -8,7 +8,7 @@ import {
 	confirmed as sharedConfirmed,
 	entry,
 	seed,
-	storedDocument,
+	readSeeded,
 	student
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
@@ -170,7 +170,7 @@ describe('the new-upload dialog', () => {
 		// trust that it was.
 		await expect.element(page.getByTestId('wipe-backup')).toHaveTextContent('Backed up just now');
 		expect(file.filename()).toMatch(/^qla-backup-10x-ph1-\d{4}-\d{2}-\d{2}\.json$/);
-		expect(storedDocument().lastExportedAt).not.toBeNull();
+		expect(readSeeded().lastExportedAt).not.toBeNull();
 	});
 
 	it('offers the marks as a CSV beside it, labelled as the thing it is not', async () => {
@@ -189,7 +189,7 @@ describe('the new-upload dialog', () => {
 		expect(await file.text()).toContain('Lovelace,Ada,,3,3');
 		// A marks export is not a backup, so the dialog's own backup row must not
 		// look done because of it.
-		expect(storedDocument().lastExportedAt).toBeNull();
+		expect(readSeeded().lastExportedAt).toBeNull();
 	});
 
 	it('reports the backup’s real age when the dialog is opened again', async () => {
