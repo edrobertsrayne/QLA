@@ -18,6 +18,7 @@ import {
 	type ConfirmationBlockers,
 	type QuestionBand
 } from './breakdown.js';
+import { backupFile, type QlaFile } from './download.js';
 import { emptyPasteResult, trimPasteGrid, type PasteAnchor, type PasteResult } from './paste.js';
 import {
 	CORRUPT_KEY_PREFIX,
@@ -208,6 +209,12 @@ export class MarksheetStore {
 	 * a stale account beside a sheet that has moved on is worse than none.
 	 */
 	pasteNotice = $state<PasteResult | null>(null);
+	/**
+	 * Whether the teacher has said "remind me later" this session. It is not
+	 * part of the document — a reload asks again, because the risk is still
+	 * there — and it goes with the document it was about.
+	 */
+	backupReminderDismissed = $state(false);
 
 	constructor(deps: MarksheetStoreDeps) {
 		this.#storage = deps.storage;
@@ -358,6 +365,7 @@ export class MarksheetStore {
 		};
 		this.runUsage = input.usage;
 		this.#loaded = true;
+		this.backupReminderDismissed = false;
 		this.#settle({ kind: 'ready', document }, document);
 		this.#write();
 	}
@@ -837,6 +845,51 @@ export class MarksheetStore {
 	flush(): void {
 		if (this.#cancelTimer === null) return;
 		this.#write();
+	}
+
+	/**
+	 * Take a backup: the document as it stands, stamped so restoring it brings
+	 * back when it was taken. The file is built after the write, so what the
+	 * teacher saves is byte-identical to what a restore would find here — and it
+	 * is handed out whether or not storage would take it, since a browser that
+	 * refuses the write is exactly when the file matters most.
+	 */
+	takeBackup(): QlaFile | null {
+		const document = this.document;
+		if (!document) return null;
+
+		document.lastExportedAt = this.#now().toISOString();
+		this.#write();
+		return backupFile(document, this.#now());
+	}
+
+	/** Say no to the reminder for this session. The next document asks again. */
+	dismissBackupReminder(): void {
+		this.backupReminderDismissed = true;
+	}
+
+	/**
+	 * Adopt a document read from a backup file, replacing whatever this browser
+	 * holds, and hand back the surface its state lands on — or nothing when the
+	 * file is not one of ours, in which case the app is left exactly as it was.
+	 * The same validator reads this as reads storage, so a file we hand out is
+	 * exactly a file we can boot from.
+	 */
+	restoreBackup(text: string): BootRoute | null {
+		const parsed = parseStoredDocument(text);
+		if (!parsed) return null;
+
+		// Unreachable marks are dropped on the way in, exactly as they would be on
+		// the next boot, and the document reaches storage at once rather than on
+		// the debounce: it is the teacher's only copy until they back up again.
+		const document = dropUnreachableMarks(parsed);
+		this.#loaded = true;
+		this.#unsaved = false;
+		this.runUsage = null;
+		this.backupReminderDismissed = false;
+		this.#settle({ kind: 'ready', document }, document);
+		this.#write();
+		return this.route();
 	}
 
 	/** New upload: discard the marksheet document and nothing else. */

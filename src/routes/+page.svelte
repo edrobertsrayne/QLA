@@ -4,6 +4,7 @@
 	import FatalAlert from '$lib/components/parse/FatalAlert.svelte';
 	import SourceFilesCard from '$lib/components/parse/SourceFilesCard.svelte';
 	import CorruptDocumentAlert from '$lib/components/shell/CorruptDocumentAlert.svelte';
+	import RestoreCard from '$lib/components/shell/RestoreCard.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import ModelSelect, { type ModelOption } from '$lib/components/parse/ModelSelect.svelte';
@@ -204,6 +205,8 @@
 	</div>
 
 	<Separator />
+
+	<RestoreCard />
 
 	<div class="grid gap-6 lg:grid-cols-2">
 		<SourceFilesCard

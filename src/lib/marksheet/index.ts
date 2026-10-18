@@ -2,6 +2,7 @@
 // this browser's storage and clock.
 
 import { flushOnHide } from './flush.js';
+import { saveFile } from './download.js';
 import { MarksheetStore, type DocumentStorage } from './store.svelte.js';
 
 /** Reaching for `localStorage` itself throws in some sandboxed and private contexts. */
@@ -36,4 +37,14 @@ export function marksheetStore(): MarksheetStore {
 	});
 	instance = store;
 	return store;
+}
+
+/**
+ * Take a backup and hand it to the browser: the one action every "Back up now"
+ * in the app performs. It is the mark of a backup having been taken — the moment
+ * is recorded — so it is written once rather than at each button.
+ */
+export function backUpNow(): void {
+	const file = marksheetStore().takeBackup();
+	if (file) saveFile(file);
 }

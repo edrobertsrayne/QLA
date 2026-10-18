@@ -231,4 +231,45 @@ describe('status bar', () => {
 			expect(clearance).toBeGreaterThanOrEqual(0);
 		});
 	});
+
+	it('names where the work lives and how old the only copy out of it is', async () => {
+		seed(
+			confirmed({ lastExportedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() })
+		);
+
+		const screen = openShell();
+
+		await expect
+			.element(page.getByTestId('storage-note'))
+			.toHaveTextContent('Stored in this browser only · backup 3 days ago');
+		// The far end of the bar: after the line about the last save.
+		const line = screen.container.querySelector('[data-testid="save-line"]');
+		const note = screen.container.querySelector('[data-testid="storage-note"]');
+		expect(line && note && line.compareDocumentPosition(note)).toBe(
+			Node.DOCUMENT_POSITION_FOLLOWING
+		);
+	});
+
+	it('says there is no way out at all until a backup is taken', async () => {
+		seed(confirmed({ lastExportedAt: null }));
+
+		openShell();
+
+		await expect
+			.element(page.getByTestId('storage-note'))
+			.toHaveTextContent('Stored in this browser only · no backup yet');
+	});
+
+	it('says nothing about where the work lives when storage keeps nothing', async () => {
+		vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new DOMException('private browsing', 'SecurityError');
+		});
+
+		openShell();
+
+		await expect
+			.element(page.getByTestId('save-line'))
+			.toHaveTextContent("This browser can't store anything");
+		expect(page.getByTestId('storage-note').query()).toBeNull();
+	});
 });

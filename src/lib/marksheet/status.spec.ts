@@ -1,8 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { relativeTime, statusLine } from './status.js';
+import { DOCUMENT_SCHEMA_VERSION } from './document.js';
+import type { MarksheetDocument } from './document.js';
+import { relativeTime, statusLine, storageNote } from './status.js';
 
 const NOW = new Date(2026, 0, 1, 10, 0);
 const secondsAgo = (seconds: number) => new Date(NOW.getTime() - seconds * 1000);
+
+function marksheet(lastExportedAt: string | null): MarksheetDocument {
+	return {
+		schemaVersion: DOCUMENT_SCHEMA_VERSION,
+		createdAt: NOW.toISOString(),
+		updatedAt: NOW.toISOString(),
+		breakdownConfirmedAt: NOW.toISOString(),
+		lastExportedAt,
+		paper: {
+			label: 'Ph1',
+			className: null,
+			sourceFilenames: ['paper.pdf'],
+			parsedAt: NOW.toISOString()
+		},
+		breakdown: { entries: [], warnings: [] },
+		students: [],
+		marks: {}
+	};
+}
 
 describe('relativeTime', () => {
 	it('reads a moment just past as just now, and a moment to come the same', () => {
@@ -59,5 +80,27 @@ describe('statusLine', () => {
 			text: "This browser can't store anything — work is lost when the tab closes",
 			rescue: true
 		});
+	});
+});
+
+describe('storageNote', () => {
+	it('says nothing when there is no marksheet to say it about', () => {
+		expect(storageNote(null, NOW)).toBeNull();
+	});
+
+	it('names where the work is kept and how old the only copy out of it is', () => {
+		expect(storageNote(marksheet(secondsAgo(3 * 24 * 60 * 60).toISOString()), NOW)).toBe(
+			'Stored in this browser only · backup 3 days ago'
+		);
+		expect(storageNote(marksheet(NOW.toISOString()), NOW)).toBe(
+			'Stored in this browser only · backup just now'
+		);
+	});
+
+	it('says there is no way out at all until a backup is taken', () => {
+		expect(storageNote(marksheet(null), NOW)).toBe('Stored in this browser only · no backup yet');
+		expect(storageNote(marksheet('not a date'), NOW)).toBe(
+			'Stored in this browser only · no backup yet'
+		);
 	});
 });

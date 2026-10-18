@@ -2164,3 +2164,170 @@ describe('analysis', () => {
 		expect(store.analysis.entries.map(({ band }) => band)).toEqual(['green', 'red']);
 	});
 });
+
+describe('taking a backup', () => {
+	/** A marksheet with a mark in it: the work a backup is for. */
+	function openAnsweredMarksheet() {
+		return openStore({
+			breakdownConfirmedAt: NOW.toISOString(),
+			students: [student('student-1', 'Ada', 'Lovelace')],
+			marks: { 'student-1': { 'entry-1': 3 } }
+		});
+	}
+
+	it('hands out the document exactly as storage holds it', () => {
+		const { store, storage } = openAnsweredMarksheet();
+
+		const file = store.takeBackup();
+
+		// Byte for byte: this is the only thing that brings a marksheet back.
+		expect(file?.text).toBe(storage.getItem(STORAGE_KEY));
+		expect(file?.type).toBe('application/json');
+		expect(file?.filename).toBe('qla-backup-ph1-2026-01-01.json');
+	});
+
+	it('stamps the moment it was taken, in the file and in storage alike', () => {
+		const { store, storage } = openAnsweredMarksheet();
+
+		store.takeBackup();
+
+		expect(stored(storage).lastExportedAt).toBe(NOW.toISOString());
+	});
+
+	it('hands out nothing when there is no marksheet', () => {
+		const store = storeWith(fakeStorage());
+
+		expect(store.takeBackup()).toBeNull();
+	});
+
+	it('hands the work out of a browser that will not keep it', () => {
+		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument()) });
+		const store = storeWith(unwritableDocument(storage));
+		store.load();
+		store.createFromParse({
+			breakdown: { questions: [] },
+			warnings: [],
+			usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 },
+			filenames: ['paper.pdf']
+		});
+
+		const file = store.takeBackup();
+
+		// The write was refused, so the file is the only copy of it there is.
+		expect(JSON.parse(file?.text ?? '{}')).toMatchObject({
+			schemaVersion: DOCUMENT_SCHEMA_VERSION
+		});
+		expect(store.saveState.kind).toBe('failed');
+	});
+});
+
+describe('restoring a backup', () => {
+	it('brings a marksheet back, marks and all, from the file it handed out', () => {
+		const { store } = openStore({
+			breakdownConfirmedAt: NOW.toISOString(),
+			paper: { label: 'Ph1', className: '10C1', sourceFilenames: ['paper.pdf'], parsedAt: 'x' },
+			students: [student('student-1', 'Ada', 'Lovelace')],
+			marks: { 'student-1': { 'entry-1': 3 } }
+		});
+		const file = store.takeBackup();
+
+		const storage = fakeStorage();
+		const fresh = storeWith(storage);
+
+		expect(fresh.restoreBackup(file?.text ?? '')).toBe('/marksheet');
+		expect(fresh.document?.paper.label).toBe('Ph1');
+		expect(fresh.document?.paper.className).toBe('10C1');
+		expect(fresh.document?.students).toEqual([student('student-1', 'Ada', 'Lovelace')]);
+		expect(fresh.document?.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+		expect(fresh.document?.lastExportedAt).toBe(NOW.toISOString());
+		// What a restore gives back is the file, byte for byte: the round trip
+		// loses nothing at all.
+		expect(JSON.stringify(fresh.document)).toBe(file?.text);
+		// A restore is a document the teacher now holds; storage keeps it at once.
+		expect(stored(storage).marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+	});
+
+	it('lands the restored document on the surface its state allows', () => {
+		const unconfirmed = JSON.stringify(storedDocument({ breakdownConfirmedAt: null }));
+		const confirmed = JSON.stringify(storedDocument({ breakdownConfirmedAt: NOW.toISOString() }));
+
+		expect(storeWith(fakeStorage()).restoreBackup(unconfirmed)).toBe('/breakdown');
+		expect(storeWith(fakeStorage()).restoreBackup(confirmed)).toBe('/marksheet');
+	});
+
+	it('drops marks whose student or entry the file no longer holds', () => {
+		const store = storeWith(fakeStorage());
+		const orphaned = JSON.stringify(
+			storedDocument({
+				breakdownConfirmedAt: NOW.toISOString(),
+				students: [student('student-1', 'Ada', 'Lovelace')],
+				marks: { 'student-1': { 'entry-1': 3, 'entry-gone': 2 }, 'student-gone': { 'entry-1': 1 } }
+			})
+		);
+
+		store.restoreBackup(orphaned);
+
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+	});
+
+	it('refuses a file that is not one of our documents, changing nothing', () => {
+		const { store, storage } = openStore();
+		const before = store.document;
+
+		expect(store.restoreBackup('not a backup at all')).toBeNull();
+		expect(store.restoreBackup('{"schemaVersion":99,"paper":{}}')).toBeNull();
+
+		expect(store.document).toBe(before);
+		expect(stored(storage).paper.label).toBe('Ph1');
+		expect(store.route()).toBe('/breakdown');
+	});
+
+	it('remembers nothing of this session’s parse cost', () => {
+		const store = storeWith(fakeStorage());
+		store.createFromParse({
+			breakdown: { questions: [] },
+			warnings: [],
+			usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12, estCost: 0.01 },
+			filenames: ['paper.pdf']
+		});
+
+		store.restoreBackup(JSON.stringify(storedDocument()));
+
+		expect(store.runUsage).toBeNull();
+	});
+
+	it('stands the reminder up again for a document restored after a dismissal', () => {
+		const store = storeWith(fakeStorage());
+		store.dismissBackupReminder();
+
+		store.restoreBackup(JSON.stringify(storedDocument({ lastExportedAt: null })));
+
+		expect(store.backupReminderDismissed).toBe(false);
+	});
+
+	it('stands the reminder up again for a document parsed after a dismissal', () => {
+		const store = storeWith(fakeStorage());
+		store.dismissBackupReminder();
+
+		store.createFromParse({
+			breakdown: { questions: [] },
+			warnings: [],
+			usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 },
+			filenames: ['paper.pdf']
+		});
+
+		expect(store.backupReminderDismissed).toBe(false);
+	});
+});
+
+describe('the backup reminder', () => {
+	it('stands down for the session when the teacher says later', () => {
+		const store = storeWith(fakeStorage());
+
+		expect(store.backupReminderDismissed).toBe(false);
+
+		store.dismissBackupReminder();
+
+		expect(store.backupReminderDismissed).toBe(true);
+	});
+});

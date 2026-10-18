@@ -4,6 +4,8 @@
 // without a browser: the bar renders one string that the store's save state
 // decides, read against the moment it is displayed.
 
+import { backupTakenAt } from './backup.js';
+import type { MarksheetDocument } from './document.js';
 import type { SaveState } from './store.svelte.js';
 
 /** How a line reads: a healthy save, one in flight, a refused write, no storage at all. */
@@ -63,4 +65,16 @@ export function statusLine(saveState: SaveState, now: Date): StatusLine {
 				rescue: true
 			};
 	}
+}
+
+/**
+ * The bar's other end: where the work lives, and how old the one file that
+ * could bring it back is. The teacher's exposure in one line — the browser's
+ * copy is all there is until a backup exists.
+ */
+export function storageNote(document: MarksheetDocument | null, now: Date): string | null {
+	if (!document) return null;
+	const takenAt = backupTakenAt(document);
+	const age = takenAt === null ? 'no backup yet' : `backup ${relativeTime(takenAt, now)}`;
+	return `Stored in this browser only · ${age}`;
 }

@@ -7,9 +7,8 @@
 	storage is working and nothing is stored yet.
 -->
 <script lang="ts">
-	import { backupFile, saveFile } from '$lib/marksheet/download.js';
-	import { marksheetStore } from '$lib/marksheet/index.js';
-	import { statusLine, type StatusTone } from '$lib/marksheet/status.js';
+	import { backUpNow, marksheetStore } from '$lib/marksheet/index.js';
+	import { statusLine, storageNote, type StatusTone } from '$lib/marksheet/status.js';
 
 	const store = marksheetStore();
 
@@ -26,6 +25,15 @@
 
 	const line = $derived(statusLine(store.saveState, now));
 
+	/**
+	 * The other end of the bar: where the work is kept and how old the only copy
+	 * out of it is. A browser that keeps nothing is the one case it cannot say —
+	 * "stored in this browser" is exactly what is not true then.
+	 */
+	const note = $derived(
+		store.saveState.kind === 'unavailable' ? null : storageNote(store.document, now)
+	);
+
 	/** A browser that will not keep anything is worth saying before a parse pays for one. */
 	const shown = $derived(store.document !== null || store.saveState.kind === 'unavailable');
 
@@ -38,13 +46,6 @@
 		error: { bar: 'bg-destructive text-white', dot: 'bg-white' },
 		warn: { bar: 'bg-amber-500 text-amber-950', dot: 'bg-amber-950' }
 	};
-
-	/** The one action that gets the work out of a browser that will not keep it. */
-	function downloadNow(): void {
-		const document = store.document;
-		if (!document) return;
-		saveFile(backupFile(document, new Date()));
-	}
 </script>
 
 {#if shown}
@@ -61,9 +62,12 @@
 		></span>
 		<span data-testid="save-line">{line.text}</span>
 		{#if rescueable}
-			<button type="button" class="underline underline-offset-2" onclick={downloadNow}>
+			<button type="button" class="underline underline-offset-2" onclick={backUpNow}>
 				Download backup now
 			</button>
+		{/if}
+		{#if note}
+			<span class="ml-auto" data-testid="storage-note">{note}</span>
 		{/if}
 	</footer>
 {/if}
