@@ -10,12 +10,14 @@ import type { Breakdown, ParseUsage, ParseWarning } from '$lib/server/parse/sche
 import type { AssessmentObjective } from '$lib/parse/assessment-objectives.js';
 import {
 	confirmationBlockers,
+	isWholeNumber,
 	needsAttention,
 	questionBands,
 	type AttentionItem,
 	type ConfirmationBlockers,
 	type QuestionBand
 } from './breakdown.js';
+import { emptyPasteResult, trimPasteGrid, type PasteAnchor, type PasteResult } from './paste.js';
 import {
 	CORRUPT_KEY_PREFIX,
 	DOCUMENT_SCHEMA_VERSION,
@@ -34,6 +36,8 @@ import type {
 import {
 	parseNameList,
 	sortStudentsByName,
+	splitName,
+	studentName,
 	type StudentName,
 	type StudentSortKey
 } from './students.js';
@@ -96,6 +100,13 @@ export type Undoable =
 			index: number;
 			/** The marks they had entered, by entry id. */
 			marks: Record<string, number>;
+	  }
+	| {
+			kind: 'mark-paste';
+			/** The class as it was, before rows past it became students. */
+			students: StoredStudent[];
+			/** The marks as they were, before the block landed. */
+			marks: Record<string, Record<string, number>>;
 	  };
 
 export interface CreateFromParseInput {
@@ -179,6 +190,12 @@ export class MarksheetStore {
 	runUsage = $state<ParseUsage | null>(null);
 	/** The one change undo would take back, or nothing. */
 	undoable = $state<Undoable | null>(null);
+	/**
+	 * What the last paste did, for the notice beside the grid. It lives here so it
+	 * is cleared by the same change that clears the undo the paste offered —
+	 * a stale account beside a sheet that has moved on is worse than none.
+	 */
+	pasteNotice = $state<PasteResult | null>(null);
 
 	constructor(deps: MarksheetStoreDeps) {
 		this.#storage = deps.storage;
@@ -473,7 +490,7 @@ export class MarksheetStore {
 		const undoable = this.undoable;
 		if (!undoable) return false;
 		// A restored entry is a breakdown edit, so it belongs to an unconfirmed
-		// breakdown; a student belongs to the marksheet either way.
+		// breakdown; a student and a pasted block belong to the marksheet either way.
 		const document = undoable.kind === 'entry-removal' ? this.#editable() : this.document;
 		if (!document) return false;
 
@@ -486,10 +503,15 @@ export class MarksheetStore {
 			}
 			// Nothing else can have touched them: any later change clears the undo.
 			document.breakdown.warnings = undoable.findings;
-		} else {
+		} else if (undoable.kind === 'student-removal') {
 			const students = document.students;
 			students.splice(Math.min(undoable.index, students.length), 0, undoable.student);
 			document.marks[undoable.student.id] = undoable.marks;
+		} else {
+			// The paste's own changes are the only difference: putting the class
+			// and the marks back exactly as they were undoes it in one move.
+			document.students = undoable.students;
+			document.marks = undoable.marks;
 		}
 
 		this.#mutated();
@@ -649,6 +671,127 @@ export class MarksheetStore {
 	}
 
 	/**
+	 * Paste a block of cells from a spreadsheet, starting at the anchor cell and
+	 * reading down and right. A block anchored in the name column reads its first
+	 * column as names, mapped the way a pasted class list is; every other block
+	 * reads every column as marks from the anchor's entry onwards.
+	 *
+	 * Pasted rows past the class become students when there is a name to give
+	 * them. Columns past the last entry are clipped. A cell that is not a whole
+	 * number is refused on its own and leaves the sheet as it was, while a blank
+	 * cell clears a mark — the same rules as typing, applied a block at a time.
+	 */
+	pasteMarks(rows: readonly (readonly string[])[], anchor: PasteAnchor): PasteResult {
+		const result = emptyPasteResult();
+		const document = this.document;
+		if (!document) return result;
+
+		const anchorRow = document.students.findIndex((student) => student.id === anchor.studentId);
+		if (anchorRow === -1) return result;
+
+		const entries = document.breakdown.entries;
+		const startsWithName = anchor.entryId === null;
+		const firstEntry = startsWithName
+			? 0
+			: entries.findIndex((entry) => entry.id === anchor.entryId);
+		if (firstEntry === -1) return result;
+
+		const block = trimPasteGrid(rows);
+		if (block.length === 0) return result;
+
+		const entriesFromAnchor = entries.slice(firstEntry);
+		/** The first column of each row that holds a mark: past the name, or the block itself. */
+		const firstMarkColumn = startsWithName ? 1 : 0;
+		const pastedMarkColumns = Math.max(...block.map((row) => row.length - firstMarkColumn), 0);
+		result.columnsClipped = Math.max(0, pastedMarkColumns - entriesFromAnchor.length);
+
+		// Taken before the first cell lands: undo puts back the class and marks
+		// exactly as the teacher had them, added students included.
+		const before = {
+			students: $state.snapshot(document.students),
+			marks: $state.snapshot(document.marks)
+		};
+		let changed = false;
+
+		block.forEach((row, rowIndex) => {
+			const student = document.students[anchorRow + rowIndex];
+			const name = startsWithName ? (row[0] ?? '') : '';
+			let target = student;
+
+			if (!target) {
+				// A mark-anchored block has no name for a student it would add; a
+				// name-anchored one does — but only when the row names someone. A
+				// blank cell, or one that is punctuation, is not a student.
+				if (!startsWithName) {
+					result.rowsDropped += 1;
+					return;
+				}
+				const parsedName = splitName(name);
+				if (studentName(parsedName) === '') {
+					result.rowsDropped += 1;
+					return;
+				}
+				target = { id: localId(), ...parsedName, absent: false };
+				document.students.push(target);
+				result.studentsAdded += 1;
+				changed = true;
+			}
+
+			for (let column = 0; column < pastedMarkColumns; column++) {
+				const entry = entriesFromAnchor[column];
+				if (!entry) break;
+
+				const raw = row[firstMarkColumn + column];
+				if (raw === undefined) continue;
+				const typed = raw.trim();
+
+				if (typed === '') {
+					const studentMarks = document.marks[target.id];
+					if (!studentMarks || studentMarks[entry.id] === undefined) continue;
+					delete studentMarks[entry.id];
+					result.marksCleared += 1;
+					changed = true;
+					if (Object.keys(studentMarks).length === 0) delete document.marks[target.id];
+					continue;
+				}
+
+				if (!isWholeNumber(typed)) {
+					result.refused.push({
+						row: rowIndex + 1,
+						column: firstMarkColumn + column + 1,
+						value: raw
+					});
+					continue;
+				}
+
+				const mark = Number(typed);
+				if (document.marks[target.id]?.[entry.id] === mark) continue;
+				document.marks[target.id] ??= {};
+				document.marks[target.id][entry.id] = mark;
+				result.marksStored += 1;
+				changed = true;
+				if (entry.marks !== null && mark > entry.marks) result.overMax += 1;
+			}
+		});
+
+		// A paste with nothing to say — every cell already held what was pasted —
+		// leaves no notice behind.
+		const worthNoticing =
+			changed || result.refused.length > 0 || result.columnsClipped > 0 || result.rowsDropped > 0;
+
+		if (!changed) {
+			this.pasteNotice = worthNoticing ? result : null;
+			return result;
+		}
+
+		result.changed = true;
+		this.#mutated();
+		this.undoable = { kind: 'mark-paste', ...before };
+		this.pasteNotice = result;
+		return result;
+	}
+
+	/**
 	 * Confirm the breakdown, unless something blocks the marksheet it would
 	 * build: an entry with no marks, or a blank or repeated label. Returns
 	 * whether the breakdown is confirmed, changing nothing when it is not.
@@ -767,6 +910,7 @@ export class MarksheetStore {
 		// Undo covers a change to the document in hand: adopting another one
 		// (a load, or a wipe) leaves nothing behind to take back.
 		this.undoable = null;
+		this.pasteNotice = null;
 		// A ready result carries the store's own document — the reactive proxy,
 		// not the plain object it was parsed or built from.
 		this.#loadResult =
@@ -781,8 +925,10 @@ export class MarksheetStore {
 	#mutated(): void {
 		const document = this.document;
 		if (!document) return;
-		// Undo covers the change just made, so a later one takes its place.
+		// Undo covers the change just made, so a later one takes its place — and
+		// with it the account of the paste the undo was offering.
 		this.undoable = null;
+		this.pasteNotice = null;
 		document.updatedAt = this.#now().toISOString();
 		this.#unsaved = true;
 		if (this.#failed || this.#unavailable) return;

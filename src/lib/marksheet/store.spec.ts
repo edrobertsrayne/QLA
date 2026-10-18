@@ -1497,3 +1497,265 @@ describe('marks', () => {
 		expect(store.document).toBeNull();
 	});
 });
+
+describe('pasting a block', () => {
+	/** A marksheet with two entries and two students: a paste has room to miss both. */
+	function openPasteSheet(overrides: Partial<MarksheetDocument> = {}) {
+		return openStore({
+			breakdownConfirmedAt: NOW.toISOString(),
+			breakdown: {
+				entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
+				warnings: []
+			},
+			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
+			...overrides
+		});
+	}
+
+	it('lands a block at the anchor, leaving cells outside it alone', () => {
+		const { store } = openPasteSheet({
+			marks: { 'student-1': { 'entry-1': 1 }, 'student-2': { 'entry-2': 4 } }
+		});
+
+		const result = store.pasteMarks(
+			[
+				['2', '3'],
+				['', '1']
+			],
+			{ studentId: 'student-1', entryId: 'entry-1' }
+		);
+
+		expect(result).toMatchObject({ changed: true, marksStored: 3, marksCleared: 0 });
+		expect(store.document?.marks).toEqual({
+			'student-1': { 'entry-1': 2, 'entry-2': 3 },
+			'student-2': { 'entry-2': 1 }
+		});
+	});
+
+	it('clears a mark when the pasted cell is blank', () => {
+		const { store } = openPasteSheet({ marks: { 'student-1': { 'entry-1': 2 } } });
+
+		const result = store.pasteMarks([['', '3']], {
+			studentId: 'student-1',
+			entryId: 'entry-1'
+		});
+
+		expect(result).toMatchObject({ changed: true, marksStored: 1, marksCleared: 1 });
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-2': 3 } });
+	});
+
+	it('reads a block anchored in the name column as names then marks', () => {
+		const { store } = openPasteSheet();
+
+		const result = store.pasteMarks(
+			[
+				['Lovelace, Ada', '3', '2'],
+				['Grace Brewster Hopper', '4', '1']
+			],
+			{ studentId: 'student-1', entryId: null }
+		);
+
+		expect(result).toMatchObject({ changed: true, marksStored: 4, studentsAdded: 0 });
+		// Names already in the class are not rewritten by a positional paste; the
+		// marks land on the students the rows line up with.
+		expect(store.document?.students).toEqual([
+			student('student-1', 'Ada', 'Lovelace'),
+			student('student-2', 'Grace', 'Hopper')
+		]);
+		expect(store.document?.marks).toEqual({
+			'student-1': { 'entry-1': 3, 'entry-2': 2 },
+			'student-2': { 'entry-1': 4, 'entry-2': 1 }
+		});
+	});
+
+	it('turns pasted rows past the class into students, mapping their names', () => {
+		const { store } = openPasteSheet();
+
+		const result = store.pasteMarks(
+			[
+				['Lovelace, Ada', '3', '2'],
+				['Hopper, Grace', '4', '1'],
+				['Cher', '0', '0'],
+				['Alan Turing', '1', '2']
+			],
+			{ studentId: 'student-1', entryId: null }
+		);
+
+		expect(result).toMatchObject({ changed: true, marksStored: 8, studentsAdded: 2 });
+		expect(
+			store.document?.students.map(({ id, firstName, surname }) => [id, firstName, surname])
+		).toEqual([
+			['student-1', 'Ada', 'Lovelace'],
+			['student-2', 'Grace', 'Hopper'],
+			[expect.any(String), 'Cher', ''],
+			[expect.any(String), 'Alan', 'Turing']
+		]);
+		expect(store.document?.marks).toMatchObject({
+			'student-1': { 'entry-1': 3, 'entry-2': 2 },
+			'student-2': { 'entry-1': 4, 'entry-2': 1 }
+		});
+	});
+
+	it('ignores a pasted row with no name to make a student from', () => {
+		const { store } = openPasteSheet();
+
+		const result = store.pasteMarks(
+			[
+				['', ''],
+				['', '3']
+			],
+			{ studentId: 'student-2', entryId: null }
+		);
+
+		expect(result).toMatchObject({ changed: false, studentsAdded: 0, rowsDropped: 1 });
+		expect(store.document?.students).toHaveLength(2);
+	});
+
+	it('does not make a student out of a name cell holding only punctuation', () => {
+		const { store } = openPasteSheet();
+
+		const result = store.pasteMarks(
+			[
+				['', ''],
+				[',', '3']
+			],
+			{ studentId: 'student-2', entryId: null }
+		);
+
+		expect(result).toMatchObject({ changed: false, studentsAdded: 0, rowsDropped: 1 });
+		expect(store.document?.students).toHaveLength(2);
+		expect(store.document?.marks).toEqual({});
+	});
+
+	it('clips columns past the last entry and says how many', () => {
+		const { store } = openPasteSheet();
+
+		const result = store.pasteMarks([['Lovelace, Ada', '3', '2', '1', '0']], {
+			studentId: 'student-1',
+			entryId: null
+		});
+
+		expect(result.columnsClipped).toBe(2);
+		expect(store.document?.marks).toEqual({
+			'student-1': { 'entry-1': 3, 'entry-2': 2 }
+		});
+	});
+
+	it('refuses each value that is not a whole number, keeping the rest', () => {
+		const { store } = openPasteSheet({ marks: { 'student-1': { 'entry-1': 1 } } });
+
+		const result = store.pasteMarks(
+			[
+				['2.5', '3'],
+				['two', '']
+			],
+			{ studentId: 'student-1', entryId: 'entry-1' }
+		);
+
+		expect(result.refused).toEqual([
+			{ row: 1, column: 1, value: '2.5' },
+			{ row: 2, column: 1, value: 'two' }
+		]);
+		expect(store.document?.marks).toEqual({
+			'student-1': { 'entry-1': 1, 'entry-2': 3 }
+		});
+	});
+
+	it('counts the marks a paste put above their entry’s available marks', () => {
+		const { store } = openPasteSheet();
+
+		const result = store.pasteMarks([['5', '4']], {
+			studentId: 'student-1',
+			entryId: 'entry-1'
+		});
+
+		expect(result.overMax).toBe(1);
+		// Kept as pasted, never clamped to the entry's four.
+		expect(store.document?.marks?.['student-1']).toEqual({ 'entry-1': 5, 'entry-2': 4 });
+	});
+
+	it('takes one block back, restoring the marks and the class it added to', () => {
+		vi.useFakeTimers();
+		try {
+			const { store, storage } = openPasteSheet({ marks: { 'student-1': { 'entry-1': 2 } } });
+
+			store.pasteMarks(
+				[
+					['Lovelace, Ada', '3', '2'],
+					['Hopper, Grace', '4', '1'],
+					['Cher', '0', '0']
+				],
+				{ studentId: 'student-1', entryId: null }
+			);
+			vi.advanceTimersByTime(500);
+
+			expect(store.undoable).toMatchObject({ kind: 'mark-paste' });
+			expect(stored(storage).students).toHaveLength(3);
+
+			expect(store.undo()).toBe(true);
+
+			expect(store.document?.students).toEqual([
+				student('student-1', 'Ada', 'Lovelace'),
+				student('student-2', 'Grace', 'Hopper')
+			]);
+			expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 2 } });
+			expect(store.undoable).toBeNull();
+			expect(store.undo()).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('offers the paste to undo until the next change', () => {
+		const { store } = openPasteSheet();
+
+		store.pasteMarks([['3']], { studentId: 'student-1', entryId: 'entry-1' });
+		expect(store.undoable).toMatchObject({ kind: 'mark-paste' });
+
+		store.setMark('student-2', 'entry-1', 1);
+
+		expect(store.undoable).toBeNull();
+	});
+
+	it('keeps the account of the last paste until the next change', () => {
+		const { store } = openPasteSheet();
+
+		const refused = store.pasteMarks([['2.5']], {
+			studentId: 'student-1',
+			entryId: 'entry-1'
+		});
+
+		// Nothing changed, so there is no undo — but the teacher still has to be
+		// told why the cell they pasted into is as they left it.
+		expect(store.undoable).toBeNull();
+		expect(store.pasteNotice).toEqual(refused);
+
+		store.setMark('student-1', 'entry-1', 2);
+
+		expect(store.pasteNotice).toBeNull();
+	});
+
+	it('leaves no notice for a paste that put down exactly what was there', () => {
+		const { store } = openPasteSheet({ marks: { 'student-1': { 'entry-1': 3 } } });
+
+		const result = store.pasteMarks([['3']], { studentId: 'student-1', entryId: 'entry-1' });
+
+		expect(result.changed).toBe(false);
+		expect(store.pasteNotice).toBeNull();
+	});
+
+	it('does nothing when there is no marksheet or the anchor is gone', () => {
+		const empty = storeWith(fakeStorage());
+		expect(empty.pasteMarks([['3']], { studentId: 'student-1', entryId: 'entry-1' })).toMatchObject(
+			{ changed: false }
+		);
+
+		const { store } = openPasteSheet();
+		expect(
+			store.pasteMarks([['3']], { studentId: 'student-gone', entryId: 'entry-1' })
+		).toMatchObject({ changed: false });
+		expect(
+			store.pasteMarks([['3']], { studentId: 'student-1', entryId: 'entry-gone' })
+		).toMatchObject({ changed: false });
+	});
+});

@@ -30,6 +30,7 @@
 	} from '$lib/marksheet/breakdown.js';
 	import type { BreakdownEntry, StoredStudent } from '$lib/marksheet/document.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
+	import { clipboardGrid, type PasteResult } from '$lib/marksheet/paste.js';
 	import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
 	import {
 		progressOf,
@@ -47,6 +48,8 @@
 	const bands = $derived(store.questionBands);
 	const fallbacks = $derived(fallbackBands(bands, warnings));
 	const undoable = $derived(store.undoable);
+	/** What the last paste did, cleared by the change that clears the undo it offered. */
+	const pasteNotice = $derived(store.pasteNotice);
 
 	/** Where the cursor is: a mark cell, or a row's name cell when `entryId` is null. */
 	let cursor = $state<{ studentId: string; entryId: string | null } | null>(null);
@@ -58,6 +61,8 @@
 	 * message that covers a control is one they have to dismiss to keep working.
 	 */
 	let refusal = $state<string | null>(null);
+	/** The hidden field the clipboard lands on, so a paste is read before it is used. */
+	let pasteProxy = $state<HTMLDivElement | null>(null);
 	/** The open rename: both name parts, and which one the caret belongs in. */
 	let renaming = $state<{
 		studentId: string;
@@ -361,6 +366,89 @@
 		refusal = commitMarkEdit();
 	}
 
+	/**
+	 * Take a block from the clipboard and put it down at the cursor. The clipboard
+	 * proxy is what a paste lands on; `text/html` wins over `text/plain` so cells
+	 * holding line breaks keep their rows aligned.
+	 */
+	function onPaste(event: ClipboardEvent): void {
+		const anchor = activeCell;
+		if (!anchor) return;
+
+		// A name field has its own paste: that text is a name, not a grid.
+		const target = event.target instanceof Element ? event.target : null;
+		if (target?.closest('[data-rename-field], [data-testid="new-student-name"]')) return;
+
+		const rows = clipboardGrid(event.clipboardData);
+		if (rows.length === 0) return;
+		event.preventDefault();
+
+		// An open mark editor commits first, so the block lands on the sheet the
+		// teacher can see rather than over a value still being typed.
+		if (editing) {
+			const refused = commitMarkEdit();
+			if (refused) {
+				refusal = refused;
+				return;
+			}
+		}
+
+		clearRefusal();
+		store.pasteMarks(rows, anchor);
+	}
+
+	/** A paste aimed at the grid rather than the proxy: the proxy's own is already taken. */
+	function onGridPaste(event: ClipboardEvent): void {
+		if (event.target === pasteProxy) return;
+		onPaste(event);
+	}
+
+	/** A block taken back: the store clears its account along with the undo. */
+	function undoPaste(): void {
+		store.undo();
+	}
+
+	/** What one paste did, in one sentence: the marks, the students. */
+	function pasteSummary(result: PasteResult): string {
+		const parts: string[] = [];
+		if (result.marksStored > 0) {
+			parts.push(`pasted ${result.marksStored} mark${result.marksStored === 1 ? '' : 's'}`);
+		}
+		if (result.marksCleared > 0) {
+			parts.push(`cleared ${result.marksCleared} mark${result.marksCleared === 1 ? '' : 's'}`);
+		}
+		if (result.studentsAdded > 0) {
+			parts.push(`added ${result.studentsAdded} student${result.studentsAdded === 1 ? '' : 's'}`);
+		}
+		if (parts.length === 0) return 'Nothing was pasted.';
+		const sentence = parts.join(', ');
+		return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+	}
+
+	/** Why a paste could not use part of the block, one line per kind of loss. */
+	function pasteLosses(result: PasteResult): string[] {
+		const losses: string[] = [];
+		if (result.columnsClipped > 0) {
+			const count = result.columnsClipped;
+			losses.push(
+				`${count} column${count === 1 ? '' : 's'} past the last entry ${count === 1 ? 'was' : 'were'} dropped.`
+			);
+		}
+		if (result.rowsDropped > 0) {
+			const count = result.rowsDropped;
+			losses.push(
+				`${count} pasted row${count === 1 ? '' : 's'} had no name to make a student, so ${count === 1 ? 'it was' : 'they were'} not added.`
+			);
+		}
+		if (result.overMax > 0) {
+			const count = result.overMax;
+			losses.push(
+				`${count} mark${count === 1 ? '' : 's'} above the available marks ${count === 1 ? 'is' : 'are'} flagged in the grid.`
+			);
+		}
+		return losses;
+	}
+
 	/** Clicking a band moves the cursor to its first column, on the row it is on. */
 	function jumpToBand(band: QuestionBand): void {
 		const studentId = cursor?.studentId ?? students[0]?.id;
@@ -507,7 +595,7 @@
 	}
 </script>
 
-{#if undoable?.kind === 'student-removal' || refusal}
+{#if undoable?.kind === 'student-removal' || undoable?.kind === 'mark-paste' || refusal || pasteNotice}
 	<!-- Sticky, and above the toolbar: a notice about a cell far down a long class
 	     must still be where the teacher is looking. Neither notice takes a click,
 	     so the mark cells it passes over stay reachable. -->
@@ -521,6 +609,37 @@
 					Removed <strong>{studentName(undoable.student)}</strong>.
 				</AlertDescription>
 				<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
+			</Alert>
+		{/if}
+		{#if pasteNotice}
+			<!-- What a block did, beside the grid: the sheet under it has already
+			     changed, so the account has to be where the teacher can read it. -->
+			<Alert
+				class="pointer-events-auto flex flex-row items-start gap-2 py-2 shadow-sm"
+				data-testid="paste-notice"
+			>
+				<AlertDescription class="space-y-1">
+					<p>{pasteSummary(pasteNotice)}</p>
+					{#if pasteLosses(pasteNotice).length > 0}
+						<ul class="list-disc space-y-0.5 pl-4">
+							{#each pasteLosses(pasteNotice) as loss (loss)}
+								<li>{loss}</li>
+							{/each}
+						</ul>
+					{/if}
+					{#if pasteNotice.refused.length > 0}
+						<ul class="list-disc space-y-0.5 pl-4" data-testid="paste-refusals">
+							{#each pasteNotice.refused as cell (`${cell.row}:${cell.column}`)}
+								<li>
+									“{cell.value}” at row {cell.row}, column {cell.column} is not a whole number.
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</AlertDescription>
+				{#if undoable?.kind === 'mark-paste'}
+					<Button variant="outline" size="xs" onclick={undoPaste}>Undo</Button>
+				{/if}
 			</Alert>
 		{/if}
 		{#if refusal}
@@ -587,7 +706,20 @@
 	</div>
 {/if}
 
-<div class="overflow-hidden rounded-xl border">
+<div class="relative overflow-hidden rounded-xl border" onpaste={onGridPaste}>
+	<!-- The clipboard lands here. A spreadsheet puts an HTML table in the
+	     clipboard beside its TSV; reading it as it arrives is what keeps a cell
+	     with a line break from shifting every row under it. -->
+	<div
+		bind:this={pasteProxy}
+		contenteditable="true"
+		role="textbox"
+		tabindex="-1"
+		aria-label="Paste marks from a spreadsheet"
+		data-testid="paste-proxy"
+		class="pointer-events-none absolute -left-[9999px] top-0 h-px w-px overflow-hidden opacity-0"
+		onpaste={onPaste}
+	></div>
 	<Table.Root class="table-fixed w-fit" role="grid" aria-label="Marksheet grid">
 		<!-- The widths every cell obeys: narrow entry columns, a frozen name and
 		     progress column, so a paper scrolls sideways only when it must. -->
