@@ -1578,6 +1578,15 @@ describe('class', () => {
 		expect(store.pasteNames('')).toBe(0);
 	});
 
+	it('does not make a student of a pasted line that holds no name', () => {
+		const { store } = openMarksheet();
+
+		expect(store.pasteNames('Ada Lovelace\n,\n')).toBe(1);
+		expect(store.document?.students).toEqual([
+			{ id: expect.any(String), firstName: 'Ada', surname: 'Lovelace', absent: false }
+		]);
+	});
+
 	it('builds the class and its marks from names with marks beside them', () => {
 		const { store } = openMarksheet();
 		const entryId = store.document?.breakdown.entries[0].id ?? '';

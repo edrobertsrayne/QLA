@@ -19,7 +19,13 @@ import {
 	type QuestionBand
 } from './breakdown.js';
 import { backupFile, marksCsvFile, type QlaFile } from './download.js';
-import { applyPaste, emptyPasteResult, type PasteAnchor, type PasteResult } from './paste.js';
+import {
+	applyPaste,
+	emptyPasteResult,
+	textGrid,
+	type PasteAnchor,
+	type PasteResult
+} from './paste.js';
 import {
 	DOCUMENT_SCHEMA_VERSION,
 	dropUnreachableMarks,
@@ -47,7 +53,6 @@ import {
 } from './persistence.svelte.js';
 import {
 	newStudent,
-	parseNameList,
 	sortStudentsByName,
 	studentName,
 	type StudentName,
@@ -486,28 +491,12 @@ export class MarksheetStore {
 
 	/**
 	 * Make a class out of a pasted column of names, one per line, and say how
-	 * many students it made. Blank lines are not students. Text copied from a
-	 * spreadsheet with marks beside the names (tab-separated) is a block anchored
-	 * in the name column, so one copy builds the class and its marks.
+	 * many students it made. Lines that hold no name are not students. Text
+	 * copied from a spreadsheet with marks beside the names (tab-separated) is a
+	 * block anchored in the name column, so one copy builds the class and its marks.
 	 */
 	pasteNames(names: string): number {
-		const document = this.document;
-		if (!document) return 0;
-
-		if (names.includes('\t')) {
-			const rows = names.replace(/\r\n?/g, '\n').split('\n');
-			return this.pasteMarks(
-				rows.map((line) => line.split('\t')),
-				{ kind: 'names', studentId: null }
-			).studentsAdded;
-		}
-
-		const parsed = parseNameList(names);
-		for (const name of parsed) {
-			document.students.push(newStudent(name));
-		}
-		if (parsed.length > 0) this.#mutated();
-		return parsed.length;
+		return this.pasteMarks(textGrid(names), { kind: 'names', studentId: null }).studentsAdded;
 	}
 
 	/**

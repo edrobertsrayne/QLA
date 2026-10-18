@@ -48,15 +48,6 @@ export function newStudent(name: StudentName): StoredStudent {
 	return { id: localId(), firstName: name.firstName, surname: name.surname, absent: false };
 }
 
-/** The class a pasted column of names makes: one name per line, blank lines skipped. */
-export function parseNameList(text: string): StudentName[] {
-	return text
-		.split(/\r?\n/)
-		.map((line) => line.trim())
-		.filter((line) => line !== '')
-		.map(splitName);
-}
-
 /** A student's name as one string: what a heading, a button or a message calls them. */
 export function studentName(student: StudentName): string {
 	return [student.firstName, student.surname].filter((part) => part !== '').join(' ');

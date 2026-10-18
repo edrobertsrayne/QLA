@@ -174,9 +174,11 @@ export function applyPaste(
 		let target = document.students[anchorRow + rowIndex];
 
 		if (!target) {
-			// A mark-anchored block has no name for a student it would add; a
-			// name-anchored one does — but only when the row names someone. A
-			// blank cell, or one that is punctuation, is not a student.
+			// A row with no cells at all is a blank line: nothing to count. Past
+			// that, a mark-anchored block has no name for a student it would add; a
+			// name-anchored one does, but only when the row names someone. A
+			// cell that is blank or only punctuation is not a student.
+			if (row.length === 0) return;
 			const parsedName = startsWithName ? readName(name) : null;
 			if (!parsedName) {
 				result.rowsDropped += 1;
