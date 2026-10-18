@@ -68,7 +68,7 @@ export interface MarksheetStoreDeps {
 export type LoadResult =
 	| { kind: 'empty' }
 	| { kind: 'ready'; document: MarksheetDocument }
-	| { kind: 'corrupt'; preservedKey: string; raw: string }
+	| { kind: 'corrupt'; preservedKey: string | null; raw: string }
 	| { kind: 'unavailable' };
 
 /** Whether the document in hand has reached storage. */
@@ -137,16 +137,27 @@ function localId(): string {
 	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** MDN's storage-availability probe: private browsing exposes storage that refuses writes. */
+/**
+ * MDN's storage-availability probe: private browsing exposes storage that
+ * refuses writes. A write refused for quota on a storage that already holds
+ * data is a full store, not an absent one — the stored document must still be read.
+ */
 function storageAvailable(storage: DocumentStorage): boolean {
 	const probeKey = 'qla:storage-probe';
 	try {
 		storage.setItem(probeKey, '1');
 		storage.removeItem(probeKey);
 		return true;
-	} catch {
-		return false;
+	} catch (error) {
+		return isQuotaError(error) && storage.length !== 0;
 	}
+}
+
+function isQuotaError(error: unknown): boolean {
+	return (
+		error instanceof DOMException &&
+		(error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')
+	);
 }
 
 /**
@@ -256,13 +267,15 @@ export class MarksheetStore {
 		if (!document) {
 			// Never delete what we cannot read: a validator bug must not take the
 			// teacher's only copy with it.
-			let preservedKey = preservedCopyOf(this.#storage, raw);
+			let preservedKey: string | null = preservedCopyOf(this.#storage, raw);
 			if (preservedKey === null) {
-				preservedKey = `${CORRUPT_KEY_PREFIX}${this.#now().toISOString()}`;
+				const key = `${CORRUPT_KEY_PREFIX}${this.#now().toISOString()}`;
 				try {
-					this.#storage.setItem(preservedKey, raw);
+					this.#storage.setItem(key, raw);
+					preservedKey = key;
 				} catch {
-					// Best effort: the original is still under its own key.
+					// No copy was made: the original is still under its own key, and
+					// the alert says so rather than naming a key that does not exist.
 				}
 			}
 			return this.#settle({ kind: 'corrupt', preservedKey, raw }, null, {

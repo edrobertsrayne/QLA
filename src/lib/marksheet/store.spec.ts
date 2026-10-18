@@ -149,6 +149,7 @@ function idOf(id: string | null): string {
 function preservedKeyOf(result: LoadResult): string {
 	expect(result.kind).toBe('corrupt');
 	if (result.kind !== 'corrupt') throw new Error('expected an unreadable document');
+	if (result.preservedKey === null) throw new Error('expected a preserved copy');
 	return result.preservedKey;
 }
 
@@ -286,6 +287,45 @@ describe('boot gate', () => {
 			[...storage.map.keys()].filter((key) => key.startsWith(CORRUPT_KEY_PREFIX))
 		).toHaveLength(1);
 		expect(storage.getItem(STORAGE_KEY)).toBe(raw);
+	});
+
+	it('still reads the stored document when the browser is full', () => {
+		const document = storedDocument({ breakdownConfirmedAt: NOW.toISOString() });
+		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(document) });
+		const full: DocumentStorage = {
+			get length() {
+				return storage.length;
+			},
+			key: (index) => storage.key(index),
+			getItem: storage.getItem,
+			removeItem: storage.removeItem,
+			setItem: () => {
+				throw new DOMException('full', 'QuotaExceededError');
+			}
+		};
+		const store = storeWith(full);
+
+		expect(store.load()).toEqual({ kind: 'ready', document });
+		expect(store.route()).toBe('/marksheet');
+	});
+
+	it('says no copy was kept when the preserved copy cannot be written', () => {
+		const raw = '{"schemaVersion":99}';
+		const storage = fakeStorage({ [STORAGE_KEY]: raw });
+		const store = storeWith({
+			get length() {
+				return storage.length;
+			},
+			key: (index) => storage.key(index),
+			getItem: storage.getItem,
+			removeItem: storage.removeItem,
+			setItem: (key, value) => {
+				if (key.startsWith(CORRUPT_KEY_PREFIX)) throw new Error('QuotaExceededError');
+				storage.setItem(key, value);
+			}
+		});
+
+		expect(store.load()).toEqual({ kind: 'corrupt', preservedKey: null, raw });
 	});
 });
 

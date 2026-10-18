@@ -29,8 +29,14 @@
 		<AlertDescription>
 			<p>
 				This browser is holding a document this version of QLA cannot read — it may be damaged, or
-				written by a newer one. Nothing has been deleted: the text is kept under
-				<code>{unreadable.preservedKey}</code>.
+				written by a newer one.
+				{#if unreadable.preservedKey}
+					Nothing has been deleted: the text is kept under
+					<code>{unreadable.preservedKey}</code>.
+				{:else}
+					A separate copy could not be saved, so download the raw text now: parsing a paper below
+					replaces the stored document.
+				{/if}
 			</p>
 			<p class="mt-1">
 				Download the raw text if you want a copy of it, then parse a paper and/or markscheme below

@@ -93,12 +93,12 @@ export function marksCsvFile(document: MarksheetDocument): QlaFile {
 }
 
 /** The raw text of a document this app could not read, out of its preserved copy. */
-export function corruptFile(preservedKey: string, raw: string): QlaFile {
-	const stamp = preservedKey.startsWith(CORRUPT_KEY_PREFIX)
+export function corruptFile(preservedKey: string | null, raw: string): QlaFile {
+	const stamp = preservedKey?.startsWith(CORRUPT_KEY_PREFIX)
 		? preservedKey.slice(CORRUPT_KEY_PREFIX.length)
 		: preservedKey;
 	return {
-		filename: `qla-corrupt-${stamp.replace(/:/g, '-')}.json`,
+		filename: stamp ? `qla-corrupt-${stamp.replace(/:/g, '-')}.json` : 'qla-corrupt.json',
 		text: raw,
 		type: 'application/json'
 	};

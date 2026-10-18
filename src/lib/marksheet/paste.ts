@@ -15,7 +15,8 @@ export interface ClipboardDataLike {
 
 /** Where a pasted block starts: a student's row, in a mark column or the name column. */
 export interface PasteAnchor {
-	studentId: string;
+	/** The row the block starts on; null starts below the last student, which is how an empty class is built. */
+	studentId: string | null;
 	/** The entry the first mark column lands on; null when the block starts with names. */
 	entryId: string | null;
 }
