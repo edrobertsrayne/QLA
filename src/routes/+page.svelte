@@ -206,7 +206,9 @@
 
 	<Separator />
 
-	<RestoreCard />
+	{#if !store.document}
+		<RestoreCard />
+	{/if}
 
 	<div class="grid gap-6 lg:grid-cols-2">
 		<SourceFilesCard

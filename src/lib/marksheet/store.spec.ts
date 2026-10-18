@@ -2512,18 +2512,16 @@ describe('restoring a backup', () => {
 		expect(store.route()).toBe('/breakdown');
 	});
 
-	it('remembers nothing of this session’s parse cost', () => {
-		const store = storeWith(fakeStorage());
-		store.createFromParse({
-			breakdown: { questions: [] },
-			warnings: [],
-			usage: { promptTokens: 10, completionTokens: 2, totalTokens: 12, estCost: 0.01 },
-			filenames: ['paper.pdf']
-		});
+	it('refuses to replace a document the browser already holds', () => {
+		const { store, storage } = openStore();
+		const other = JSON.stringify(
+			storedDocument({ paper: { ...storedDocument().paper, label: 'Other paper' } })
+		);
 
-		store.restoreBackup(JSON.stringify(storedDocument()));
+		expect(store.restoreBackup(other)).toBeNull();
 
-		expect(store.runUsage).toBeNull();
+		expect(store.document?.paper.label).toBe('Ph1');
+		expect(stored(storage).paper.label).toBe('Ph1');
 	});
 
 	it('stands the reminder up again for a document restored after a dismissal', () => {
