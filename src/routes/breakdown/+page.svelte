@@ -25,6 +25,8 @@
 	// The route's load guard has read storage by the time this renders.
 	const store = marksheetStore();
 
+	let table = $state<ReturnType<typeof BreakdownTable>>();
+
 	const entries = $derived(store.entries);
 	const runLevelWarnings = $derived(runWarnings(store.warnings));
 	const attention = $derived(store.attention);
@@ -106,15 +108,10 @@
 
 	/** Scroll to an entry and put the cursor in the field that blocks confirmation. */
 	function goToEntry(item: AttentionItem): void {
-		const row = document.querySelector<HTMLElement>(`[data-entry="${item.entry.id}"]`);
-		row?.scrollIntoView({ block: 'center' });
-		row
-			?.querySelector<HTMLElement>(
-				item.reasons.includes('no-available-marks')
-					? '[data-field="marks"]'
-					: '[data-field="label"]'
-			)
-			?.focus();
+		table?.focusEntry(
+			item.entry.id,
+			item.reasons.includes('no-available-marks') ? 'marks' : 'label'
+		);
 	}
 
 	function confirmBreakdown(): void {
@@ -267,7 +264,7 @@
 		</aside>
 
 		<div class="min-w-0 space-y-3">
-			<BreakdownTable {banded} />
+			<BreakdownTable bind:this={table} {banded} />
 
 			{#if entries.length === 0}
 				<p class="text-sm text-muted-foreground">

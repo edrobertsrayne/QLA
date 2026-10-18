@@ -115,7 +115,14 @@
 		const id = add();
 		if (id === null) return;
 		await tick();
-		document.querySelector<HTMLElement>(`[data-entry="${id}"] [data-field="label"]`)?.focus();
+		focusEntry(id, 'label');
+	}
+
+	/** Scroll to an entry's row and put the cursor in one of its fields. */
+	export function focusEntry(entryId: string, field: EditableField): void {
+		const row = document.querySelector<HTMLElement>(`[data-entry="${entryId}"]`);
+		row?.scrollIntoView({ block: 'center' });
+		row?.querySelector<HTMLElement>(`[data-field="${field}"]`)?.focus();
 	}
 
 	/**
