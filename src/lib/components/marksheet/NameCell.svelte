@@ -7,6 +7,7 @@
 	import { tick } from 'svelte';
 	import UserXIcon from '@lucide/svelte/icons/user-x';
 	import XIcon from '@lucide/svelte/icons/x';
+	import { caretAtEnd } from '$lib/attachments.js';
 	import { Button } from '$lib/components/ui/button';
 	import * as Table from '$lib/components/ui/table';
 	import type { StoredStudent } from '$lib/marksheet/document.js';
@@ -44,17 +45,9 @@
 	 * name as it stands for fixing; typing over a selected name brings what was
 	 * typed, which is the whole name and is split when it is committed.
 	 */
-	async function startRename(opened: {
-		firstName: string;
-		surname: string;
-		replace: boolean;
-	}): Promise<void> {
+	function startRename(opened: { firstName: string; surname: string; replace: boolean }): void {
 		onSelect();
 		renaming = opened;
-		await tick();
-		const input = cell?.querySelector<HTMLInputElement>('[data-rename-field="firstName"]');
-		input?.focus();
-		input?.setSelectionRange(input.value.length, input.value.length);
 	}
 
 	/** The name as it stands, ready to be edited in place. */
@@ -68,7 +61,7 @@
 		if (event.target !== event.currentTarget) return;
 		if (event.key === 'F2') {
 			event.preventDefault();
-			void startRename(nameOf());
+			startRename(nameOf());
 			return;
 		}
 		// The name column is a cell of the grid too: the arrows move through it and
@@ -85,7 +78,7 @@
 		}
 		if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
 			event.preventDefault();
-			void startRename({ firstName: event.key, surname: '', replace: true });
+			startRename({ firstName: event.key, surname: '', replace: true });
 		}
 	}
 
@@ -134,7 +127,7 @@
 	ondblclick={(event) => {
 		// A double-click on the row's own controls is theirs.
 		if ((event.target as Element).closest('button')) return;
-		void startRename(nameOf());
+		startRename(nameOf());
 	}}
 	onkeydown={onNameKeydown}
 	onfocusout={onNameFocusOut}
@@ -157,6 +150,7 @@
 		{#if renaming}
 			<input
 				data-rename-field="firstName"
+				{@attach caretAtEnd}
 				aria-label={`First name of ${name}`}
 				class={CELL_EDITOR}
 				value={renaming.firstName}

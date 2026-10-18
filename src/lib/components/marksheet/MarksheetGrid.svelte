@@ -7,10 +7,11 @@
 	removed, and the lot reordered by either name part.
 -->
 <script lang="ts">
-	import { flushSync, tick } from 'svelte';
+	import { flushSync } from 'svelte';
 	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
 	import { Button } from '$lib/components/ui/button';
 	import * as Table from '$lib/components/ui/table';
+	import { caretAtEnd } from '$lib/attachments.js';
 	import { entryName, type QuestionBand } from '$lib/marksheet/breakdown.js';
 	import {
 		isOverMax,
@@ -109,15 +110,6 @@
 		return marks[student.id]?.[entry.id];
 	}
 
-	/** Put the caret at the end of an open editor, so typing carries on from there. */
-	function focusEditor(studentId: string, entryId: string): void {
-		const input = gridRoot?.querySelector<HTMLInputElement>(
-			`${cellSelector(studentId, entryId)} [data-testid="mark-editor"]`
-		);
-		input?.focus();
-		input?.setSelectionRange(input.value.length, input.value.length);
-	}
-
 	/**
 	 * Open a cell's editor holding `value`, with the caret after it. The editor is
 	 * in the DOM and has the caret before this returns: a teacher typing at speed
@@ -129,7 +121,6 @@
 		cursor = { studentId: student.id, entryId: entry.id };
 		editing = { studentId: student.id, entryId: entry.id, value };
 		flushSync();
-		focusEditor(student.id, entry.id);
 	}
 
 	/** Open a cell's editor on the mark it already holds: what F2 and a double-click do. */
@@ -304,15 +295,8 @@
 		moveTo({ studentId, entryId: first.id });
 	}
 
-	/** The add-student field, opened and kept open so a class is entered in one pass. */
-	async function focusAddInput(): Promise<void> {
-		await tick();
-		document.querySelector<HTMLInputElement>('[data-testid="new-student-name"]')?.focus();
-	}
-
 	function startAdding(): void {
 		adding = true;
-		void focusAddInput();
 	}
 
 	/** Enter commits the name and opens the next; a blank Enter or Escape discards it. */
@@ -331,7 +315,6 @@
 		}
 		store.addStudent(name);
 		newName = '';
-		void focusAddInput();
 	}
 
 	function discardNewStudent(): void {
@@ -433,6 +416,7 @@
 							{#if editing?.studentId === student.id && editing.entryId === entry.id}
 								<input
 									data-testid="mark-editor"
+									{@attach caretAtEnd}
 									aria-label={`Mark for ${name} on ${entryName(entry)}`}
 									inputmode="numeric"
 									class="w-full min-w-0 rounded-sm bg-background px-0.5 py-0 text-center tabular-nums outline-none ring-1 ring-ring"
@@ -454,6 +438,7 @@
 					{#if adding}
 						<input
 							data-testid="new-student-name"
+							{@attach caretAtEnd}
 							aria-label="New student name"
 							class={cn(CELL_EDITOR, 'w-full')}
 							placeholder="First name Surname"
