@@ -236,3 +236,18 @@ export function warningsForEntry(
 ): StoredWarning[] {
 	return warnings.filter((warning) => warning.questionId === entryId);
 }
+
+/**
+ * Why the band is flagged: the findings that say the parse could not read its
+ * question number, rather than anything else the parse said about its rows.
+ */
+export function fallbackExplanation(
+	band: QuestionBand,
+	warnings: readonly StoredWarning[]
+): string {
+	return band.entries
+		.flatMap((entry) => warningsForEntry(warnings, entry.id))
+		.filter((warning) => warning.code === MISSING_QUESTION_NUMBER)
+		.map((warning) => warning.message)
+		.join(' ');
+}

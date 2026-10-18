@@ -6,6 +6,7 @@
 // derives it the same way. Nothing here is stored: the analysis is recomputed
 // from the document as it stands, so there is no run step and no stale figures.
 
+import { entryName } from './breakdown.js';
 import { isOverMax } from './document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredStudent } from './document.js';
 
@@ -177,6 +178,28 @@ function analyseEntry(
 export function notScoredLabel(row: EntryAnalysis): string {
 	if (row.notScored === 'no-available-marks') return 'No available marks';
 	return row.coverage.marked === 0 ? 'Not marked yet' : 'No mark within the available marks';
+}
+
+/**
+ * What one entry's figure rests on, for the cell that shows it: the cell is
+ * the whole width of a narrow column, so the detail is the title's to carry.
+ */
+export function facilityDescription(row: EntryAnalysis): string {
+	const lines = [`${entryName(row.entry)} — ${row.entry.summary}`];
+	if (row.facility === null) {
+		lines.push(notScoredLabel(row));
+	} else {
+		lines.push(
+			`Facility ${facilityPercent(row.facility)}%${
+				row.coverage.partMarked
+					? ` — part-marked, ${row.coverage.marked} of ${row.coverage.of}`
+					: ''
+			}`
+		);
+	}
+	if (row.overMax > 0) lines.push(`${row.overMax} above the available marks — not counted`);
+	lines.push('Click to read the analysis');
+	return lines.join('\n');
 }
 
 /** Every entry's figures over this marksheet, and what they add up to. */

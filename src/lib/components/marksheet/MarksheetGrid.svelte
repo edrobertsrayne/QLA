@@ -22,16 +22,12 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import EditBreakdownDialog from '$lib/components/marksheet/EditBreakdownDialog.svelte';
-	import {
-		facilityPercent,
-		notScoredLabel,
-		type EntryAnalysis,
-		type RagBand
-	} from '$lib/marksheet/analysis.js';
+	import { facilityDescription, facilityPercent, type RagBand } from '$lib/marksheet/analysis.js';
 	import {
 		bandName,
 		entryName,
 		fallbackBands,
+		fallbackExplanation,
 		isFallbackBand,
 		warningsForEntry,
 		runWarnings,
@@ -46,7 +42,6 @@
 	import { resolveCell, step, type GridCell } from '$lib/marksheet/grid-cursor.js';
 	import { exportMarksNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { clipboardGrid, describePaste } from '$lib/marksheet/paste.js';
-	import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
 	import { count } from '$lib/prose.js';
 	import {
 		progressOf,
@@ -88,7 +83,6 @@
 		studentId: string;
 		firstName: string;
 		surname: string;
-		focus: 'firstName' | 'surname';
 		/** Opened by typing over the name: what is typed is the whole name, split on commit. */
 		replace: boolean;
 	} | null>(null);
@@ -138,28 +132,6 @@
 		amber: 'bg-amber-400/30',
 		green: 'bg-emerald-500/20'
 	};
-
-	/**
-	 * What one entry's figure rests on, for the cell that shows it: the cell is
-	 * the whole width of a narrow column, so the detail is the title's to carry.
-	 */
-	function facilityTitle(row: EntryAnalysis): string {
-		const lines = [`${entryName(row.entry)} — ${row.entry.summary}`];
-		if (row.facility === null) {
-			lines.push(notScoredLabel(row));
-		} else {
-			lines.push(
-				`Facility ${facilityPercent(row.facility)}%${
-					row.coverage.partMarked
-						? ` — part-marked, ${row.coverage.marked} of ${row.coverage.of}`
-						: ''
-				}`
-			);
-		}
-		if (row.overMax > 0) lines.push(`${row.overMax} above the available marks — not counted`);
-		lines.push('Click to read the analysis');
-		return lines.join('\n');
-	}
 
 	const shape = $derived({
 		studentIds: students.map((student) => student.id),
@@ -399,11 +371,6 @@
 		);
 	}
 
-	/** A block taken back: the store clears its account along with the undo. */
-	function undoPaste(): void {
-		store.undo();
-	}
-
 	/** Clicking a band moves the cursor to its first column, on the row it is on. */
 	function jumpToBand(band: QuestionBand): void {
 		const studentId = cursor?.studentId ?? students[0]?.id;
@@ -424,14 +391,13 @@
 	 */
 	async function startRename(
 		student: StoredStudent,
-		name: { firstName: string; surname: string; replace: boolean },
-		focus: 'firstName' | 'surname' = 'firstName'
+		name: { firstName: string; surname: string; replace: boolean }
 	): Promise<void> {
 		cursor = { studentId: student.id, entryId: null };
-		renaming = { studentId: student.id, ...name, focus };
+		renaming = { studentId: student.id, ...name };
 		await tick();
 		const input = document.querySelector<HTMLInputElement>(
-			`[data-student-id="${student.id}"] [data-rename-field="${focus}"]`
+			`[data-student-id="${student.id}"] [data-rename-field="firstName"]`
 		);
 		input?.focus();
 		input?.setSelectionRange(input.value.length, input.value.length);
@@ -542,18 +508,6 @@
 	function addPastedNames(): void {
 		if (store.pasteNames(pastedNames) > 0) pastedNames = '';
 	}
-
-	/**
-	 * Why the band is flagged: the findings that say the parse could not read its
-	 * question number, rather than anything else the parse said about its rows.
-	 */
-	function explainFallback(band: QuestionBand): string {
-		return band.entries
-			.flatMap((entry) => warningsForEntry(warnings, entry.id))
-			.filter((warning) => warning.code === MISSING_QUESTION_NUMBER)
-			.map((warning) => warning.message)
-			.join(' ');
-	}
 </script>
 
 {#if undoable?.kind === 'student-removal' || refusal || pasteNotice}
@@ -599,7 +553,7 @@
 					{/if}
 				</AlertDescription>
 				{#if pasteNotice.changed && undoable?.kind === 'mark-paste'}
-					<Button variant="outline" size="xs" onclick={undoPaste}>Undo</Button>
+					<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
 				{/if}
 			</Alert>
 		{/if}
@@ -627,7 +581,7 @@
 					<button
 						type="button"
 						class="rounded border border-red-600/50 bg-red-500/10 px-1.5 py-0.5 tabular-nums hover:bg-red-500/20"
-						title={facilityTitle(row)}
+						title={facilityDescription(row)}
 						onclick={() => onViewAnalysis(row.entry.id)}
 					>
 						{entryName(row.entry)}
@@ -779,7 +733,9 @@
 										</Popover.Trigger>
 										<Popover.Content class="w-80 text-xs">
 											<p class="font-medium">Question number not read from the paper.</p>
-											<p class="mt-1 text-muted-foreground">{explainFallback(band)}</p>
+											<p class="mt-1 text-muted-foreground">
+												{fallbackExplanation(band, warnings)}
+											</p>
 										</Popover.Content>
 									</Popover.Root>
 								{/if}
@@ -1044,7 +1000,7 @@
 								type="button"
 								data-testid="facility-cell"
 								data-entry-id={row.entry.id}
-								title={facilityTitle(row)}
+								title={facilityDescription(row)}
 								class={cn(
 									'my-0.5 w-[calc(100%-4px)] rounded-sm py-0.5 text-[11px] font-semibold tabular-nums hover:ring-2 hover:ring-primary',
 									FACILITY_TINT[row.band],
@@ -1064,7 +1020,7 @@
 								type="button"
 								data-testid="facility-cell"
 								data-entry-id={row.entry.id}
-								title={facilityTitle(row)}
+								title={facilityDescription(row)}
 								class="my-0.5 w-[calc(100%-4px)] rounded-sm py-0.5 text-xs text-muted-foreground hover:ring-2 hover:ring-primary"
 								onclick={() => onViewAnalysis(row.entry.id)}
 							>
