@@ -879,6 +879,22 @@ describe('paste', () => {
 		});
 	});
 
+	it('offers no undo on the notice of a paste that changed nothing', async () => {
+		const screen = openPasteGrid();
+
+		await userEvent.click(markCell(screen, 'student-1', 'entry-1'));
+		pasteClipboard(screen, { text: '3\t2\r\n' });
+		await expect
+			.element(page.getByTestId('paste-notice').getByRole('button', { name: 'Undo' }))
+			.toBeInTheDocument();
+
+		pasteClipboard(screen, { text: 'x' });
+
+		const notice = page.getByTestId('paste-notice');
+		await expect.element(notice).toHaveTextContent('whole number');
+		await expect.element(notice.getByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+	});
+
 	it('offers the whole paste back, until the next action', async () => {
 		const screen = openPasteGrid({ marks: { 'student-1': { 'entry-1': 1 } } });
 

@@ -642,7 +642,7 @@
 	}
 </script>
 
-{#if undoable?.kind === 'student-removal' || undoable?.kind === 'mark-paste' || refusal || pasteNotice}
+{#if undoable?.kind === 'student-removal' || refusal || pasteNotice}
 	<!-- Sticky, and above the toolbar: a notice about a cell far down a long class
 	     must still be where the teacher is looking. Neither notice takes a click,
 	     so the mark cells it passes over stay reachable. -->
@@ -684,7 +684,7 @@
 						</ul>
 					{/if}
 				</AlertDescription>
-				{#if undoable?.kind === 'mark-paste'}
+				{#if pasteNotice.changed && undoable?.kind === 'mark-paste'}
 					<Button variant="outline" size="xs" onclick={undoPaste}>Undo</Button>
 				{/if}
 			</Alert>
