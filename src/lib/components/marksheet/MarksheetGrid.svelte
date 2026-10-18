@@ -43,7 +43,7 @@
 		type BreakdownEntry,
 		type StoredStudent
 	} from '$lib/marksheet/document.js';
-	import { resolveCell, type GridCell } from '$lib/marksheet/grid-cursor.js';
+	import { resolveCell, step, type GridCell } from '$lib/marksheet/grid-cursor.js';
 	import { exportMarksNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { clipboardGrid, describePaste } from '$lib/marksheet/paste.js';
 	import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
@@ -199,67 +199,12 @@
 		cursor = { studentId, entryId };
 	}
 
-	/**
-	 * The row the keyboard is on. It is the cursor's, or the first row's before the
-	 * teacher has moved or clicked: focusing the grid with Tab is enough to walk it.
-	 */
-	function cursorRow(): number {
-		return students.findIndex((student) => student.id === activeCell?.studentId);
-	}
-
-	/** The column the keyboard is on: -1 for the name column, before the first entry. */
-	function cursorColumn(): number {
-		const entryId = activeCell?.entryId;
-		if (!entryId) return -1;
-		return entries.findIndex((entry) => entry.id === entryId);
-	}
-
 	/** Move to a cell and take the keyboard with it. */
-	function moveTo(studentId: string, entryId: string | null): void {
+	function moveTo(cell: GridCell | null): void {
+		if (!cell) return;
 		clearRefusal();
-		cursor = { studentId, entryId };
-		focusCell(studentId, entryId);
-	}
-
-	/** Move one row, staying in the column: what Enter and the up/down arrows do. */
-	function moveRow(offset: -1 | 1): void {
-		const from = cursorRow();
-		if (from === -1) return;
-		// The ends of the sheet are the ends: the cursor stays on the cell, so the
-		// keyboard never falls out of the grid mid-entry.
-		const to = Math.min(Math.max(from + offset, 0), students.length - 1);
-		moveTo(students[to].id, activeCell?.entryId ?? null);
-	}
-
-	/** Move one column, into the name column and back: what the side arrows do. */
-	function moveColumn(offset: -1 | 1): void {
-		const row = cursorRow();
-		if (row === -1) return;
-
-		const to = Math.min(Math.max(cursorColumn() + offset, -1), entries.length - 1);
-		moveTo(students[row].id, to === -1 ? null : entries[to].id);
-	}
-
-	/**
-	 * Move one column, wrapping to the next or previous row past either end: what
-	 * Tab does, deliberately overriding the convention that Tab leaves the grid.
-	 */
-	function moveTab(offset: -1 | 1): void {
-		const row = cursorRow();
-		if (row === -1) return;
-
-		const entry = entries[cursorColumn() + offset];
-		if (entry) {
-			moveTo(students[row].id, entry.id);
-			return;
-		}
-
-		const wrappedEntry = offset === 1 ? entries[0] : entries.at(-1);
-		const wrappedRow = students[row + offset];
-		// Past the first or last cell there is nothing to wrap onto, so the cursor
-		// stays on the cell the teacher is on.
-		if (!wrappedEntry || !wrappedRow) moveTo(students[row].id, activeCell?.entryId ?? null);
-		else moveTo(wrappedRow.id, wrappedEntry.id);
+		cursor = cell;
+		focusCell(cell.studentId, cell.entryId);
 	}
 
 	/** What a mark cell shows: a mark that is there, and nothing where there is none. */
@@ -357,8 +302,10 @@
 				focusCell(student.id, entry.id);
 				return;
 			}
-			if (key === 'Enter') moveRow(1);
-			else moveTab(event.shiftKey ? -1 : 1);
+			moveTo(
+				activeCell &&
+					step(activeCell, shape, key === 'Enter' ? 'down' : event.shiftKey ? 'previous' : 'next')
+			);
 			return;
 		}
 
@@ -366,9 +313,13 @@
 			// An open editor's arrows belong to the caret; the keys move the cursor.
 			if (open) return;
 			event.preventDefault();
-			if (key === 'ArrowUp') moveRow(-1);
-			else if (key === 'ArrowDown') moveRow(1);
-			else moveColumn(key === 'ArrowRight' ? 1 : -1);
+			const move = {
+				ArrowUp: 'up',
+				ArrowDown: 'down',
+				ArrowLeft: 'left',
+				ArrowRight: 'right'
+			} as const;
+			moveTo(activeCell && step(activeCell, shape, move[key]));
 			return;
 		}
 
@@ -458,7 +409,7 @@
 		const studentId = cursor?.studentId ?? students[0]?.id;
 		const first = band.entries[0];
 		if (!studentId || !first) return;
-		moveTo(studentId, first.id);
+		moveTo({ studentId, entryId: first.id });
 	}
 
 	function sortClass(by: StudentSortKey): void {
@@ -504,12 +455,12 @@
 		// out into the row's marks.
 		if (event.key === 'ArrowRight') {
 			event.preventDefault();
-			moveColumn(1);
+			moveTo(activeCell && step(activeCell, shape, 'right'));
 			return;
 		}
 		if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
 			event.preventDefault();
-			moveRow(event.key === 'ArrowUp' ? -1 : 1);
+			moveTo(activeCell && step(activeCell, shape, event.key === 'ArrowUp' ? 'up' : 'down'));
 			return;
 		}
 		if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
