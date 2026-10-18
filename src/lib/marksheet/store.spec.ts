@@ -235,6 +235,29 @@ describe('boot gate', () => {
 		expect(storage.getItem(STORAGE_KEY)).toBe(raw);
 	});
 
+	it('preserves a document written by a newer version, byte for byte', () => {
+		const raw = JSON.stringify({
+			...storedDocument({ breakdownConfirmedAt: NOW.toISOString() }),
+			schemaVersion: DOCUMENT_SCHEMA_VERSION + 1
+		});
+		const storage = fakeStorage({ [STORAGE_KEY]: raw });
+		const store = storeWith(storage);
+
+		const result = store.load();
+
+		expect(result).toEqual({
+			kind: 'corrupt',
+			preservedKey: `${CORRUPT_KEY_PREFIX}${NOW.toISOString()}`,
+			raw
+		});
+		// Kept whole, under its own key: a version this app cannot read is still
+		// the teacher's only copy of their marks.
+		expect(storage.getItem(`${CORRUPT_KEY_PREFIX}${NOW.toISOString()}`)).toBe(raw);
+		expect(storage.getItem(STORAGE_KEY)).toBe(raw);
+		expect(store.document).toBeNull();
+		expect(store.loadResult).toEqual(result);
+	});
+
 	it('runs on upload when browser storage is unavailable', () => {
 		const store = storeWith(unwritableStorage());
 
@@ -655,6 +678,70 @@ describe('autosave', () => {
 			vi.advanceTimersByTime(500);
 			expect(store.saveState.kind).toBe('failed');
 			expect(storage.getItem(STORAGE_KEY)).toBe(JSON.stringify(storedDocument()));
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('names the moment the unsaved changes began when a write is refused', () => {
+		vi.useFakeTimers();
+		try {
+			const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument()) });
+			let nowMs = NOW.getTime();
+			const store = storeWith(unwritableDocument(storage), () => new Date(nowMs));
+			// The document as stored reached storage at 10:00.
+			store.load();
+
+			nowMs += 60_000;
+			store.setPaperLabel('10X');
+			vi.advanceTimersByTime(500);
+
+			expect(store.saveState).toEqual({ kind: 'failed', since: NOW });
+
+			// No retry, so the moment does not move however long the tab carries
+			// the changes: everything after 10:00 is only in this tab.
+			nowMs += 300_000;
+			store.setPaperLabel('10X/Ph1');
+			vi.advanceTimersByTime(500);
+
+			expect(store.saveState).toEqual({ kind: 'failed', since: NOW });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('moves that moment on once a write lands, so a later refusal names the last one', () => {
+		vi.useFakeTimers();
+		try {
+			const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(storedDocument()) });
+			let refuse = false;
+			const flaky: DocumentStorage = {
+				get length() {
+					return storage.length;
+				},
+				key: (index) => storage.key(index),
+				getItem: (key) => storage.getItem(key),
+				removeItem: (key) => storage.removeItem(key),
+				setItem: (key, value) => {
+					if (refuse && key === STORAGE_KEY) throw new Error('QuotaExceededError');
+					storage.setItem(key, value);
+				}
+			};
+			let nowMs = NOW.getTime();
+			const store = storeWith(flaky, () => new Date(nowMs));
+			store.load();
+
+			nowMs += 60_000;
+			store.setPaperLabel('10X');
+			vi.advanceTimersByTime(500);
+			expect(store.saveState).toEqual({ kind: 'saved', at: new Date(nowMs) });
+
+			refuse = true;
+			nowMs += 60_000;
+			store.setPaperLabel('10X/Ph1');
+			vi.advanceTimersByTime(500);
+
+			expect(store.saveState).toEqual({ kind: 'failed', since: new Date(nowMs - 60_000) });
 		} finally {
 			vi.useRealTimers();
 		}

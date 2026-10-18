@@ -72,7 +72,11 @@ export type LoadResult =
 export type SaveState =
 	| { kind: 'saved'; at: Date }
 	| { kind: 'saving' }
-	| { kind: 'failed'; message: string }
+	/**
+	 * A refused write stops autosave. `since` is when the document last reached
+	 * storage: everything after that moment lives only in this tab.
+	 */
+	| { kind: 'failed'; since: Date }
 	| { kind: 'unavailable' };
 
 /** The surface the stored state allows. */
@@ -179,8 +183,15 @@ export class MarksheetStore {
 	/** A failed write stops autosave rather than retrying behind the teacher's back. */
 	#failed = false;
 	#unavailable = false;
+	/**
+	 * When the document last reached storage. A placeholder the constructor
+	 * immediately replaces: a plain moment, never mutated in place, so it needs
+	 * no reactive wrapper.
+	 */
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	#savedAt: Date = new Date(0);
 
-	#loadResult: LoadResult = { kind: 'empty' };
+	#loadResult = $state<LoadResult>({ kind: 'empty' });
 
 	document = $state<MarksheetDocument | null>(null);
 	// A placeholder the constructor immediately replaces: never mutated, so it
@@ -202,7 +213,12 @@ export class MarksheetStore {
 		this.#storage = deps.storage;
 		this.#now = deps.now;
 		this.#debounceMs = deps.debounceMs ?? AUTOSAVE_DEBOUNCE_MS;
-		this.saveState = { kind: 'saved', at: this.#now() };
+		this.#markSaved();
+	}
+
+	/** What the last `load()` found, for the surface that has to report it. */
+	get loadResult(): LoadResult {
+		return this.#loadResult;
 	}
 
 	/**
@@ -927,7 +943,10 @@ export class MarksheetStore {
 			result.kind === 'ready' && this.document
 				? { kind: 'ready', document: this.document }
 				: result;
-		if (saveState) this.saveState = saveState;
+		if (saveState) {
+			this.saveState = saveState;
+			if (saveState.kind === 'saved') this.#savedAt = saveState.at;
+		}
 		return this.#loadResult;
 	}
 
@@ -959,6 +978,12 @@ export class MarksheetStore {
 		this.#cancelTimer = null;
 	}
 
+	/** The document is in storage as of now: nothing after this moment is only in this tab. */
+	#markSaved(): void {
+		this.#savedAt = this.#now();
+		this.saveState = { kind: 'saved', at: this.#savedAt };
+	}
+
 	#write(): void {
 		const document = this.document;
 		if (!document) return;
@@ -970,16 +995,13 @@ export class MarksheetStore {
 		if (this.#unavailable) return;
 		try {
 			this.#storage.setItem(STORAGE_KEY, JSON.stringify(document));
-		} catch (error) {
+		} catch {
 			this.#failed = true;
-			this.saveState = {
-				kind: 'failed',
-				message: error instanceof Error ? error.message : 'The document could not be saved.'
-			};
+			this.saveState = { kind: 'failed', since: this.#savedAt };
 			return;
 		}
 		this.#unsaved = false;
 		this.#failed = false;
-		this.saveState = { kind: 'saved', at: this.#now() };
+		this.#markSaved();
 	}
 }

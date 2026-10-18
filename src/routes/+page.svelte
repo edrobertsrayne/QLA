@@ -3,6 +3,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import FatalAlert from '$lib/components/parse/FatalAlert.svelte';
 	import SourceFilesCard from '$lib/components/parse/SourceFilesCard.svelte';
+	import CorruptDocumentAlert from '$lib/components/shell/CorruptDocumentAlert.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import ModelSelect, { type ModelOption } from '$lib/components/parse/ModelSelect.svelte';
@@ -190,7 +191,9 @@
 	<title>Upload · QLA</title>
 </svelte:head>
 
-<main class="mx-auto max-w-4xl space-y-6 p-6">
+<main class="mx-auto max-w-4xl space-y-6 p-6 pb-[calc(var(--status-bar-height)+1.5rem)]">
+	<CorruptDocumentAlert />
+
 	<div class="space-y-2">
 		<h1 class="text-2xl font-bold tracking-tight">Parse assessment paper</h1>
 		<p class="text-sm text-muted-foreground">

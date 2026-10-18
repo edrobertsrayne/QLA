@@ -47,7 +47,7 @@
 	<title>{title}</title>
 </svelte:head>
 
-<main class="mx-auto max-w-6xl space-y-4 p-6">
+<main class="mx-auto max-w-6xl space-y-4 p-6 pb-[calc(var(--status-bar-height)+1.5rem)]">
 	{#if view === 'grid'}
 		<header class="flex items-start justify-between gap-4">
 			<div class="space-y-2">
