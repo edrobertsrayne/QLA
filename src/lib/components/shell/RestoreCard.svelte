@@ -15,6 +15,7 @@
 	import type { MarksheetDocument } from '$lib/marksheet/document.js';
 	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 	import { relativeTime } from '$lib/marksheet/status.js';
+	import { count } from '$lib/prose.js';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 
 	const store = marksheetStore();
@@ -107,12 +108,11 @@
 				{#if candidate}
 					<strong>{candidate.filename}</strong> holds
 					{candidate.summary.paperLabel ?? 'a paper with no label'} for the class
-					{candidate.summary.className ?? 'not named'} — {candidate.summary.students} student{candidate
-						.summary.students === 1
-						? ''
-						: 's'} and {candidate.summary.marks}
-					mark{candidate.summary.marks === 1 ? '' : 's'}, {age}. Restoring it replaces whatever this
-					browser holds.
+					{candidate.summary.className ?? 'not named'} — {count(
+						candidate.summary.students,
+						'student'
+					)} and {count(candidate.summary.marks, 'mark')}, {age}. Restoring it replaces whatever
+					this browser holds.
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>

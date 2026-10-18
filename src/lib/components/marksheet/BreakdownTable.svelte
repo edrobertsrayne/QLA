@@ -35,6 +35,7 @@
 		ASSESSMENT_OBJECTIVES
 	} from '$lib/parse/assessment-objectives.js';
 	import { cn } from '$lib/utils.js';
+	import { agree, count } from '$lib/prose.js';
 
 	let { banded = true }: { banded?: boolean } = $props();
 
@@ -157,7 +158,7 @@
 	function bandSummary(band: QuestionBand): string {
 		if (band.questionNumber === '') return 'needs a question number';
 		if (isUndivided(band)) return 'undivided';
-		return `${band.entries.length} subquestion${band.entries.length === 1 ? '' : 's'}`;
+		return count(band.entries.length, 'subquestion');
 	}
 </script>
 
@@ -345,12 +346,12 @@
 			<ul class="list-disc space-y-0.5 pl-4">
 				{#each overMax as row (row.entry.id)}
 					<li>
-						{row.above} mark{row.above === 1 ? '' : 's'} entered on
+						{count(row.above, 'mark')} entered on
 						<strong>{entryName(row.entry)}</strong>
-						{row.above === 1 ? 'is' : 'are'} above its {row.entry.marks} available mark{row.entry
-							.marks === 1
-							? ''
-							: 's'}.
+						{agree(row.above, 'is', 'are')} above its {count(
+							row.entry.marks ?? 0,
+							'available mark'
+						)}.
 					</li>
 				{/each}
 			</ul>
@@ -445,15 +446,15 @@
 			<Dialog.Header>
 				<Dialog.Title>Delete {entryName(pendingDelete)}?</Dialog.Title>
 				<Dialog.Description data-testid="delete-loss">
-					{pendingLoss} mark{pendingLoss === 1 ? '' : 's'}
-					{pendingLoss === 1 ? 'is' : 'are'} entered against it, and every one goes with the entry. The
+					{count(pendingLoss, 'mark')}
+					{agree(pendingLoss, 'is', 'are')} entered against it, and every one goes with the entry. The
 					undo beside the table puts the entry, and its marks, back.
 				</Dialog.Description>
 			</Dialog.Header>
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (pendingDelete = null)}>Keep the entry</Button>
 				<Button variant="destructive" onclick={confirmDelete}>
-					Delete {entryName(pendingDelete)} and {pendingLoss} mark{pendingLoss === 1 ? '' : 's'}
+					Delete {entryName(pendingDelete)} and {count(pendingLoss, 'mark')}
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>

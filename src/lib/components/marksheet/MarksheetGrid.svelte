@@ -47,6 +47,7 @@
 	import { exportMarksNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { clipboardGrid, describePaste } from '$lib/marksheet/paste.js';
 	import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
+	import { count } from '$lib/prose.js';
 	import {
 		progressOf,
 		readName,
@@ -707,7 +708,7 @@
 						data-testid="fallback-band-count"
 					>
 						<TriangleAlertIcon />
-						{fallbacks.length} band{fallbacks.length === 1 ? '' : 's'} without a question number
+						{count(fallbacks.length, 'band')} without a question number
 					</Badge>
 				{/snippet}
 			</Popover.Trigger>
@@ -728,7 +729,7 @@
 				{#snippet child({ props })}
 					<Badge {...props} variant="outline" data-testid="parse-warnings-count">
 						<TriangleAlertIcon />
-						{warnings.length} parse warning{warnings.length === 1 ? '' : 's'}
+						{count(warnings.length, 'parse warning')}
 					</Badge>
 				{/snippet}
 			</Popover.Trigger>

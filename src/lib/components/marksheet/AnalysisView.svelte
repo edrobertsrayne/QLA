@@ -22,6 +22,7 @@
 	} from '$lib/marksheet/analysis.js';
 	import { entryName } from '$lib/marksheet/breakdown.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
+	import { count, agree } from '$lib/prose.js';
 	import { cn } from '$lib/utils.js';
 
 	interface Props {
@@ -65,9 +66,9 @@
 	const facts = $derived.by(() => {
 		const { studentsCounted, absentExcluded, marksCounted, partMarked } = analysis.summary;
 		return [
-			`${studentsCounted} student${studentsCounted === 1 ? '' : 's'} counted`,
+			`${count(studentsCounted, 'student')} counted`,
 			`${absentExcluded} absent excluded`,
-			`${marksCounted} mark${marksCounted === 1 ? '' : 's'} counted`,
+			`${count(marksCounted, 'mark')} counted`,
 			`${partMarked} part-marked`
 		].join(' · ');
 	});
@@ -203,7 +204,8 @@
 		</p>
 		{#if analysis.summary.invalid > 0}
 			<p class="text-xs text-destructive">
-				{analysis.summary.invalid} entr{analysis.summary.invalid === 1 ? 'y carries' : 'ies carry'}
+				{count(analysis.summary.invalid, 'entry', 'entries')}
+				{agree(analysis.summary.invalid, 'carries', 'carry')}
 				a mark above the available marks, which no figure counts.
 			</p>
 		{/if}

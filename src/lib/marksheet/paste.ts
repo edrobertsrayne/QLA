@@ -11,6 +11,7 @@
 import { isOverMax, putMark, readMarkText, removeMark } from './document.js';
 import type { MarksheetDocument } from './document.js';
 import { newStudent, readName } from './students.js';
+import { agree, count } from '$lib/prose.js';
 
 /** The part of `DataTransfer` a paste needs: both flavours of the same block. */
 export interface ClipboardDataLike {
@@ -228,13 +229,13 @@ export function applyPaste(
 export function describePaste(result: PasteResult): { summary: string; losses: string[] } {
 	const parts: string[] = [];
 	if (result.marksStored > 0) {
-		parts.push(`pasted ${result.marksStored} mark${result.marksStored === 1 ? '' : 's'}`);
+		parts.push(`pasted ${count(result.marksStored, 'mark')}`);
 	}
 	if (result.marksCleared > 0) {
-		parts.push(`cleared ${result.marksCleared} mark${result.marksCleared === 1 ? '' : 's'}`);
+		parts.push(`cleared ${count(result.marksCleared, 'mark')}`);
 	}
 	if (result.studentsAdded > 0) {
-		parts.push(`added ${result.studentsAdded} student${result.studentsAdded === 1 ? '' : 's'}`);
+		parts.push(`added ${count(result.studentsAdded, 'student')}`);
 	}
 	let summary = 'Nothing was pasted.';
 	if (parts.length > 0) {
@@ -244,21 +245,19 @@ export function describePaste(result: PasteResult): { summary: string; losses: s
 
 	const losses: string[] = [];
 	if (result.columnsClipped > 0) {
-		const count = result.columnsClipped;
-		losses.push(
-			`${count} column${count === 1 ? '' : 's'} past the last entry ${count === 1 ? 'was' : 'were'} dropped.`
-		);
+		const n = result.columnsClipped;
+		losses.push(`${count(n, 'column')} past the last entry ${agree(n, 'was', 'were')} dropped.`);
 	}
 	if (result.rowsDropped > 0) {
-		const count = result.rowsDropped;
+		const n = result.rowsDropped;
 		losses.push(
-			`${count} pasted row${count === 1 ? '' : 's'} had no name to make a student, so ${count === 1 ? 'it was' : 'they were'} not added.`
+			`${count(n, 'pasted row')} had no name to make a student, so ${agree(n, 'it was', 'they were')} not added.`
 		);
 	}
 	if (result.overMax > 0) {
-		const count = result.overMax;
+		const n = result.overMax;
 		losses.push(
-			`${count} mark${count === 1 ? '' : 's'} above the available marks ${count === 1 ? 'is' : 'are'} flagged in the grid.`
+			`${count(n, 'mark')} above the available marks ${agree(n, 'is', 'are')} flagged in the grid.`
 		);
 	}
 	return { summary, losses };

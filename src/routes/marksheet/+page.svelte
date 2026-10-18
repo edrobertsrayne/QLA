@@ -10,6 +10,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { totalMarks } from '$lib/marksheet/document.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
+	import { count } from '$lib/prose.js';
 
 	// The route's load guard has read storage by the time this renders.
 	const store = marksheetStore();
@@ -26,8 +27,8 @@
 	const title = $derived(className ? `${className} · Marksheet · QLA` : 'Marksheet · QLA');
 	const summary = $derived(
 		[
-			`${students.length} student${students.length === 1 ? '' : 's'}`,
-			`${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`,
+			count(students.length, 'student'),
+			count(entries.length, 'entry', 'entries'),
 			`${marks} marks`
 		].join(' · ')
 	);

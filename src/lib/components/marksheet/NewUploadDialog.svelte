@@ -21,6 +21,7 @@
 	import { markCount } from '$lib/marksheet/document.js';
 	import { backUpNow, exportMarksNow, goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 	import { relativeTime } from '$lib/marksheet/status.js';
+	import { count } from '$lib/prose.js';
 
 	const store = marksheetStore();
 	let open = $state(false);
@@ -29,11 +30,6 @@
 	const marksEntered = $derived(store.document ? markCount(store.document) : 0);
 	const studentsInClass = $derived(store.document?.students.length ?? 0);
 	const label = $derived(store.document?.paper.label ?? null);
-
-	/** One counted noun: `1 mark`, `612 marks`. */
-	function count(number: number, noun: string): string {
-		return `${number} ${noun}${number === 1 ? '' : 's'}`;
-	}
 
 	/**
 	 * What the wipe takes, from the state the teacher is in: marks entered, a

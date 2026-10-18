@@ -20,6 +20,7 @@
 	} from '$lib/marksheet/breakdown.js';
 	import { isWholeNumber, totalMarks } from '$lib/marksheet/document.js';
 	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
+	import { agree, count } from '$lib/prose.js';
 
 	// The route's load guard has read storage by the time this renders.
 	const store = marksheetStore();
@@ -61,16 +62,14 @@
 			);
 		}
 		if (blockers.emptyLabels.length > 0) {
-			const count = blockers.emptyLabels.length;
+			const n = blockers.emptyLabels.length;
 			messages.push(
-				count === 1
-					? '1 entry has no label, so its column would have no heading.'
-					: `${count} entries have no label, so their columns would have no headings.`
+				`${count(n, 'entry', 'entries')} ${agree(n, 'has', 'have')} no label, so ${agree(n, 'its column would have', 'their columns would have')} no ${agree(n, 'heading', 'headings')}.`
 			);
 		}
 		if (repeatedLabels.length > 0) {
 			messages.push(
-				`${repeatedLabels.join(', ')} ${repeatedLabels.length === 1 ? 'is' : 'are each'} used more than once — every column needs its own label.`
+				`${repeatedLabels.join(', ')} ${agree(repeatedLabels.length, 'is', 'are each')} used more than once — every column needs its own label.`
 			);
 		}
 		return messages;
@@ -87,20 +86,6 @@
 		if (typed === '') paperTotal = null;
 		else if (isWholeNumber(typed)) paperTotal = Number(typed);
 		else input.value = paperTotal === null ? '' : String(paperTotal);
-	}
-
-	/**
-	 * "3 entries have no available marks yet" — the entries whose marks figure is
-	 * unknown, which is what a shortfall usually turns out to be.
-	 */
-	function entriesWithoutAvailableMarks(count: number): string {
-		const entries = count === 1 ? '1 entry' : `${count} entries`;
-		return `${entries} ${count === 1 ? 'has' : 'have'} no available marks yet`;
-	}
-
-	/** The teacher's word for what the breakdown counts. */
-	function marksNoun(count: number): string {
-		return count === 1 ? 'mark' : 'marks';
 	}
 
 	/** Why an entry is on the list, in the words a teacher would use. */
@@ -201,19 +186,21 @@
 				{#if check === null}
 					<p class="text-xs text-muted-foreground">
 						This breakdown accounts for <strong>{marks}</strong>
-						{marksNoun(marks)}.
+						{agree(marks, 'mark', 'marks')}.
 					</p>
 				{:else if check.status === 'adds-up'}
 					<p class="text-xs text-emerald-700 dark:text-emerald-400">
 						{check.accounted} of {check.paperTotal} — adds up{#if check.noAvailableMarks.length > 0},
-							but {entriesWithoutAvailableMarks(check.noAvailableMarks.length)}{/if}.
+							but {count(check.noAvailableMarks.length, 'entry', 'entries')}
+							{agree(check.noAvailableMarks.length, 'has', 'have')} no available marks yet{/if}.
 					</p>
 				{:else if check.status === 'unaccounted'}
 					<p class="text-xs text-destructive">
 						{check.accounted} of {check.paperTotal} — {check.unaccounted}
-						{marksNoun(check.unaccounted)} unaccounted —
+						{agree(check.unaccounted, 'mark', 'marks')} unaccounted —
 						{#if check.noAvailableMarks.length > 0}
-							{entriesWithoutAvailableMarks(check.noAvailableMarks.length)}.
+							{count(check.noAvailableMarks.length, 'entry', 'entries')}
+							{agree(check.noAvailableMarks.length, 'has', 'have')} no available marks yet.
 						{:else}
 							an entry may be missing.
 						{/if}
@@ -221,7 +208,7 @@
 				{:else}
 					<p class="text-xs text-destructive">
 						{check.accounted} of {check.paperTotal} — {-check.unaccounted}
-						{marksNoun(-check.unaccounted)} too many — an entry may be duplicated or over-marked.
+						{agree(-check.unaccounted, 'mark', 'marks')} too many — an entry may be duplicated or over-marked.
 					</p>
 				{/if}
 			</section>
@@ -257,11 +244,10 @@
 			<section class="space-y-2 rounded-lg border-2 border-primary p-3">
 				<h2 class="text-sm font-semibold">Confirm breakdown</h2>
 				<p class="text-xs text-muted-foreground">
-					Builds your marksheet: <strong>{entries.length}</strong> column{entries.length === 1
-						? ''
-						: 's'} across <strong>{questions}</strong>
-					{questions === 1 ? 'question' : 'questions'}, <strong>{marks}</strong> marks. The breakdown
-					becomes read-only.
+					Builds your marksheet: <strong>{entries.length}</strong>
+					{agree(entries.length, 'column', 'columns')} across <strong>{questions}</strong>
+					{agree(questions, 'question', 'questions')}, <strong>{marks}</strong> marks. The breakdown becomes
+					read-only.
 				</p>
 				{#if blockerMessages.length > 0}
 					<div class="space-y-1 text-xs text-destructive">
