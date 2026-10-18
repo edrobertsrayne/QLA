@@ -28,3 +28,6 @@ vite.config.ts.timestamp-*
 # Test artefacts
 .vitest-attachments/
 __screenshots__/
+
+# Local scratch: real class data, throwaway scripts
+.scratch/

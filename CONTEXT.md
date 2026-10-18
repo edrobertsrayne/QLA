@@ -110,7 +110,7 @@ How far one breakdown entry has been marked across the class: non-absent student
 _Avoid_: Sample size, n
 
 **Backup**:
-A restorable copy of the whole stored breakdown and marksheet. The only thing that can bring a marksheet back after a new upload or lost browser storage.
+A restorable copy of everything stored for the paper: its breakdown, marksheet, topic names, grade boundaries and reports, teacher edits included. The only thing that can bring them back after a new upload or lost browser storage.
 _Avoid_: Save, export, download
 
 **Marks export**:
@@ -118,7 +118,7 @@ A one-way CSV of a marksheet's marks for use elsewhere. Lossy: it cannot be rest
 _Avoid_: Backup, save, download
 
 **New upload**:
-The destructive action that discards the stored breakdown and marksheet and returns to uploading a fresh assessment paper and/or markscheme. Only exists once something is stored.
+The destructive action that discards everything stored for the paper (breakdown, marksheet, topic names, grade boundaries and reports) and returns to uploading a fresh assessment paper and/or markscheme. Only exists once something is stored.
 _Avoid_: Reset, clear, start over
 
 **Report**:
@@ -130,7 +130,7 @@ One student's marks summed by specification point (marks gained out of available
 _Avoid_: Topic summary, aggregate, spec breakdown
 
 **Topic name**:
-The student-readable name for a specification point (e.g. "Transverse and longitudinal waves" for "4.6.1.1"), proposed by the model and confirmed by the teacher, so a report never shows a student a bare code.
+The student-readable name for a specification point (e.g. "Transverse and longitudinal waves" for "4.6.1.1"), proposed by the model, editable by the teacher and used as shown when reports are generated, so a report never shows a student a bare code.
 _Avoid_: Spec title, topic label
 
 **Grade boundary**:
