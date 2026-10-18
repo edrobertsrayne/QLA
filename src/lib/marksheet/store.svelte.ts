@@ -670,11 +670,21 @@ export class MarksheetStore {
 
 	/**
 	 * Make a class out of a pasted column of names, one per line, and say how
-	 * many students it made. Blank lines are not students.
+	 * many students it made. Blank lines are not students. Text copied from a
+	 * spreadsheet with marks beside the names (tab-separated) is a block anchored
+	 * in the name column, so one copy builds the class and its marks.
 	 */
 	pasteNames(names: string): number {
 		const document = this.document;
 		if (!document) return 0;
+
+		if (names.includes('\t')) {
+			const rows = names.replace(/\r\n?/g, '\n').split('\n');
+			return this.pasteMarks(
+				rows.map((line) => line.split('\t')),
+				{ studentId: null, entryId: null }
+			).studentsAdded;
+		}
 
 		const parsed = parseNameList(names);
 		for (const name of parsed) {
@@ -735,7 +745,13 @@ export class MarksheetStore {
 		const document = this.document;
 		if (!document) return result;
 
-		const anchorRow = document.students.findIndex((student) => student.id === anchor.studentId);
+		// No student to anchor on starts the block below the class: only a block
+		// that begins with names can do that, and it is how an empty class is built.
+		if (anchor.studentId === null && anchor.entryId !== null) return result;
+		const anchorRow =
+			anchor.studentId === null
+				? document.students.length
+				: document.students.findIndex((student) => student.id === anchor.studentId);
 		if (anchorRow === -1) return result;
 
 		const entries = document.breakdown.entries;

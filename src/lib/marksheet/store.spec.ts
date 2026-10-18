@@ -1541,6 +1541,21 @@ describe('class', () => {
 		expect(store.pasteNames('')).toBe(0);
 	});
 
+	it('builds the class and its marks from names with marks beside them', () => {
+		const { store } = openMarksheet();
+		const entryId = store.document?.breakdown.entries[0].id ?? '';
+
+		expect(store.pasteNames('Ada Lovelace\t3\r\nHopper, Grace\t4\r\n')).toBe(2);
+
+		const [ada, grace] = store.document?.students ?? [];
+		expect(ada).toMatchObject({ firstName: 'Ada', surname: 'Lovelace' });
+		expect(grace).toMatchObject({ firstName: 'Grace', surname: 'Hopper' });
+		expect(store.document?.marks).toEqual({
+			[ada.id]: { [entryId]: 3 },
+			[grace.id]: { [entryId]: 4 }
+		});
+	});
+
 	it('removes a student with their marks, and offers it back with undo', () => {
 		const { store } = openMarksheet({
 			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
