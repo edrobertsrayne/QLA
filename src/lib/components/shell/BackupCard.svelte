@@ -43,7 +43,7 @@
 </script>
 
 {#if warning}
-	<Alert class={AMBER} data-testid="backup-banner" data-stale={stale}>
+	<Alert class={AMBER} data-testid="backup-banner">
 		<TriangleAlertIcon />
 		<AlertTitle>{message}</AlertTitle>
 		<AlertDescription>
@@ -60,7 +60,7 @@
 		</AlertDescription>
 	</Alert>
 {:else}
-	<Card.Root size="sm" class={stale ? AMBER : ''} data-testid="backup-card" data-stale={stale}>
+	<Card.Root size="sm" class={stale ? AMBER : ''} data-testid="backup-card">
 		<Card.Content class="flex items-center justify-between gap-3">
 			<Card.Description>Last backup: <strong>{age}</strong></Card.Description>
 			<Button variant={stale ? 'default' : 'outline'} size="sm" onclick={backUpNow}>

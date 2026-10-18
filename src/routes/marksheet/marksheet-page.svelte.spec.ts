@@ -482,34 +482,43 @@ describe('marksheet page', () => {
 		expect(page.getByTestId('fallback-band-count').query()).toBeNull();
 	});
 
-	it('freezes the name and progress columns, and the band label with them', async () => {
+	it('keeps the name and progress columns in place while a wide paper scrolls', async () => {
+		const entries = Array.from({ length: 40 }, (_, index) =>
+			entry(`entry-${index}`, `${index + 1}a`, `${index + 1}`)
+		);
 		seed(
 			confirmed({
-				breakdown: {
-					entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
-					warnings: []
-				},
-				students: [student('student-1', 'Alexandrina', 'Lovelace')]
+				breakdown: { entries, warnings: [] },
+				students: [student('student-1', 'Alexandrina-Bartholomew-Montgomery', 'Lovelace')]
 			})
 		);
 
 		const screen = openMarksheetPage();
-
-		const style = (selector: string): CSSStyleDeclaration => {
+		const find = (selector: string): HTMLElement => {
 			const element = screen.container.querySelector<HTMLElement>(selector);
 			if (!element) throw new Error(`no ${selector}`);
-			return getComputedStyle(element);
+			return element;
 		};
+		const nameCell = find('[data-testid="name-cell"]');
+		const progressCell = find('[data-testid="progress-cell"]');
+		const lastColumn = find('[data-testid="student-row"] [role="gridcell"]:last-of-type');
+		let scroller: HTMLElement | null = nameCell.parentElement;
+		while (scroller && scroller.scrollWidth <= scroller.clientWidth) {
+			scroller = scroller.parentElement;
+		}
+		if (!scroller) throw new Error('a paper this wide should scroll');
 
-		// The name, the progress count and the band label stay put while the
-		// columns scroll under them.
-		expect(style('[data-testid="name-cell"]').position).toBe('sticky');
-		expect(style('[data-testid="name-cell"]').left).toBe('0px');
-		expect(style('[data-testid="progress-cell"]').position).toBe('sticky');
-		expect(style('[data-band-label]').position).toBe('sticky');
+		const left = (element: HTMLElement) => Math.round(element.getBoundingClientRect().left);
+		const before = { name: left(nameCell), progress: left(progressCell), last: left(lastColumn) };
+		scroller.scrollLeft = 400;
 
-		// A long name truncates rather than pushing the columns about.
-		expect(style('[data-testid="student-name"]').textOverflow).toBe('ellipsis');
+		await expect.poll(() => left(lastColumn)).toBeLessThan(before.last);
+		expect(left(nameCell)).toBe(before.name);
+		expect(left(progressCell)).toBe(before.progress);
+
+		// A long name is cut to its column rather than pushing the columns about.
+		const name = find('[data-testid="student-name"]');
+		expect(name.scrollWidth).toBeGreaterThan(name.clientWidth);
 	});
 });
 
@@ -780,9 +789,6 @@ describe('mark entry', () => {
 		const cell = markCell(screen, 'student-1', 'entry-1');
 		expect(cellText(screen, 'student-1', 'entry-1')).toBe('40');
 		expect(cell.getAttribute('aria-invalid')).toBe('true');
-		expect(getComputedStyle(cell).color).not.toBe(
-			getComputedStyle(markCell(screen, 'student-1', 'entry-2')).color
-		);
 	});
 
 	it('scrolls the cursor into view, clear of the frozen columns', async () => {

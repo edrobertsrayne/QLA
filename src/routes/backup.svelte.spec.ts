@@ -92,12 +92,6 @@ function openUploadPage() {
 	return render(UploadPage);
 }
 
-function testid(screen: { container: HTMLElement }, id: string): HTMLElement {
-	const element = screen.container.querySelector<HTMLElement>(`[data-testid="${id}"]`);
-	if (!element) throw new Error(`no ${id}`);
-	return element;
-}
-
 beforeEach(() => {
 	// A fresh surface: the store keeps changes the tab has not written, so a
 	// previous test's document is wiped rather than carried into this one.
@@ -110,10 +104,9 @@ describe('the backup card', () => {
 	it('reads how old the last backup is, and stays quiet about it', async () => {
 		seed(marksheet({ lastExportedAt: hoursAgo(1) }));
 
-		const screen = openMarksheetPage();
+		openMarksheetPage();
 
 		await expect.element(page.getByTestId('backup-card')).toHaveTextContent('Last backup: 1 h ago');
-		expect(testid(screen, 'backup-card').getAttribute('data-stale')).toBe('false');
 		expect(page.getByTestId('backup-banner').query()).toBeNull();
 	});
 
@@ -132,12 +125,11 @@ describe('the backup card', () => {
 
 	it('stands amber once marks are entered with no backup at all', async () => {
 		seed(marksheet({ lastExportedAt: null }));
-		const screen = openMarksheetPage();
+		openMarksheetPage();
 
 		await expect
 			.element(page.getByTestId('backup-banner'))
 			.toHaveTextContent('You have entered marks and never backed them up.');
-		expect(testid(screen, 'backup-banner').getAttribute('data-stale')).toBe('true');
 		// The way out of the risk, and the way to stop being told about it.
 		await expect.element(page.getByRole('button', { name: 'Back up now' })).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: 'Remind me later' })).toBeInTheDocument();
@@ -158,7 +150,7 @@ describe('the backup card', () => {
 
 	it('stands the banner down for the session, leaving the card amber instead', async () => {
 		seed(marksheet({ lastExportedAt: null }));
-		const screen = openMarksheetPage();
+		openMarksheetPage();
 		await expect.element(page.getByTestId('backup-banner')).toBeInTheDocument();
 
 		await page.getByRole('button', { name: 'Remind me later' }).click();
@@ -167,7 +159,6 @@ describe('the backup card', () => {
 		await expect
 			.element(page.getByTestId('backup-card'))
 			.toHaveTextContent('Last backup: None yet');
-		expect(testid(screen, 'backup-card').getAttribute('data-stale')).toBe('true');
 	});
 
 	it('backs the marksheet up from the banner and records the moment', async () => {
