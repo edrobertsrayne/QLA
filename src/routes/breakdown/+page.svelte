@@ -14,12 +14,21 @@
 	const warnings = $derived(store.document?.breakdown.warnings ?? []);
 	const usage = $derived(store.runUsage);
 	const marks = $derived(totalMarks(entries));
+	const title = $derived(
+		store.document?.paper.label
+			? `${store.document.paper.label} · Breakdown · QLA`
+			: 'Breakdown · QLA'
+	);
 	const labelById = $derived(new Map(entries.map((entry) => [entry.id, entry.label] as const)));
 
 	function onLabelInput(event: Event): void {
 		store.setPaperLabel((event.target as HTMLInputElement).value);
 	}
 </script>
+
+<svelte:head>
+	<title>{title}</title>
+</svelte:head>
 
 <main class="mx-auto max-w-5xl space-y-6 p-6">
 	<header class="flex items-start justify-between gap-4">

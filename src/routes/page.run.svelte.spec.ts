@@ -84,6 +84,8 @@ describe('+page.svelte run handler', () => {
 			.element(page.getByRole('link', { name: 'Open breakdown' }))
 			.toHaveAttribute('href', '/breakdown');
 		await expect.element(page.getByTestId('fatal-panel')).not.toBeInTheDocument();
+		// A stored breakdown must be replaced through New upload, not by running again.
+		await expect.element(page.getByRole('button', { name: 'Run' })).toBeDisabled();
 
 		const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
 		expect(stored.breakdownConfirmedAt).toBeNull();

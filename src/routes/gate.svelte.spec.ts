@@ -11,7 +11,8 @@ import UploadPage from './+page.svelte';
 
 const NOW = '2026-01-01T10:00:00.000Z';
 
-function document(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
+// Named for what it is: `document` is the DOM.
+function marksheetDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return {
 		schemaVersion: DOCUMENT_SCHEMA_VERSION,
 		createdAt: NOW,
@@ -66,28 +67,28 @@ describe('boot gate', () => {
 	it('lets every surface through when the stored state allows it', () => {
 		expect(redirectFrom(uploadLoad)).toBeNull();
 
-		seed(document({ breakdownConfirmedAt: null }));
+		seed(marksheetDocument({ breakdownConfirmedAt: null }));
 		expect(redirectFrom(breakdownLoad)).toBeNull();
 
-		seed(document({ breakdownConfirmedAt: NOW }));
+		seed(marksheetDocument({ breakdownConfirmedAt: NOW }));
 		expect(redirectFrom(marksheetLoad)).toBeNull();
 	});
 
 	it('sends a stored document from upload to the surface it allows', () => {
-		seed(document({ breakdownConfirmedAt: null }));
+		seed(marksheetDocument({ breakdownConfirmedAt: null }));
 		expect(redirectFrom(uploadLoad)).toMatchObject({ status: 307, location: '/breakdown' });
 
-		seed(document({ breakdownConfirmedAt: NOW }));
+		seed(marksheetDocument({ breakdownConfirmedAt: NOW }));
 		expect(redirectFrom(uploadLoad)).toMatchObject({ status: 307, location: '/marksheet' });
 	});
 
 	it('sends an unconfirmed breakdown to upload and to the marksheet away', () => {
-		seed(document({ breakdownConfirmedAt: null }));
+		seed(marksheetDocument({ breakdownConfirmedAt: null }));
 		expect(redirectFrom(marksheetLoad)).toMatchObject({ status: 307, location: '/breakdown' });
 	});
 
 	it('sends a confirmed breakdown on the breakdown route to the marksheet', () => {
-		seed(document({ breakdownConfirmedAt: NOW }));
+		seed(marksheetDocument({ breakdownConfirmedAt: NOW }));
 		expect(redirectFrom(breakdownLoad)).toMatchObject({ status: 307, location: '/marksheet' });
 	});
 
@@ -108,23 +109,25 @@ describe('boot gate', () => {
 // asserting synchronously (no await) that the stored state is what is on screen.
 describe('first paint', () => {
 	it('shows the stored breakdown with no loading state', () => {
-		seed(document());
+		seed(marksheetDocument());
 		expect(redirectFrom(breakdownLoad)).toBeNull();
 
 		const screen = render(BreakdownPage);
 
 		expect(screen.container.textContent).toContain('2bii');
 		expect(screen.container.textContent).not.toMatch(/loading/i);
+		expect(document.title).toBe('10X Ph1 · Breakdown · QLA');
 	});
 
 	it('shows the confirmed marksheet surface', () => {
-		seed(document({ breakdownConfirmedAt: NOW }));
+		seed(marksheetDocument({ breakdownConfirmedAt: NOW }));
 		expect(redirectFrom(marksheetLoad)).toBeNull();
 
 		const screen = render(MarksheetPage);
 
 		expect(screen.container.textContent).toContain('entries · 4 marks');
 		expect(screen.container.textContent).not.toMatch(/loading/i);
+		expect(document.title).toBe('Marksheet · QLA');
 	});
 
 	it('shows the parse form when nothing is stored', () => {
@@ -133,5 +136,6 @@ describe('first paint', () => {
 		const screen = render(UploadPage);
 
 		expect(screen.container.textContent).toContain('Parse assessment paper');
+		expect(document.title).toBe('Upload · QLA');
 	});
 });

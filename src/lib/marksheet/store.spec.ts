@@ -323,6 +323,32 @@ describe('createFromParse', () => {
 		expect(stored.paper.label).toBe('10X Ph1 2026');
 	});
 
+	it('keeps a warning beside the table when its parse label is ambiguous', () => {
+		const storage = fakeStorage();
+		const store = storeWith(storage);
+		const duplicate = {
+			...input.breakdown.questions[1],
+			id: '2bii',
+			summary: 'Describe the rate change'
+		};
+		store.createFromParse({
+			...input,
+			breakdown: { questions: [input.breakdown.questions[1], duplicate] },
+			warnings: [
+				{ questionId: '2bii', code: 'DUPLICATE_ID', message: "Duplicate question id '2bii'." },
+				{ questionId: 'q[0]', code: 'EMPTY_ID', message: 'Entry q[0] has an empty question id.' }
+			],
+			filenames: ['paper.pdf']
+		});
+
+		const stored = JSON.parse(storage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
+		expect(stored.breakdown.entries).toHaveLength(2);
+		expect(stored.breakdown.warnings).toEqual([
+			{ questionId: null, code: 'DUPLICATE_ID', message: "Duplicate question id '2bii'." },
+			{ questionId: null, code: 'EMPTY_ID', message: 'Entry q[0] has an empty question id.' }
+		]);
+	});
+
 	it('leaves the label null when the run had no filename', () => {
 		const storage = fakeStorage();
 		storeWith(storage).createFromParse({ ...input, filenames: [] });

@@ -60,6 +60,9 @@
 			paperError === null &&
 			markschemeError === null &&
 			specUrlError === null &&
+			// Once this page has stored a breakdown, another paper starts from New
+			// upload rather than silently replacing what is stored.
+			storedEntryCount === null &&
 			!running
 	);
 
@@ -183,6 +186,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Upload · QLA</title>
+</svelte:head>
+
 <main class="mx-auto max-w-4xl space-y-6 p-6">
 	<div class="space-y-2">
 		<h1 class="text-2xl font-bold tracking-tight">Parse assessment paper</h1>
@@ -268,7 +275,7 @@
 				<Card.Title>Breakdown stored</Card.Title>
 				<Card.Description>
 					{storedEntryCount} entries saved in this browser. Check them against the paper before you start
-					entering marks.
+					entering marks; another paper starts from New upload on the breakdown page.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>

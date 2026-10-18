@@ -7,7 +7,6 @@
 // document directly.
 
 import type { Breakdown, ParseUsage, ParseWarning } from '$lib/server/parse/schema.js';
-import { SvelteDate } from 'svelte/reactivity';
 import {
 	CORRUPT_KEY_PREFIX,
 	DOCUMENT_SCHEMA_VERSION,
@@ -115,7 +114,10 @@ export class MarksheetStore {
 	#loadResult: LoadResult = { kind: 'empty' };
 
 	document = $state<MarksheetDocument | null>(null);
-	saveState = $state<SaveState>({ kind: 'saved', at: new SvelteDate(0) });
+	// A placeholder the constructor immediately replaces: never mutated, so it
+	// needs no reactive wrapper.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	saveState = $state<SaveState>({ kind: 'saved', at: new Date(0) });
 	/** This session's parse cost. Absent after a reload. */
 	runUsage = $state<ParseUsage | null>(null);
 
@@ -201,13 +203,16 @@ export class MarksheetStore {
 		}));
 		const entryIdFor = (label: string | null): string | null => {
 			if (label === null) return null;
-			const index = input.breakdown.questions.findIndex((question) => question.id === label);
-			return index === -1 ? null : entries[index].id;
+			const matches = input.breakdown.questions.filter((question) => question.id === label);
+			// Only a label naming exactly one entry can carry a finding. A label the
+			// parse repeated, or one it never emitted (`q[3]` for an entry with no
+			// id), cannot be pinned to a row, so it stays beside the table.
+			return matches.length === 1
+				? entries[input.breakdown.questions.indexOf(matches[0])].id
+				: null;
 		};
 		const warnings: StoredWarning[] = input.warnings.map((warning) => ({
 			...warning,
-			// A finding about an entry the parse did not emit cannot follow a row,
-			// so it is kept beside the table rather than dropped.
 			questionId: entryIdFor(warning.questionId)
 		}));
 

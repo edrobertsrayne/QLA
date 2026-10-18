@@ -9,7 +9,16 @@
 	const entries = $derived(store.document?.breakdown.entries ?? []);
 	const students = $derived(store.document?.students ?? []);
 	const marks = $derived(totalMarks(entries));
+	const title = $derived(
+		store.document?.paper.className
+			? `${store.document.paper.className} · Marksheet · QLA`
+			: 'Marksheet · QLA'
+	);
 </script>
+
+<svelte:head>
+	<title>{title}</title>
+</svelte:head>
 
 <main class="mx-auto max-w-5xl space-y-6 p-6">
 	<header class="flex items-start justify-between gap-4">
