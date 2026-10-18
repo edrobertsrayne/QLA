@@ -8,6 +8,7 @@
 
 import type { BreakdownEntry, EditableField, StoredBreakdown, StoredWarning } from './document.js';
 import { EDITABLE_FIELDS, totalMarks } from './document.js';
+import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
 
 /** A contiguous run of entries belonging to one question: one band of the table. */
 export interface QuestionBand {
@@ -197,6 +198,30 @@ export function reconcilePaperTotal(
 /** What to call a band in prose: its question number, or a stand-in while it has none. */
 export function bandName(band: QuestionBand): string {
 	return band.questionNumber === '' ? '(none)' : band.questionNumber;
+}
+
+/**
+ * Whether a band's question number came from the parse's fallback rather than
+ * from the paper: an entry that still carries the finding and still bands under
+ * its own label. Correcting the number on the breakdown page clears it, so the
+ * flag always describes the breakdown as it stands.
+ */
+export function isFallbackBand(band: QuestionBand, warnings: readonly StoredWarning[]): boolean {
+	return band.entries.some(
+		(entry) =>
+			entry.questionNumber.trim() === entry.label.trim() &&
+			warningsForEntry(warnings, entry.id).some(
+				(warning) => warning.code === MISSING_QUESTION_NUMBER
+			)
+	);
+}
+
+/** The bands whose question number the parse could not read. */
+export function fallbackBands(
+	bands: readonly QuestionBand[],
+	warnings: readonly StoredWarning[]
+): QuestionBand[] {
+	return bands.filter((band) => isFallbackBand(band, warnings));
 }
 
 /**

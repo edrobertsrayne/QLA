@@ -25,7 +25,18 @@ import {
 	labelFromFilename,
 	parseStoredDocument
 } from './document.js';
-import type { BreakdownEntry, MarksheetDocument, StoredWarning } from './document.js';
+import type {
+	BreakdownEntry,
+	MarksheetDocument,
+	StoredStudent,
+	StoredWarning
+} from './document.js';
+import {
+	parseNameList,
+	sortStudentsByName,
+	type StudentName,
+	type StudentSortKey
+} from './students.js';
 
 /** Autosave window: a burst of typing becomes one write. */
 export const AUTOSAVE_DEBOUNCE_MS = 500;
@@ -64,17 +75,28 @@ export type BootRoute = '/' | '/breakdown' | '/marksheet';
 
 /**
  * The one change undo would take back, held in memory for the session. The next
- * change clears it, so a second click can never take back two things.
+ * change clears it, so a second click can never take back two things. Each kind
+ * carries back everything the removal took with it.
  */
-export type Undoable = {
-	/** The entry as it was, and its place among the others. */
-	entry: BreakdownEntry;
-	index: number;
-	/** The marks its students had gained on it, by student id. */
-	marks: Record<string, number>;
-	/** The parse's findings about it, as the breakdown held them before. */
-	findings: StoredWarning[];
-};
+export type Undoable =
+	| {
+			kind: 'entry-removal';
+			/** The entry as it was, and its place among the others. */
+			entry: BreakdownEntry;
+			index: number;
+			/** The marks its students had gained on it, by student id. */
+			marks: Record<string, number>;
+			/** The parse's findings about it, as the breakdown held them before. */
+			findings: StoredWarning[];
+	  }
+	| {
+			kind: 'student-removal';
+			/** The student as they were, and their place in the class. */
+			student: StoredStudent;
+			index: number;
+			/** The marks they had entered, by entry id. */
+			marks: Record<string, number>;
+	  };
 
 export interface CreateFromParseInput {
 	breakdown: Breakdown;
@@ -84,11 +106,16 @@ export interface CreateFromParseInput {
 	filenames: string[];
 }
 
-function newEntryId(): string {
+/**
+ * A stable id generated on this device, for an entry or a student. Marks are
+ * filed under it, so renaming, inserting or sorting never reassigns them — and
+ * being local, it is not the Phase 3 pseudonymization UUID.
+ */
+function localId(): string {
 	if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
 		return crypto.randomUUID();
 	}
-	return `entry-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /** MDN's storage-availability probe: private browsing exposes storage that refuses writes. */
@@ -241,7 +268,7 @@ export class MarksheetStore {
 		const at = this.#now();
 		const entries: BreakdownEntry[] = input.breakdown.questions.map((question) => {
 			const entry: BreakdownEntry = {
-				id: newEntryId(),
+				id: localId(),
 				label: question.id,
 				questionNumber: question.questionNumber,
 				marks: question.marks,
@@ -298,6 +325,15 @@ export class MarksheetStore {
 		if (!document) return;
 		const trimmed = label.trim();
 		document.paper.label = trimmed === '' ? null : trimmed;
+		this.#mutated();
+	}
+
+	/** Name the class. Blank means no name. */
+	setClassName(name: string): void {
+		const document = this.document;
+		if (!document) return;
+		const trimmed = name.trim();
+		document.paper.className = trimmed === '' ? null : trimmed;
 		this.#mutated();
 	}
 
@@ -420,6 +456,7 @@ export class MarksheetStore {
 		// After the change, since the change itself clears any undo on offer.
 		this.#mutated();
 		this.undoable = {
+			kind: 'entry-removal',
 			entry: $state.snapshot(entry),
 			index,
 			marks,
@@ -433,18 +470,27 @@ export class MarksheetStore {
 	 * there was: a change the teacher does not want is then one click from gone.
 	 */
 	undo(): boolean {
-		const document = this.#editable();
 		const undoable = this.undoable;
-		if (!document || !undoable) return false;
+		if (!undoable) return false;
+		// A restored entry is a breakdown edit, so it belongs to an unconfirmed
+		// breakdown; a student belongs to the marksheet either way.
+		const document = undoable.kind === 'entry-removal' ? this.#editable() : this.document;
+		if (!document) return false;
 
-		const entries = document.breakdown.entries;
-		entries.splice(Math.min(undoable.index, entries.length), 0, undoable.entry);
-		for (const [studentId, mark] of Object.entries(undoable.marks)) {
-			document.marks[studentId] ??= {};
-			document.marks[studentId][undoable.entry.id] = mark;
+		if (undoable.kind === 'entry-removal') {
+			const entries = document.breakdown.entries;
+			entries.splice(Math.min(undoable.index, entries.length), 0, undoable.entry);
+			for (const [studentId, mark] of Object.entries(undoable.marks)) {
+				document.marks[studentId] ??= {};
+				document.marks[studentId][undoable.entry.id] = mark;
+			}
+			// Nothing else can have touched them: any later change clears the undo.
+			document.breakdown.warnings = undoable.findings;
+		} else {
+			const students = document.students;
+			students.splice(Math.min(undoable.index, students.length), 0, undoable.student);
+			document.marks[undoable.student.id] = undoable.marks;
 		}
-		// Nothing else can have touched them: any later change clears the undo.
-		document.breakdown.warnings = undoable.findings;
 
 		this.#mutated();
 		return true;
@@ -464,6 +510,107 @@ export class MarksheetStore {
 		entries.splice(to, 0, entry);
 		this.#mutated();
 		return true;
+	}
+
+	/**
+	 * Add a student to the class, and hand back the id their marks are filed
+	 * under. The class is whatever the teacher pastes or types, in the order they
+	 * put it in — nothing here sorts them behind the teacher's back.
+	 */
+	addStudent(name: StudentName): string | null {
+		const document = this.document;
+		if (!document) return null;
+
+		const student: StoredStudent = {
+			id: localId(),
+			firstName: name.firstName,
+			surname: name.surname,
+			absent: false
+		};
+		document.students.push(student);
+		this.#mutated();
+		return student.id;
+	}
+
+	/**
+	 * Rename a student. Both parts are held separately, so either can be edited
+	 * alone — and since marks are filed under the student's id, a rename moves
+	 * nothing.
+	 */
+	renameStudent(studentId: string, name: StudentName): void {
+		const document = this.document;
+		if (!document) return;
+		const student = document.students.find((candidate) => candidate.id === studentId);
+		if (!student) return;
+
+		student.firstName = name.firstName;
+		student.surname = name.surname;
+		this.#mutated();
+	}
+
+	/**
+	 * Flag a student absent, or clear the flag. Their marks stay where they are:
+	 * absent is a flag on the student, not a mark, and clearing it counts them
+	 * again.
+	 */
+	setStudentAbsent(studentId: string, absent: boolean): void {
+		const document = this.document;
+		if (!document) return;
+		const student = document.students.find((candidate) => candidate.id === studentId);
+		if (!student) return;
+
+		student.absent = absent;
+		this.#mutated();
+	}
+
+	/** Remove a student, taking their marks with them, one undo away. */
+	removeStudent(studentId: string): boolean {
+		const document = this.document;
+		if (!document) return false;
+
+		const students = document.students;
+		const index = students.findIndex((student) => student.id === studentId);
+		if (index === -1) return false;
+		const [student] = students.splice(index, 1);
+
+		// A mark whose student is gone can never be read again, so it goes too.
+		const marks = document.marks[studentId] ?? {};
+		delete document.marks[studentId];
+
+		// After the change, since the change itself clears any undo on offer.
+		this.#mutated();
+		this.undoable = {
+			kind: 'student-removal',
+			student: $state.snapshot(student),
+			index,
+			marks: $state.snapshot(marks)
+		};
+		return true;
+	}
+
+	/** Put the class in order by one name part. The stored array is display order. */
+	sortStudents(by: StudentSortKey): void {
+		const document = this.document;
+		if (!document) return;
+
+		document.students = sortStudentsByName(document.students, by);
+		this.#mutated();
+	}
+
+	/**
+	 * Make a class out of a pasted column of names, one per line, and say how
+	 * many students it made. Blank lines are not students.
+	 */
+	pasteNames(names: string): number {
+		const document = this.document;
+		if (!document) return 0;
+
+		const parsed = parseNameList(names);
+		for (const name of parsed) {
+			document.students.push({ id: localId(), ...name, absent: false });
+		}
+		if (parsed.length > 0) this.#mutated();
+		return parsed.length;
 	}
 
 	/**
@@ -510,7 +657,7 @@ export class MarksheetStore {
 	/** An entry the teacher adds: nothing claimed, everything to fill in. */
 	#blankEntry(questionNumber: string): BreakdownEntry {
 		return {
-			id: newEntryId(),
+			id: localId(),
 			label: '',
 			questionNumber,
 			marks: null,

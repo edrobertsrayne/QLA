@@ -4,6 +4,7 @@ import {
 	confirmationBlockers,
 	entryEdits,
 	entryName,
+	fallbackBands,
 	isUndivided,
 	needsAttention,
 	questionBands,
@@ -229,6 +230,32 @@ describe('warnings', () => {
 			'SUMMARY_LENGTH'
 		]);
 		expect(warningsForEntry(warnings, 'b')).toEqual([]);
+	});
+});
+
+describe('fallback bands', () => {
+	const warning: StoredWarning = {
+		questionId: 'a',
+		code: 'MISSING_QUESTION_NUMBER',
+		message: "Entry 'a' has no question number; grouping falls back to its own id."
+	};
+
+	it('flags a band the parse could not read a question number for', () => {
+		const entries = [entry('a', '3b', '3b'), entry('b', '3c', '3b')];
+
+		expect(fallbackBands(questionBands(entries), [warning])).toHaveLength(1);
+	});
+
+	it('stops flagging once the question number is corrected', () => {
+		const entries = [entry('a', '3b', '3'), entry('b', '3c', '3')];
+
+		expect(fallbackBands(questionBands(entries), [warning])).toEqual([]);
+	});
+
+	it('does not flag a band whose number matches its label without the finding', () => {
+		const entries = [entry('a', '3', '3')];
+
+		expect(fallbackBands(questionBands(entries), [])).toEqual([]);
 	});
 });
 

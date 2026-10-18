@@ -131,7 +131,7 @@ describe('first paint', () => {
 
 		const screen = render(MarksheetPage);
 
-		expect(screen.container.textContent).toContain('entries · 4 marks');
+		expect(screen.container.textContent).toContain('0 students · 1 entry · 4 marks');
 		// The columns the marksheet is built from, read-only.
 		expect(screen.container.textContent).toContain('2bii');
 		expect(screen.container.textContent).toContain('/4');

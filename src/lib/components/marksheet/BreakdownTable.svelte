@@ -273,7 +273,7 @@
 	</Table.Row>
 {/snippet}
 
-{#if undoable}
+{#if undoable?.kind === 'entry-removal'}
 	<!-- Sticky: a row deleted 30 rows down must still offer its undo where the
 	     teacher is looking, and it stays until the next change clears it. -->
 	<Alert

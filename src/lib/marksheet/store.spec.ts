@@ -4,7 +4,8 @@ import type {
 	BreakdownEntry,
 	EntryValues,
 	MarksheetDocument,
-	StoredBreakdown
+	StoredBreakdown,
+	StoredStudent
 } from './document.js';
 import { MarksheetStore } from './store.svelte.js';
 import type { DocumentStorage, LoadResult } from './store.svelte.js';
@@ -125,6 +126,16 @@ function stored(storage: FakeStorage): MarksheetDocument {
 /** Entries the document keyed by id, so a test can assert the store's state. */
 function entryOf(store: MarksheetStore, id: string): BreakdownEntry | undefined {
 	return store.document?.breakdown.entries.find((candidate) => candidate.id === id);
+}
+
+/** One student, for documents whose class the test is about. */
+function student(id: string, firstName: string, surname: string): StoredStudent {
+	return { id, firstName, surname, absent: false };
+}
+
+/** A student the document keyed by id, so a test can assert the store's state. */
+function studentOf(store: MarksheetStore, id: string): StoredStudent | undefined {
+	return store.document?.students.find((candidate) => candidate.id === id);
 }
 
 /** The id a structure command returned, asserting there is one. */
@@ -1199,5 +1210,171 @@ describe('confirm breakdown', () => {
 
 		expect(store.confirmBreakdown()).toBe(true);
 		expect(store.route()).toBe('/marksheet');
+	});
+});
+
+describe('class', () => {
+	/** A confirmed document: the class belongs to the marksheet a confirmation builds. */
+	function openMarksheet(overrides: Partial<MarksheetDocument> = {}) {
+		return openStore({ breakdownConfirmedAt: NOW.toISOString(), ...overrides });
+	}
+
+	it('adds a student and hands back the id their marks will be filed under', () => {
+		const { store } = openMarksheet();
+
+		const id = idOf(store.addStudent({ firstName: 'Ada', surname: 'Lovelace' }));
+
+		expect(studentOf(store, id)).toEqual({
+			id,
+			firstName: 'Ada',
+			surname: 'Lovelace',
+			absent: false
+		});
+	});
+
+	it('renames a student in place, so their marks stay with them', () => {
+		const { store } = openMarksheet({
+			students: [student('student-1', 'Ada', 'Lovelace')],
+			marks: { 'student-1': { 'entry-1': 3 } }
+		});
+
+		store.renameStudent('student-1', { firstName: 'Ada', surname: 'Byron' });
+
+		expect(studentOf(store, 'student-1')).toMatchObject({ firstName: 'Ada', surname: 'Byron' });
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+	});
+
+	it('ignores a rename aimed at a student who is not there', () => {
+		const { store } = openMarksheet({ students: [student('student-1', 'Ada', 'Lovelace')] });
+
+		store.renameStudent('student-gone', { firstName: 'Grace', surname: 'Hopper' });
+
+		expect(store.document?.students).toHaveLength(1);
+	});
+
+	it('maps a pasted column of names to first names and surnames', () => {
+		const { store } = openMarksheet();
+
+		store.pasteNames('Lovelace, Ada\nGrace Brewster Hopper\nCher\n\n   \nHopper, Grace\r\n');
+
+		expect(store.document?.students).toEqual([
+			{ id: expect.any(String), firstName: 'Ada', surname: 'Lovelace', absent: false },
+			{ id: expect.any(String), firstName: 'Grace Brewster', surname: 'Hopper', absent: false },
+			{ id: expect.any(String), firstName: 'Cher', surname: '', absent: false },
+			{ id: expect.any(String), firstName: 'Grace', surname: 'Hopper', absent: false }
+		]);
+	});
+
+	it('says how many students a paste made', () => {
+		const { store } = openMarksheet();
+
+		expect(store.pasteNames('Lovelace, Ada\n\n')).toBe(1);
+		expect(store.pasteNames('')).toBe(0);
+	});
+
+	it('removes a student with their marks, and offers it back with undo', () => {
+		const { store } = openMarksheet({
+			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
+			marks: { 'student-1': { 'entry-1': 3 }, 'student-2': { 'entry-1': 4 } }
+		});
+
+		expect(store.removeStudent('student-1')).toBe(true);
+		expect(store.document?.students.map(({ id }) => id)).toEqual(['student-2']);
+		expect(store.document?.marks).toEqual({ 'student-2': { 'entry-1': 4 } });
+
+		expect(store.undo()).toBe(true);
+		expect(store.document?.students.map(({ id }) => id)).toEqual(['student-1', 'student-2']);
+		expect(store.document?.marks).toEqual({
+			'student-1': { 'entry-1': 3 },
+			'student-2': { 'entry-1': 4 }
+		});
+	});
+
+	it('refuses to remove a student who is not there', () => {
+		const { store } = openMarksheet({ students: [student('student-1', 'Ada', 'Lovelace')] });
+
+		expect(store.removeStudent('student-gone')).toBe(false);
+		expect(store.undoable).toBeNull();
+	});
+
+	it('keeps one removal on offer: the next change takes its place', () => {
+		const { store } = openMarksheet({
+			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')]
+		});
+
+		store.removeStudent('student-1');
+		store.setStudentAbsent('student-2', true);
+
+		expect(store.undoable).toBeNull();
+		expect(store.document?.students.map(({ id }) => id)).toEqual(['student-2']);
+	});
+
+	it('sorts the class by either name part without touching ids or marks', () => {
+		const { store } = openMarksheet({
+			students: [
+				student('student-1', 'Grace', 'Hopper'),
+				student('student-2', 'Ada', 'Lovelace'),
+				student('student-3', 'Cher', '')
+			],
+			marks: { 'student-1': { 'entry-1': 4 } }
+		});
+
+		store.sortStudents('surname');
+
+		expect(store.document?.students.map(({ surname }) => surname)).toEqual([
+			'',
+			'Hopper',
+			'Lovelace'
+		]);
+
+		store.sortStudents('firstName');
+
+		expect(store.document?.students.map(({ firstName }) => firstName)).toEqual([
+			'Ada',
+			'Cher',
+			'Grace'
+		]);
+		expect(store.document?.students.map(({ id }) => id)).toEqual([
+			'student-2',
+			'student-3',
+			'student-1'
+		]);
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 4 } });
+	});
+
+	it('flags a student absent and back, leaving their marks where they are', () => {
+		const { store } = openMarksheet({
+			students: [student('student-1', 'Ada', 'Lovelace')],
+			marks: { 'student-1': { 'entry-1': 3 } }
+		});
+
+		store.setStudentAbsent('student-1', true);
+
+		expect(studentOf(store, 'student-1')?.absent).toBe(true);
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+
+		store.setStudentAbsent('student-1', false);
+
+		expect(studentOf(store, 'student-1')?.absent).toBe(false);
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+	});
+
+	it('names the class, reading a blank name as none', () => {
+		const { store } = openMarksheet();
+
+		store.setClassName('  10C1 ');
+		expect(store.document?.paper.className).toBe('10C1');
+
+		store.setClassName('   ');
+		expect(store.document?.paper.className).toBeNull();
+	});
+
+	it('does nothing when no marksheet is stored', () => {
+		const store = storeWith(fakeStorage());
+
+		expect(store.addStudent({ firstName: 'Ada', surname: 'Lovelace' })).toBeNull();
+		expect(store.pasteNames('Ada Lovelace')).toBe(0);
+		expect(store.removeStudent('student-1')).toBe(false);
+		expect(store.document).toBeNull();
 	});
 });

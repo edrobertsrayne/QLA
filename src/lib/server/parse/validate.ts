@@ -11,6 +11,7 @@
 import type { ParseWarning } from './schema';
 import { ASSESSMENT_OBJECTIVES } from '$lib/parse/assessment-objectives.js';
 import { isBreakdown, isRecord } from '$lib/parse/is-breakdown.js';
+import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
 
 export { isBreakdown };
 
@@ -72,7 +73,7 @@ export function validateBreakdown(breakdown: unknown): ParseWarning[] {
 		if (typeof questionNumber !== 'string' || questionNumber.trim() === '') {
 			warn(
 				label,
-				'MISSING_QUESTION_NUMBER',
+				MISSING_QUESTION_NUMBER,
 				`Entry '${label}' has no question number; grouping falls back to its own id.`
 			);
 		}
