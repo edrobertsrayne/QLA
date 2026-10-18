@@ -6,7 +6,6 @@ import { STORAGE_KEY, markCount } from '$lib/marksheet/document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredWarning } from '$lib/marksheet/document.js';
 import { NOW, entry, parsed, seed, storedDocument } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
-import { load as breakdownLoad } from './+page.js';
 import BreakdownPage from './+page.svelte';
 
 const goto = vi.hoisted(() => vi.fn());
@@ -47,7 +46,7 @@ function marksStored(): number {
 
 /** The route's load guard reads storage before the page renders. */
 function openBreakdownPage() {
-	breakdownLoad();
+	marksheetStore().load();
 	return render(BreakdownPage);
 }
 

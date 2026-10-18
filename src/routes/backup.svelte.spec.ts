@@ -6,9 +6,7 @@ import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import { NOW, confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
-import { load as marksheetLoad } from './marksheet/+page.js';
 import MarksheetPage from './marksheet/+page.svelte';
-import { load as uploadLoad } from './+page.js';
 import UploadPage from './+page.svelte';
 
 const goto = vi.hoisted(() => vi.fn());
@@ -65,12 +63,12 @@ function backupFile(
 
 /** The route's load guard reads storage before the page renders. */
 function openMarksheetPage() {
-	marksheetLoad();
+	marksheetStore().load();
 	return render(MarksheetPage);
 }
 
 function openUploadPage() {
-	uploadLoad();
+	marksheetStore().load();
 	return render(UploadPage);
 }
 

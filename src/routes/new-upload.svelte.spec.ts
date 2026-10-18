@@ -13,9 +13,7 @@ import {
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
-import { load as breakdownLoad } from './breakdown/+page.js';
 import BreakdownPage from './breakdown/+page.svelte';
-import { load as marksheetLoad } from './marksheet/+page.js';
 import MarksheetPage from './marksheet/+page.svelte';
 
 const goto = vi.hoisted(() => vi.fn());
@@ -49,13 +47,13 @@ function daysAgo(days: number): string {
 
 /** The nav is where "New upload…" lives now, so the page is rendered under it. */
 function openMarksheetPage() {
-	marksheetLoad();
+	marksheetStore().load();
 	render(AppNav);
 	return render(MarksheetPage);
 }
 
 function openBreakdownPage() {
-	breakdownLoad();
+	marksheetStore().load();
 	render(AppNav);
 	return render(BreakdownPage);
 }

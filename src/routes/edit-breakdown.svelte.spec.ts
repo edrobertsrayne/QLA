@@ -12,9 +12,7 @@ import {
 	student
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
-import { load as breakdownLoad } from './breakdown/+page.js';
 import BreakdownPage from './breakdown/+page.svelte';
-import { load as marksheetLoad } from './marksheet/+page.js';
 import MarksheetPage from './marksheet/+page.svelte';
 
 const goto = vi.hoisted(() => vi.fn());
@@ -58,12 +56,12 @@ function confirmedDocument(overrides: Partial<MarksheetDocument> = {}): Markshee
 
 /** The route's load guard reads storage before the page renders. */
 function openMarksheetPage() {
-	marksheetLoad();
+	marksheetStore().load();
 	return render(MarksheetPage);
 }
 
 function openBreakdownPage() {
-	breakdownLoad();
+	marksheetStore().load();
 	return render(BreakdownPage);
 }
 

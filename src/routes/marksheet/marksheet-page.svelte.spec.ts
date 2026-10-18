@@ -14,7 +14,6 @@ import {
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
-import { load as marksheetLoad } from './+page.js';
 import MarksheetPage from './+page.svelte';
 
 /** The class as the grid shows it, in the order it shows them. */
@@ -100,7 +99,7 @@ beforeEach(() => {
 
 /** The route's load guard reads storage before the page renders. */
 function openMarksheetPage() {
-	marksheetLoad();
+	marksheetStore().load();
 	return render(MarksheetPage);
 }
 

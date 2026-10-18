@@ -6,7 +6,6 @@ import { STORAGE_KEY } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import { NOW, entry, parsed as sharedParsed, seed } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
-import { load as breakdownLoad } from './breakdown/+page.js';
 import BreakdownPage from './breakdown/+page.svelte';
 import Layout from './+layout.svelte';
 
@@ -38,7 +37,7 @@ function openShell() {
 
 /** The shell with the breakdown page, whose heading is the paper label's input. */
 function openShellOnBreakdown() {
-	breakdownLoad();
+	marksheetStore().load();
 	const shell = render(Layout, { children: surface });
 	render(BreakdownPage);
 	return shell;

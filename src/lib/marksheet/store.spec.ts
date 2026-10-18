@@ -7,7 +7,7 @@ import type {
 	StoredBreakdown,
 	StoredStudent
 } from './document.js';
-import { MarksheetStore } from './store.svelte.js';
+import { AUTOSAVE_DEBOUNCE_MS, MarksheetStore } from './store.svelte.js';
 import type { DocumentStorage, LoadResult } from './store.svelte.js';
 import { progressOf } from './students.js';
 
@@ -798,6 +798,26 @@ describe('autosave', () => {
 			store.load();
 
 			expect(store.document?.paper.label).toBe('10X/Ph1');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('keeps the document in hand, and its undo, when the gate reads again after a save', () => {
+		vi.useFakeTimers();
+		try {
+			const { store } = openStore({
+				breakdownConfirmedAt: NOW.toISOString(),
+				students: [student('student-1', 'Ada', 'Lovelace')]
+			});
+			store.removeStudent('student-1');
+			vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+			const inHand = store.document;
+
+			store.load();
+
+			expect(store.document).toBe(inHand);
+			expect(store.undoable).toMatchObject({ kind: 'student-removal' });
 		} finally {
 			vi.useRealTimers();
 		}

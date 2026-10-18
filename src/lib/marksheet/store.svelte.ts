@@ -229,9 +229,6 @@ export class MarksheetStore {
 	readonly #now: () => Date;
 	readonly #debounceMs: number;
 	#cancelTimer: (() => void) | null = null;
-	#loaded = false;
-	/** Changes not yet in storage: in-memory state wins over a re-read. */
-	#unsaved = false;
 	/** A failed write stops autosave rather than retrying behind the teacher's back. */
 	#failed = false;
 	#unavailable = false;
@@ -280,14 +277,13 @@ export class MarksheetStore {
 	}
 
 	/**
-	 * Read the stored document. Safe to call once per navigation: it re-reads
-	 * storage only when the tab holds nothing unsaved, so a guard can never
-	 * clobber marks typed but not yet written.
+	 * Read the stored document. Safe to call on every navigation: with a document
+	 * in hand it returns at once, because in-memory state is the truth; storage is
+	 * read only while there is nothing in hand to lose.
 	 */
 	load(): LoadResult {
-		if (this.#loaded && this.#unsaved) return this.#loadResult;
+		if (this.document) return this.#loadResult;
 
-		this.#loaded = true;
 		this.#failed = false;
 
 		if (!storageAvailable(this.#storage)) {
@@ -322,7 +318,6 @@ export class MarksheetStore {
 			});
 		}
 
-		this.#unsaved = false;
 		const loaded = dropUnreachableMarks(document);
 		return this.#settle({ kind: 'ready', document: loaded }, loaded, {
 			kind: 'saved',
@@ -417,7 +412,6 @@ export class MarksheetStore {
 			marks: {}
 		};
 		this.runUsage = input.usage;
-		this.#loaded = true;
 		this.backupReminderDismissed = false;
 		this.#settle({ kind: 'ready', document }, document);
 		this.#write();
@@ -981,8 +975,6 @@ export class MarksheetStore {
 		// the next boot, and the document reaches storage at once rather than on
 		// the debounce: it is the teacher's only copy until they back up again.
 		const document = dropUnreachableMarks(parsed);
-		this.#loaded = true;
-		this.#unsaved = false;
 		this.runUsage = null;
 		this.backupReminderDismissed = false;
 		this.#settle({ kind: 'ready', document }, document);
@@ -998,8 +990,6 @@ export class MarksheetStore {
 		} catch {
 			// Nothing to do: in-memory state is gone either way.
 		}
-		this.#loaded = true;
-		this.#unsaved = false;
 		this.#failed = false;
 		this.runUsage = null;
 		this.#settle(
@@ -1110,7 +1100,6 @@ export class MarksheetStore {
 		this.undoable = null;
 		this.pasteNotice = null;
 		document.updatedAt = this.#now().toISOString();
-		this.#unsaved = true;
 		if (this.#failed || this.#unavailable) return;
 		this.saveState = { kind: 'saving' };
 		this.#schedule();
@@ -1140,9 +1129,6 @@ export class MarksheetStore {
 		if (!document) return;
 		this.#cancelPending();
 		document.updatedAt = this.#now().toISOString();
-		// Nothing may re-read storage over this document until it has landed:
-		// a refused or unavailable write leaves it only in this tab.
-		this.#unsaved = true;
 		if (this.#unavailable) return;
 		try {
 			this.#storage.setItem(STORAGE_KEY, JSON.stringify(document));
@@ -1151,7 +1137,6 @@ export class MarksheetStore {
 			this.saveState = { kind: 'failed', since: this.#savedAt };
 			return;
 		}
-		this.#unsaved = false;
 		this.#failed = false;
 		this.#markSaved();
 	}

@@ -4,7 +4,6 @@ import { render } from 'vitest-browser-svelte';
 import { CORRUPT_KEY_PREFIX, STORAGE_KEY } from '$lib/marksheet/document.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
-import { load as uploadLoad } from './+page.js';
 import UploadPage from './+page.svelte';
 
 /** A document this version cannot read: written by a newer one. */
@@ -26,7 +25,7 @@ describe('an unreadable stored document', () => {
 	it('boots to upload, keeps the copy, and offers its raw text out', async () => {
 		localStorage.setItem(STORAGE_KEY, UNREADABLE);
 
-		uploadLoad();
+		marksheetStore().load();
 		render(UploadPage);
 
 		await expect
@@ -52,7 +51,7 @@ describe('an unreadable stored document', () => {
 	it('drops the alert once a document is stored again', async () => {
 		localStorage.setItem(STORAGE_KEY, UNREADABLE);
 
-		uploadLoad();
+		marksheetStore().load();
 		render(UploadPage);
 		await expect.element(page.getByTestId('corrupt-alert')).toBeInTheDocument();
 

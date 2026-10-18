@@ -2,19 +2,15 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { STORAGE_KEY } from '$lib/marksheet/document.js';
 import { NOW, parsed, seed } from '$lib/marksheet/fixtures.spec-helpers.js';
-import { load as breakdownLoad } from './breakdown/+page.js';
+import { marksheetStore } from '$lib/marksheet/index.js';
+import { load } from './+layout.js';
 import BreakdownPage from './breakdown/+page.svelte';
-import { load as marksheetLoad } from './marksheet/+page.js';
 import MarksheetPage from './marksheet/+page.svelte';
-import { load as uploadLoad } from './+page.js';
 import UploadPage from './+page.svelte';
 
-// Named for what it is: `document` is the DOM.
-const marksheetDocument = parsed;
-
-function redirectFrom(load: () => unknown): { status: number; location: string } | null {
+function redirectFrom(path: string): { status: number; location: string } | null {
 	try {
-		load();
+		load({ url: new URL(path, 'http://localhost') });
 		return null;
 	} catch (error) {
 		return error as { status: number; location: string };
@@ -22,48 +18,51 @@ function redirectFrom(load: () => unknown): { status: number; location: string }
 }
 
 beforeEach(() => {
+	marksheetStore().wipe();
 	localStorage.clear();
 });
 
 describe('boot gate', () => {
 	it('lets every surface through when the stored state allows it', () => {
-		expect(redirectFrom(uploadLoad)).toBeNull();
+		expect(redirectFrom('/')).toBeNull();
 
-		seed(marksheetDocument({ breakdownConfirmedAt: null }));
-		expect(redirectFrom(breakdownLoad)).toBeNull();
+		seed(parsed({ breakdownConfirmedAt: null }));
+		expect(redirectFrom('/breakdown')).toBeNull();
 
-		seed(marksheetDocument({ breakdownConfirmedAt: NOW }));
-		expect(redirectFrom(marksheetLoad)).toBeNull();
+		marksheetStore().wipe();
+		seed(parsed({ breakdownConfirmedAt: NOW }));
+		expect(redirectFrom('/marksheet')).toBeNull();
 	});
 
 	it('sends a stored document from upload to the surface it allows', () => {
-		seed(marksheetDocument({ breakdownConfirmedAt: null }));
-		expect(redirectFrom(uploadLoad)).toMatchObject({ status: 307, location: '/breakdown' });
+		seed(parsed({ breakdownConfirmedAt: null }));
+		expect(redirectFrom('/')).toMatchObject({ status: 307, location: '/breakdown' });
 
-		seed(marksheetDocument({ breakdownConfirmedAt: NOW }));
-		expect(redirectFrom(uploadLoad)).toMatchObject({ status: 307, location: '/marksheet' });
+		marksheetStore().wipe();
+		seed(parsed({ breakdownConfirmedAt: NOW }));
+		expect(redirectFrom('/')).toMatchObject({ status: 307, location: '/marksheet' });
 	});
 
 	it('sends an unconfirmed breakdown to upload and to the marksheet away', () => {
-		seed(marksheetDocument({ breakdownConfirmedAt: null }));
-		expect(redirectFrom(marksheetLoad)).toMatchObject({ status: 307, location: '/breakdown' });
+		seed(parsed({ breakdownConfirmedAt: null }));
+		expect(redirectFrom('/marksheet')).toMatchObject({ status: 307, location: '/breakdown' });
 	});
 
 	it('sends a confirmed breakdown on the breakdown route to the marksheet', () => {
-		seed(marksheetDocument({ breakdownConfirmedAt: NOW }));
-		expect(redirectFrom(breakdownLoad)).toMatchObject({ status: 307, location: '/marksheet' });
+		seed(parsed({ breakdownConfirmedAt: NOW }));
+		expect(redirectFrom('/breakdown')).toMatchObject({ status: 307, location: '/marksheet' });
 	});
 
 	it('sends nothing stored on any route to upload', () => {
-		expect(redirectFrom(breakdownLoad)).toMatchObject({ status: 307, location: '/' });
-		expect(redirectFrom(marksheetLoad)).toMatchObject({ status: 307, location: '/' });
+		expect(redirectFrom('/breakdown')).toMatchObject({ status: 307, location: '/' });
+		expect(redirectFrom('/marksheet')).toMatchObject({ status: 307, location: '/' });
 	});
 
 	it('sends an unreadable document back to upload', () => {
 		localStorage.setItem(STORAGE_KEY, '{"schemaVersion":99}');
 
-		expect(redirectFrom(breakdownLoad)).toMatchObject({ status: 307, location: '/' });
-		expect(redirectFrom(marksheetLoad)).toMatchObject({ status: 307, location: '/' });
+		expect(redirectFrom('/breakdown')).toMatchObject({ status: 307, location: '/' });
+		expect(redirectFrom('/marksheet')).toMatchObject({ status: 307, location: '/' });
 	});
 });
 
@@ -71,8 +70,8 @@ describe('boot gate', () => {
 // asserting synchronously (no await) that the stored state is what is on screen.
 describe('first paint', () => {
 	it('shows the stored breakdown with no loading state', () => {
-		seed(marksheetDocument());
-		expect(redirectFrom(breakdownLoad)).toBeNull();
+		seed(parsed());
+		expect(redirectFrom('/breakdown')).toBeNull();
 
 		const screen = render(BreakdownPage);
 
@@ -88,8 +87,8 @@ describe('first paint', () => {
 	});
 
 	it('shows the confirmed marksheet surface', () => {
-		seed(marksheetDocument({ breakdownConfirmedAt: NOW }));
-		expect(redirectFrom(marksheetLoad)).toBeNull();
+		seed(parsed({ breakdownConfirmedAt: NOW }));
+		expect(redirectFrom('/marksheet')).toBeNull();
 
 		const screen = render(MarksheetPage);
 
@@ -102,7 +101,7 @@ describe('first paint', () => {
 	});
 
 	it('shows the parse form when nothing is stored', () => {
-		expect(redirectFrom(uploadLoad)).toBeNull();
+		expect(redirectFrom('/')).toBeNull();
 
 		const screen = render(UploadPage);
 
