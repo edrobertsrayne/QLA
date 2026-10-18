@@ -39,6 +39,7 @@
 		type QuestionBand
 	} from '$lib/marksheet/breakdown.js';
 	import type { BreakdownEntry, StoredStudent } from '$lib/marksheet/document.js';
+	import { resolveCell, type GridCell } from '$lib/marksheet/grid-cursor.js';
 	import { exportMarksNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { clipboardGrid, type PasteResult } from '$lib/marksheet/paste.js';
 	import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
@@ -67,7 +68,7 @@
 	const pasteNotice = $derived(store.pasteNotice);
 
 	/** Where the cursor is: a mark cell, or a row's name cell when `entryId` is null. */
-	let cursor = $state<{ studentId: string; entryId: string | null } | null>(null);
+	let cursor = $state<GridCell | null>(null);
 	/** The open mark editor: the cell it is on, and what has been typed into it. */
 	let editing = $state<{ studentId: string; entryId: string; value: string } | null>(null);
 	/**
@@ -156,10 +157,12 @@
 		return lines.join('\n');
 	}
 
-	/** The cell a keystroke would land on: where the cursor is, else the first cell. */
-	const activeCell = $derived(
-		cursor ?? (students[0] ? { studentId: students[0].id, entryId: entries[0]?.id ?? null } : null)
-	);
+	const shape = $derived({
+		studentIds: students.map((student) => student.id),
+		entryIds: entries.map((entry) => entry.id)
+	});
+	/** The cell a keystroke would land on: the cursor while its row and column exist, else the first cell. */
+	const activeCell = $derived(resolveCell(cursor, shape));
 
 	/** The band the cursor's column belongs to, which the band row highlights. */
 	const cursorBand = $derived(

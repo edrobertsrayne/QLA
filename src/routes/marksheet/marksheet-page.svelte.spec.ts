@@ -742,6 +742,20 @@ describe('mark entry', () => {
 		expect(cell.getAttribute('aria-invalid')).toBe('true');
 	});
 
+	it('leaves the keyboard one cell to land on when the cursor row is removed', async () => {
+		seed(
+			confirmed({
+				students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')]
+			})
+		);
+		const screen = openMarksheetPage();
+
+		await userEvent.click(markCell(screen, 'student-2', 'entry-1'));
+		await page.getByRole('button', { name: 'Remove Grace Hopper' }).click();
+
+		expect(tabbableCells(screen)).toHaveLength(1);
+	});
+
 	it('scrolls the cursor into view, clear of the frozen columns', async () => {
 		seed(
 			confirmed({
