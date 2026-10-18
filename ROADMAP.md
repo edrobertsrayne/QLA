@@ -33,9 +33,9 @@ Charted as [Phase 2 Marksheet — wayfinder map](https://github.com/edrobertsray
 
 ## Phase 3 — Report
 
-Marksheet → individual, question-by-question student report with generated feedback. Feedback generation is a server-proxied OpenRouter call over UUID-pseudonymized marks/answers (per the locked decisions above); the browser rejoins UUID → name before rendering.
+Marksheet → individual, question-by-question student report with generated feedback. Feedback generation is a server-proxied OpenRouter call over UUID-pseudonymized marks (per the locked decisions above); the browser rejoins UUID → name before rendering.
 
-Not yet specified: report format/output (on-screen, PDF, print), feedback tone/structure, how much of the spec-code breakdown surfaces in the report.
+Charted as [Phase 3 Report — wayfinder map](https://github.com/edrobertsrayne/QLA/issues/46). Scope settled at charting: reports are **student-facing only**, one per eligible student (not absent, fully marked, no over-max marks), printed from the browser one per page. Every figure is local arithmetic (marks per breakdown entry, a roll-up by topic name and assessment objective, and a grade with marks to next grade from optional teacher-typed grade boundaries, also shown on the marksheet); the model writes only the what-went-well / even-better-if prose, from marks alone (no student answers are captured). Remaining open decisions live as the map's child tickets.
 
 ## Out of scope
 

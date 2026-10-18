@@ -62,7 +62,7 @@ The proportion of a question or subquestion's available marks that a class actua
 _Avoid_: Difficulty, average score, success rate, % marks
 
 **RAG band**:
-Red, Amber or Green, given to a facility index by fixed absolute thresholds that are the same on every paper — never relative to the class.
+Red, Amber or Green, given to a share of available marks by fixed absolute thresholds that are the same on every paper — never relative to the class. Given to a class's facility index in analysis, and to a student's own mark on a breakdown entry or own roll-up figure in a report; never to a student's total mark.
 _Avoid_: Grade, rating, percentile
 
 **Not scored**:
@@ -120,3 +120,27 @@ _Avoid_: Backup, save, download
 **New upload**:
 The destructive action that discards the stored breakdown and marksheet and returns to uploading a fresh assessment paper and/or markscheme. Only exists once something is stored.
 _Avoid_: Reset, clear, start over
+
+**Report**:
+One student's question-by-question account of an assessment, written to the student and handed back with the paper: their total, grade and marks to next grade (when the paper has grade boundaries), their marks per breakdown entry, their roll-up, and generated feedback. Only produced for a student who is not absent, has a mark on every breakdown entry, and has no mark above an entry's available marks. Distinct from **analysis**, which is the teacher's class-level view.
+_Avoid_: Analysis, results, feedback sheet (feedback is one part of a report)
+
+**Roll-up**:
+One student's marks summed by specification point (marks gained out of available, across every breakdown entry carrying that specification point) and separately by assessment objective. An entry with no specification point counts only toward its assessment objective. Never class-wide.
+_Avoid_: Topic summary, aggregate, spec breakdown
+
+**Topic name**:
+The student-readable name for a specification point (e.g. "Transverse and longitudinal waves" for "4.6.1.1"), proposed by the model and confirmed by the teacher, so a report never shows a student a bare code.
+_Avoid_: Spec title, topic label
+
+**Grade boundary**:
+The minimum total mark on this paper for a grade (e.g. 6 at 52), typed in by the teacher for each paper. Optional: a paper without grade boundaries gives no grades. Always in raw marks on one paper, never a percentage or a total across several papers.
+_Avoid_: Cut-off, threshold (thresholds belong to RAG bands)
+
+**Grade**:
+The label of the highest grade boundary a student's total mark reaches, or the teacher-set label for falling below every boundary (`U` by default). Labels are whatever the teacher enters; no board's scale is built in.
+_Avoid_: Level, RAG band, result
+
+**Marks to next grade**:
+The next grade boundary above a student's total mark, minus that total. None at the top grade.
+_Avoid_: Gap, shortfall, distance to target
