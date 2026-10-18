@@ -7,7 +7,7 @@
 	removed, and the lot reordered by either name part.
 -->
 <script lang="ts">
-	import { flushSync } from 'svelte';
+	import { flushSync, type Snippet } from 'svelte';
 	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
 	import { Button } from '$lib/components/ui/button';
 	import * as Table from '$lib/components/ui/table';
@@ -38,10 +38,19 @@
 		FROZEN_PROGRESS,
 		NAME_COLUMN,
 		PROGRESS_PIN,
-		selectedCell
+		selectedCell,
+		type GradeColumns
 	} from './grid-layout.js';
 
-	let { onViewAnalysis }: { onViewAnalysis: (entryId: string | null) => void } = $props();
+	let {
+		onViewAnalysis,
+		grade = null
+	}: {
+		onViewAnalysis: (entryId: string | null) => void;
+		/** PROTOTYPE (#55): grade columns, frozen beside progress or at the end. The
+		 *  snippets render whole cells: `head` the header cells, `cell` one row's cells. */
+		grade?: (GradeColumns & { head: Snippet; cell: Snippet<[StoredStudent]> }) | null;
+	} = $props();
 
 	const store = marksheetStore();
 	const entries = $derived(store.entries);
@@ -331,29 +340,40 @@
 	<EmptyClassPanel onAddOne={startAdding} />
 {/if}
 
-<div class="relative overflow-hidden rounded-xl border" onpaste={onPaste} bind:this={gridRoot}>
+<div
+	class="relative overflow-hidden rounded-xl border"
+	onpaste={onPaste}
+	bind:this={gridRoot}
+	style={grade?.placement === 'frozen' ? `--qla-extra-frozen: ${grade.widths[0]}` : undefined}
+>
 	<Table.Root class="table-fixed w-fit" role="grid" aria-label="Marksheet grid">
 		<!-- The widths every cell obeys: narrow entry columns, a frozen name and
 		     progress column, so a paper scrolls sideways only when it must. -->
 		<colgroup>
 			<col style="width: {COLUMN.name}" />
 			<col style="width: {COLUMN.progress}" />
+			{#if grade?.placement === 'frozen'}<col style="width: {grade.widths[0]}" />{/if}
 			{#each entries as entry (entry.id)}
 				<col style="width: {COLUMN.entry}" />
 			{/each}
+			{#if grade?.placement === 'end'}
+				{#each grade.widths as width, i (i)}<col style="width: {width}" />{/each}
+			{/if}
 		</colgroup>
 		<Table.Header>
 			{#if store.questionBands.length > 0}
-				<BandHeaderRow cursorEntryId={cursor?.entryId ?? null} onJump={jumpToBand} />
+				<BandHeaderRow cursorEntryId={cursor?.entryId ?? null} onJump={jumpToBand} {grade} />
 			{/if}
 			<Table.Row role="row" class="hover:bg-transparent">
 				<Table.Head class={cn(NAME_COLUMN, 'px-1.5 text-left text-xs')}>Student</Table.Head>
 				<Table.Head class={cn(FROZEN_PROGRESS, 'px-1 text-xs')} style={PROGRESS_PIN}
 					>Progress</Table.Head
 				>
+				{#if grade?.placement === 'frozen'}{@render grade.head()}{/if}
 				{#each entries as entry (entry.id)}
 					<EntryColumnHead {entry} active={cursor?.entryId === entry.id} />
 				{/each}
+				{#if grade?.placement === 'end'}{@render grade.head()}{/if}
 			</Table.Row>
 		</Table.Header>
 		<Table.Body>
@@ -386,6 +406,7 @@
 					>
 						{student.absent ? 'absent' : `${progress.marked}/${progress.total}`}
 					</Table.Cell>
+					{#if grade?.placement === 'frozen'}{@render grade.cell(student)}{/if}
 					{#each entries as entry (entry.id)}
 						{@const mark = markOf(student, entry)}
 						{@const overMax = mark !== undefined && isOverMax(mark, entry)}
@@ -431,6 +452,7 @@
 							{/if}
 						</Table.Cell>
 					{/each}
+					{#if grade?.placement === 'end'}{@render grade.cell(student)}{/if}
 				</Table.Row>
 			{/each}
 			<Table.Row role="row" class="hover:bg-transparent">
@@ -455,9 +477,9 @@
 						</Button>
 					{/if}
 				</Table.Cell>
-				<Table.Cell colspan={entries.length + 1} role="gridcell" />
+				<Table.Cell colspan={entries.length + 1 + (grade?.widths.length ?? 0)} role="gridcell" />
 			</Table.Row>
 		</Table.Body>
-		<FacilityFooter {onViewAnalysis} />
+		<FacilityFooter {onViewAnalysis} {grade} />
 	</Table.Root>
 </div>

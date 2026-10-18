@@ -3,40 +3,63 @@
 	1 Topic names → 2 Who gets one → 3 Writing (a tile per student) → 4 Review: every
 	report as the printed page, stacked, edited in place on the sheet, with an index
 	rail. Coming back later with reports written lands straight on Review.
+
+	PROTOTYPE (#55): `grade` picks where boundaries are entered and how the grade column
+	reads — A in the grid's frozen Grade column, B as a strip above the grid, C as a
+	dialog from the header and an optional Grades step in this flow.
 -->
 <script lang="ts">
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import PrinterIcon from '@lucide/svelte/icons/printer';
 	import AnalysisView from '$lib/components/marksheet/AnalysisView.svelte';
-	import MarksheetGrid from '$lib/components/marksheet/MarksheetGrid.svelte';
 	import BackupCard from '$lib/components/shell/BackupCard.svelte';
 	import PaperLabelInput from '$lib/components/shell/PaperLabelInput.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import BoundaryStrip from '$lib/prototypes/grade-boundaries/BoundaryStrip.svelte';
+	import BoundaryText from '$lib/prototypes/grade-boundaries/BoundaryText.svelte';
+	import GradeGrid from '$lib/prototypes/grade-boundaries/GradeGrid.svelte';
+	import { boundaries } from '$lib/prototypes/grade-boundaries/grades.svelte.js';
 	import { cn } from '$lib/utils';
 	import ReportSheet from './ReportSheet.svelte';
 	import StatusChip from './StatusChip.svelte';
 	import TopicNames from './TopicNames.svelte';
 	import { blockerText, reportFlow } from './flow.svelte.js';
 
+	let { grade }: { grade: 'A' | 'B' | 'C' } = $props();
+
+	type StepKey = 'names' | 'grades' | 'who' | 'writing' | 'review';
 	const flow = reportFlow();
-	const STEPS = ['Topic names', 'Who gets one', 'Writing', 'Review and print'] as const;
+	const STEPS = $derived(
+		(
+			[
+				['names', 'Topic names'],
+				['grades', 'Grades'],
+				['who', 'Who gets one'],
+				['writing', 'Writing'],
+				['review', 'Review and print']
+			] as const
+		).filter(([key]) => key !== 'grades' || grade === 'C')
+	);
 	let view = $state<'grid' | 'analysis' | 'flow'>('grid');
-	let step = $state(0);
+	let step = $state<StepKey>('names');
 	let highlighted = $state<string | null>(null);
+	let boundaryDialog = $state(false);
+	const gradeCount = $derived(boundaries().length);
 
 	function start() {
 		view = 'flow';
-		if (flow.done.length > 0) step = 3;
+		if (flow.done.length > 0) step = 'review';
 		else {
-			step = flow.codes.length === 0 ? 1 : 0;
+			step = flow.codes.length === 0 ? (grade === 'C' ? 'grades' : 'who') : 'names';
 			void flow.proposeMissingNames();
 		}
 	}
 
 	function write() {
-		step = 2;
+		step = 'writing';
 		void flow.generateAll().then(() => {
-			if (flow.failed.length === 0 && step === 2) step = 3;
+			if (flow.failed.length === 0 && step === 'writing') step = 'review';
 		});
 	}
 </script>
@@ -56,17 +79,30 @@
 					{flow.eligible.length} of {flow.rows.length} students are fully marked and can have a report.
 				{/if}
 			</p>
-			<Button class="ml-auto" onclick={start}
+			{#if grade === 'C'}
+				<Button variant="outline" class="ml-auto" onclick={() => (boundaryDialog = true)}>
+					{gradeCount > 0 ? `Grade boundaries (${gradeCount})` : 'Set grade boundaries'}
+				</Button>
+			{/if}
+			<Button class={grade === 'C' ? '' : 'ml-auto'} onclick={start}
 				>{flow.done.length > 0 ? 'Open reports' : 'Make reports'}</Button
 			>
 		</div>
+		{#if grade === 'B'}<BoundaryStrip />{/if}
 	</header>
-	<MarksheetGrid
+	<GradeGrid
+		variant={grade}
 		onViewAnalysis={(id) => {
 			highlighted = id;
 			view = 'analysis';
 		}}
 	/>
+	<Dialog.Root bind:open={boundaryDialog}>
+		<Dialog.Content class="sm:max-w-2xl">
+			<Dialog.Header><Dialog.Title>Grade boundaries</Dialog.Title></Dialog.Header>
+			<BoundaryText onDone={() => (boundaryDialog = false)} />
+		</Dialog.Content>
+	</Dialog.Root>
 {:else if view === 'analysis'}
 	<AnalysisView highlight={highlighted} onBack={() => (view = 'grid')} />
 {:else}
@@ -76,17 +112,17 @@
 				<ArrowLeftIcon class="size-4" /> Marksheet
 			</Button>
 			<ol class="flex items-center gap-2 text-sm">
-				{#each STEPS as label, i (label)}
+				{#each STEPS as [key, label], i (key)}
 					<li>
 						<button
 							type="button"
 							class={cn(
 								'rounded-full px-3 py-1',
-								i === step
+								key === step
 									? 'bg-primary text-primary-foreground'
 									: 'text-muted-foreground hover:bg-muted'
 							)}
-							onclick={() => (step = i)}
+							onclick={() => (step = key)}
 						>
 							{i + 1}. {label}
 						</button>
@@ -95,16 +131,31 @@
 			</ol>
 		</div>
 
-		{#if step === 0}
+		{#if step === 'names'}
 			<section class="mx-auto max-w-xl space-y-4">
 				<h2 class="text-lg font-semibold">Name the topics</h2>
 				<p class="text-sm text-muted-foreground">
 					Each report groups marks by topic. These names are what students read.
 				</p>
 				<TopicNames />
-				<Button disabled={flow.missingNames.length > 0} onclick={() => (step = 1)}>Next</Button>
+				<Button
+					disabled={flow.missingNames.length > 0}
+					onclick={() => (step = grade === 'C' ? 'grades' : 'who')}>Next</Button
+				>
 			</section>
-		{:else if step === 1}
+		{:else if step === 'grades'}
+			<section class="mx-auto max-w-3xl space-y-4">
+				<h2 class="text-lg font-semibold">Grades (optional)</h2>
+				<p class="text-sm text-muted-foreground">
+					With boundaries, each report shows the student's grade and the marks to the next one.
+					Without them, reports show marks and percentages only.
+				</p>
+				<BoundaryText onDone={() => (step = 'who')} />
+				<Button variant="link" class="h-auto p-0" onclick={() => (step = 'who')}>
+					{gradeCount > 0 ? 'Keep these and go on' : 'Skip: no grades on these reports'}
+				</Button>
+			</section>
+		{:else if step === 'who'}
 			<section class="mx-auto max-w-xl space-y-4">
 				<h2 class="text-lg font-semibold">{flow.eligible.length} students get a report</h2>
 				{#if flow.blocked.length > 0}
@@ -131,7 +182,7 @@
 					<p class="text-sm text-amber-700 dark:text-amber-300">Name every topic first (step 1).</p>
 				{/if}
 			</section>
-		{:else if step === 2}
+		{:else if step === 'writing'}
 			<section class="space-y-4">
 				<div class="flex items-center gap-3">
 					<h2 class="text-lg font-semibold">
@@ -147,7 +198,7 @@
 								>Retry failed</Button
 							>
 						{/if}
-						<Button size="sm" onclick={() => (step = 3)}>Review {flow.done.length}</Button>
+						<Button size="sm" onclick={() => (step = 'review')}>Review {flow.done.length}</Button>
 					{/if}
 				</div>
 				{#if flow.run.message}

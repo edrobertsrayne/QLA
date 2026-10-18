@@ -7,6 +7,7 @@
 	import { questionBands } from '$lib/marksheet/breakdown.js';
 	import { facilityBand, type RagBand } from '$lib/marksheet/analysis.js';
 	import { reportFlow } from './flow.svelte.js';
+	import { gradeOf } from '$lib/prototypes/grade-boundaries/grades.svelte.js';
 
 	let { studentId, editable = false }: { studentId: string; editable?: boolean } = $props();
 
@@ -24,6 +25,7 @@
 	const LETTER: Record<RagBand, string> = { red: 'R', amber: 'A', green: 'G' };
 	const pct = (gained: number, available: number) =>
 		available === 0 ? 0 : Math.round((gained / available) * 100);
+	const grade = $derived(gradeOf(row.total));
 </script>
 
 <article
@@ -37,7 +39,12 @@
 		<p class="text-right">
 			<span class="text-[16pt] font-bold tabular-nums">{row.total}/{row.available}</span>
 			<span class="tabular-nums">({pct(row.total, row.available)}%)</span><br />
-			<span class="text-[8pt] text-neutral-500">Grade: no boundaries set</span>
+			{#if grade}
+				<span class="text-[11pt]">Grade <b>{grade.label}</b></span>
+				{#if grade.toNext != null}<br /><span class="text-[8pt]"
+						>{grade.toNext} more {grade.toNext === 1 ? 'mark' : 'marks'} for grade {grade.nextLabel}</span
+					>{/if}
+			{/if}
 		</p>
 	</header>
 

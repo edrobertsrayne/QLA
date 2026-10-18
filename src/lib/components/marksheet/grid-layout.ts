@@ -8,8 +8,17 @@ export const NAME_COLUMN = 'sticky left-0 z-20 border-r bg-background';
 export const FROZEN_PROGRESS = 'sticky z-20 border-r bg-background';
 /** Where the progress column pins itself: past the name column. */
 export const PROGRESS_PIN = `left: ${COLUMN.name}`;
-/** The room the frozen columns take, measured from the table's left edge. */
-export const FROZEN_WIDTH = `calc(${COLUMN.name} + ${COLUMN.progress})`;
+/** The room the frozen columns take, measured from the table's left edge.
+ *  PROTOTYPE (#55): plus `--qla-extra-frozen`, a frozen grade column when one is shown. */
+export const FROZEN_WIDTH = `calc(${COLUMN.name} + ${COLUMN.progress} + var(--qla-extra-frozen, 0rem))`;
+/** PROTOTYPE (#55): where a frozen grade column pins itself, past name and progress. */
+export const GRADE_PIN = `left: calc(${COLUMN.name} + ${COLUMN.progress})`;
+
+/** PROTOTYPE (#55): extra grade columns the grid's rows make room for. */
+export interface GradeColumns {
+	placement: 'frozen' | 'end';
+	widths: string[];
+}
 /** Where a band label pins itself: past both frozen columns. */
 export const BAND_LABEL_PIN = `left: ${FROZEN_WIDTH}`;
 /**

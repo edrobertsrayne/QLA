@@ -8,9 +8,18 @@
 	import { facilityDescription, facilityPercent, type RagBand } from '$lib/marksheet/analysis.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { cn } from '$lib/utils.js';
-	import { FROZEN_PROGRESS, NAME_COLUMN, PROGRESS_PIN } from './grid-layout.js';
+	import {
+		FROZEN_PROGRESS,
+		GRADE_PIN,
+		NAME_COLUMN,
+		PROGRESS_PIN,
+		type GradeColumns
+	} from './grid-layout.js';
 
-	let { onViewAnalysis }: { onViewAnalysis: (entryId: string) => void } = $props();
+	let {
+		onViewAnalysis,
+		grade = null
+	}: { onViewAnalysis: (entryId: string) => void; grade?: GradeColumns | null } = $props();
 
 	const store = marksheetStore();
 	const analysis = $derived(store.analysis);
@@ -31,6 +40,7 @@
 	<Table.Row class="hover:bg-transparent">
 		<Table.Cell class={cn(NAME_COLUMN, 'px-1.5 py-1 text-xs font-semibold')}>Facility</Table.Cell>
 		<Table.Cell class={FROZEN_PROGRESS} style={PROGRESS_PIN} />
+		{#if grade?.placement === 'frozen'}<Table.Cell class={FROZEN_PROGRESS} style={GRADE_PIN} />{/if}
 		{#each analysis.entries as row (row.entry.id)}
 			<Table.Cell
 				class="border-l p-0 text-center"
@@ -62,12 +72,17 @@
 				</button>
 			</Table.Cell>
 		{/each}
+		{#if grade?.placement === 'end'}<Table.Cell
+				colspan={grade.widths.length}
+				class="border-l-2"
+			/>{/if}
 	</Table.Row>
 	<Table.Row class="hover:bg-transparent">
 		<Table.Cell class={cn(NAME_COLUMN, 'px-1.5 text-[11px] text-muted-foreground')}>
 			Marked
 		</Table.Cell>
 		<Table.Cell class={FROZEN_PROGRESS} style={PROGRESS_PIN} />
+		{#if grade?.placement === 'frozen'}<Table.Cell class={FROZEN_PROGRESS} style={GRADE_PIN} />{/if}
 		{#each analysis.entries as row (row.entry.id)}
 			<Table.Cell
 				data-testid="coverage-cell"
@@ -77,5 +92,9 @@
 				{row.coverage.partMarked ? `${row.coverage.marked}/${row.coverage.of}` : ''}
 			</Table.Cell>
 		{/each}
+		{#if grade?.placement === 'end'}<Table.Cell
+				colspan={grade.widths.length}
+				class="border-l-2"
+			/>{/if}
 	</Table.Row>
 </Table.Footer>

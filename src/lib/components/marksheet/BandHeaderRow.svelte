@@ -15,12 +15,24 @@
 	} from '$lib/marksheet/breakdown.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { cn } from '$lib/utils.js';
-	import { BAND_LABEL_PIN, FROZEN_PROGRESS, NAME_COLUMN, PROGRESS_PIN } from './grid-layout.js';
+	import {
+		BAND_LABEL_PIN,
+		FROZEN_PROGRESS,
+		GRADE_PIN,
+		NAME_COLUMN,
+		PROGRESS_PIN,
+		type GradeColumns
+	} from './grid-layout.js';
 
 	let {
 		cursorEntryId,
-		onJump
-	}: { cursorEntryId: string | null; onJump: (band: QuestionBand) => void } = $props();
+		onJump,
+		grade = null
+	}: {
+		cursorEntryId: string | null;
+		onJump: (band: QuestionBand) => void;
+		grade?: GradeColumns | null;
+	} = $props();
 
 	const store = marksheetStore();
 	const bands = $derived(store.questionBands);
@@ -34,6 +46,7 @@
 <Table.Row role="row" class="bg-muted/50 hover:bg-muted/50">
 	<Table.Head class={NAME_COLUMN} />
 	<Table.Head class={FROZEN_PROGRESS} style={PROGRESS_PIN} />
+	{#if grade?.placement === 'frozen'}<Table.Head class={FROZEN_PROGRESS} style={GRADE_PIN} />{/if}
 	{#each bands as band (band.entries[0].id)}
 		{@const fallback = isFallbackBand(band, warnings)}
 		<Table.Head
@@ -73,4 +86,7 @@
 			</span>
 		</Table.Head>
 	{/each}
+	{#if grade?.placement === 'end'}
+		<Table.Head colspan={grade.widths.length} class="border-l-2 bg-muted/50" />
+	{/if}
 </Table.Row>
