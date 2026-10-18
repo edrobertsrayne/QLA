@@ -1169,7 +1169,7 @@ describe('breakdown structure', () => {
 		});
 
 		store.deleteEntry('entry-2');
-		expect(store.undoable).toMatchObject({ index: 1 });
+		expect(store.undoable).toMatchObject({ kind: 'entry-removal' });
 
 		expect(store.undo()).toBe(true);
 

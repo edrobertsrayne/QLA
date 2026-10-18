@@ -662,7 +662,7 @@
 				data-testid="undo"
 			>
 				<AlertDescription>
-					Removed <strong>{studentName(undoable.student)}</strong>.
+					Removed <strong>{undoable.name}</strong>.
 				</AlertDescription>
 				<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
 			</Alert>

@@ -329,7 +329,7 @@
 		data-testid="undo"
 	>
 		<AlertDescription>
-			Deleted <strong>{entryName(undoable.entry)}</strong>.
+			Deleted <strong>{undoable.name}</strong>.
 		</AlertDescription>
 		<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
 	</Alert>

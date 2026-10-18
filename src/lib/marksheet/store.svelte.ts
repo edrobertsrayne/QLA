@@ -11,6 +11,7 @@ import type { AssessmentObjective } from '$lib/parse/assessment-objectives.js';
 import { analyseMarksheet, type MarksheetAnalysis } from './analysis.js';
 import {
 	confirmationBlockers,
+	entryName,
 	isWholeNumber,
 	needsAttention,
 	questionBands,
@@ -63,34 +64,16 @@ export type BootRoute = '/' | '/breakdown' | '/marksheet';
 /**
  * The one change undo would take back, held in memory for the session. The next
  * change clears it, so a second click can never take back two things. Each kind
- * carries back everything the removal took with it.
+ * carries the whole document as it was before the change.
  */
 export type Undoable =
 	| {
-			kind: 'entry-removal';
-			/** The entry as it was, and its place among the others. */
-			entry: BreakdownEntry;
-			index: number;
-			/** The marks its students had gained on it, by student id. */
-			marks: Record<string, number>;
-			/** The parse's findings about it, as the breakdown held them before. */
-			findings: StoredWarning[];
+			kind: 'entry-removal' | 'student-removal';
+			/** What the notice calls what went. */
+			name: string;
+			before: MarksheetDocument;
 	  }
-	| {
-			kind: 'student-removal';
-			/** The student as they were, and their place in the class. */
-			student: StoredStudent;
-			index: number;
-			/** The marks they had entered, by entry id. */
-			marks: Record<string, number>;
-	  }
-	| {
-			kind: 'mark-paste';
-			/** The class as it was, before rows past it became students. */
-			students: StoredStudent[];
-			/** The marks as they were, before the block landed. */
-			marks: Record<string, Record<string, number>>;
-	  };
+	| { kind: 'mark-paste'; before: MarksheetDocument };
 
 export interface CreateFromParseInput {
 	breakdown: Breakdown;
@@ -98,6 +81,16 @@ export interface CreateFromParseInput {
 	/** Shown for this session; never stored. */
 	usage: ParseUsage;
 	filenames: string[];
+}
+
+/**
+ * The document as it is now, in a copy no later change reaches. A document is
+ * plain JSON by construction (it is stored as such), so this holds under a
+ * reactive proxy and in plain code alike; `$state.snapshot` does not copy in
+ * the server build the specs run in.
+ */
+function copyOf(document: MarksheetDocument): MarksheetDocument {
+	return JSON.parse(JSON.stringify(document)) as MarksheetDocument;
 }
 
 /** A field the teacher has cleared means "none", not an empty string. */
@@ -414,6 +407,7 @@ export class MarksheetStore {
 		const document = this.#editable();
 		if (!document) return false;
 
+		const before = copyOf(document);
 		const entries = document.breakdown.entries;
 		const index = entries.findIndex((entry) => entry.id === entryId);
 		if (index === -1) return false;
@@ -421,24 +415,14 @@ export class MarksheetStore {
 
 		// What was recorded against the entry goes with it: nothing can reach it
 		// again, so it would sit in the document unread.
-		const marks: Record<string, number> = {};
-		for (const [studentId, byEntry] of Object.entries(document.marks)) {
-			if (byEntry[entryId] === undefined) continue;
-			marks[studentId] = byEntry[entryId];
-			delete byEntry[entryId];
-		}
-		const findings = document.breakdown.warnings;
-		document.breakdown.warnings = findings.filter((warning) => warning.questionId !== entryId);
+		for (const byEntry of Object.values(document.marks)) delete byEntry[entryId];
+		document.breakdown.warnings = document.breakdown.warnings.filter(
+			(warning) => warning.questionId !== entryId
+		);
 
 		// After the change, since the change itself clears any undo on offer.
 		this.#mutated();
-		this.undoable = {
-			kind: 'entry-removal',
-			entry: $state.snapshot(entry),
-			index,
-			marks,
-			findings: $state.snapshot(findings)
-		};
+		this.undoable = { kind: 'entry-removal', name: entryName(entry), before };
 		return true;
 	}
 
@@ -448,32 +432,11 @@ export class MarksheetStore {
 	 */
 	undo(): boolean {
 		const undoable = this.undoable;
-		if (!undoable) return false;
-		// A restored entry is a breakdown edit, so it belongs to an unconfirmed
-		// breakdown; a student and a pasted block belong to the marksheet either way.
-		const document = undoable.kind === 'entry-removal' ? this.#editable() : this.document;
-		if (!document) return false;
+		const document = this.document;
+		if (!undoable || !document) return false;
 
-		if (undoable.kind === 'entry-removal') {
-			const entries = document.breakdown.entries;
-			entries.splice(Math.min(undoable.index, entries.length), 0, undoable.entry);
-			for (const [studentId, mark] of Object.entries(undoable.marks)) {
-				document.marks[studentId] ??= {};
-				document.marks[studentId][undoable.entry.id] = mark;
-			}
-			// Nothing else can have touched them: any later change clears the undo.
-			document.breakdown.warnings = undoable.findings;
-		} else if (undoable.kind === 'student-removal') {
-			const students = document.students;
-			students.splice(Math.min(undoable.index, students.length), 0, undoable.student);
-			document.marks[undoable.student.id] = undoable.marks;
-		} else {
-			// The paste's own changes are the only difference: putting the class
-			// and the marks back exactly as they were undoes it in one move.
-			document.students = undoable.students;
-			document.marks = undoable.marks;
-		}
-
+		// A backup taken since the change is not taken back with it.
+		this.document = { ...undoable.before, lastExportedAt: document.lastExportedAt };
 		this.#mutated();
 		return true;
 	}
@@ -545,23 +508,18 @@ export class MarksheetStore {
 		const document = this.document;
 		if (!document) return false;
 
+		const before = copyOf(document);
 		const students = document.students;
 		const index = students.findIndex((student) => student.id === studentId);
 		if (index === -1) return false;
 		const [student] = students.splice(index, 1);
 
 		// A mark whose student is gone can never be read again, so it goes too.
-		const marks = document.marks[studentId] ?? {};
 		delete document.marks[studentId];
 
 		// After the change, since the change itself clears any undo on offer.
 		this.#mutated();
-		this.undoable = {
-			kind: 'student-removal',
-			student: $state.snapshot(student),
-			index,
-			marks: $state.snapshot(marks)
-		};
+		this.undoable = { kind: 'student-removal', name: studentName(student), before };
 		return true;
 	}
 
@@ -667,12 +625,9 @@ export class MarksheetStore {
 		const pastedMarkColumns = Math.max(...block.map((row) => row.length - firstMarkColumn), 0);
 		result.columnsClipped = Math.max(0, pastedMarkColumns - entriesFromAnchor.length);
 
-		// Taken before the first cell lands: undo puts back the class and marks
-		// exactly as the teacher had them, added students included.
-		const before = {
-			students: $state.snapshot(document.students),
-			marks: $state.snapshot(document.marks)
-		};
+		// Taken before the first cell lands: undo puts back the document exactly as
+		// the teacher had it, added students included.
+		const before = copyOf(document);
 		let changed = false;
 
 		block.forEach((row, rowIndex) => {
@@ -743,7 +698,7 @@ export class MarksheetStore {
 
 		result.changed = true;
 		this.#mutated();
-		this.undoable = { kind: 'mark-paste', ...before };
+		this.undoable = { kind: 'mark-paste', before };
 		this.pasteNotice = result;
 		return result;
 	}
