@@ -83,8 +83,6 @@
 	 * message that covers a control is one they have to dismiss to keep working.
 	 */
 	let refusal = $state<string | null>(null);
-	/** The hidden field the clipboard lands on, so a paste is read before it is used. */
-	let pasteProxy = $state<HTMLDivElement | null>(null);
 	/** The open rename: both name parts, and which one the caret belongs in. */
 	let renaming = $state<{
 		studentId: string;
@@ -415,9 +413,9 @@
 	}
 
 	/**
-	 * Take a block from the clipboard and put it down at the cursor. The clipboard
-	 * proxy is what a paste lands on; `text/html` wins over `text/plain` so cells
-	 * holding line breaks keep their rows aligned.
+	 * Take a block from the clipboard and put it down at the cursor. A paste lands
+	 * on the focused cell and bubbles here; `text/html` wins over `text/plain` so
+	 * cells holding line breaks keep their rows aligned.
 	 */
 	function onPaste(event: ClipboardEvent): void {
 		const anchor = activeCell;
@@ -448,12 +446,6 @@
 				? { kind: 'names', studentId: anchor.studentId }
 				: { kind: 'marks', studentId: anchor.studentId, entryId: anchor.entryId }
 		);
-	}
-
-	/** A paste aimed at the grid rather than the proxy: the proxy's own is already taken. */
-	function onGridPaste(event: ClipboardEvent): void {
-		if (event.target === pasteProxy) return;
-		onPaste(event);
 	}
 
 	/** A block taken back: the store clears its account along with the undo. */
@@ -786,20 +778,7 @@
 	</div>
 {/if}
 
-<div class="relative overflow-hidden rounded-xl border" onpaste={onGridPaste}>
-	<!-- The clipboard lands here. A spreadsheet puts an HTML table in the
-	     clipboard beside its TSV; reading it as it arrives is what keeps a cell
-	     with a line break from shifting every row under it. -->
-	<div
-		bind:this={pasteProxy}
-		contenteditable="true"
-		role="textbox"
-		tabindex="-1"
-		aria-label="Paste marks from a spreadsheet"
-		data-testid="paste-proxy"
-		class="pointer-events-none absolute -left-[9999px] top-0 h-px w-px overflow-hidden opacity-0"
-		onpaste={onPaste}
-	></div>
+<div class="relative overflow-hidden rounded-xl border" onpaste={onPaste}>
 	<Table.Root class="table-fixed w-fit" role="grid" aria-label="Marksheet grid">
 		<!-- The widths every cell obeys: narrow entry columns, a frozen name and
 		     progress column, so a paper scrolls sideways only when it must. -->

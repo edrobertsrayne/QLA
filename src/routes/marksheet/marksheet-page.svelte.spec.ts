@@ -67,7 +67,7 @@ function focusedCell(): Element | null {
 	return document.activeElement;
 }
 
-/** Deliver a clipboard payload the way a paste event does, through the grid's proxy. */
+/** Deliver a clipboard payload the way a paste event does, on the active cell. */
 function pasteClipboard(
 	screen: { container: HTMLElement },
 	payload: { html?: string; text?: string },
@@ -75,7 +75,10 @@ function pasteClipboard(
 ): void {
 	const data = clipboardPayload(payload);
 	const element =
-		target ?? screen.container.querySelector<HTMLElement>('[data-testid="paste-proxy"]');
+		target ??
+		screen.container.querySelector<HTMLElement>(
+			'[data-testid="mark-cell"][tabindex="0"], [data-testid="name-cell"][tabindex="0"]'
+		);
 	if (!element) throw new Error('no paste target');
 	element.dispatchEvent(
 		new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })
