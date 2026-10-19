@@ -13,18 +13,24 @@
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import Sheet from '$lib/prototypes/report-page/Sheet.svelte';
 	import VariantA from '$lib/prototypes/report-page/VariantA.svelte';
-	import VariantB from '$lib/prototypes/report-page/VariantB.svelte';
 	import VariantC from '$lib/prototypes/report-page/VariantC.svelte';
+	import VariantD from '$lib/prototypes/report-page/VariantD.svelte';
+	import VariantE from '$lib/prototypes/report-page/VariantE.svelte';
+	import VariantF from '$lib/prototypes/report-page/VariantF.svelte';
 	import { REPORTS, generatedProse } from '$lib/prototypes/report-page/sample.js';
 	import { reportPage, wordCount, type FitMode } from '$lib/prototypes/report-page/state.svelte.js';
 
+	// Round 2: A and C kept as the references; D–F iterate on C's straight table at larger type.
 	const VARIANTS = [
-		{ key: 'A', label: 'Ledger, top to bottom' },
-		{ key: 'B', label: 'Feedback first, bars, strips' },
-		{ key: 'C', label: 'Sidebar roll-up, long table' }
+		{ key: 'D', label: 'Split table, full-width bands' },
+		{ key: 'E', label: 'Feedback first, table beside roll-up' },
+		{ key: 'F', label: 'Sidebar, larger type' },
+		{ key: 'A', label: 'Round 1: ledger' },
+		{ key: 'C', label: 'Round 1: sidebar' }
 	];
-	const variant = $derived(appPage.url.searchParams.get('variant') ?? 'A');
-	const Variant = $derived(variant === 'B' ? VariantB : variant === 'C' ? VariantC : VariantA);
+	const COMPONENTS = { A: VariantA, C: VariantC, D: VariantD, E: VariantE, F: VariantF };
+	const variant = $derived(appPage.url.searchParams.get('variant') ?? 'D');
+	const Variant = $derived(COMPONENTS[variant as keyof typeof COMPONENTS] ?? VariantD);
 
 	const rp = reportPage();
 	let printing = $state<string[]>([]);

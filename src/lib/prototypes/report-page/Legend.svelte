@@ -3,7 +3,9 @@
 	import BandMark from './BandMark.svelte';
 </script>
 
-<p class="flex items-center gap-3 text-[7pt] text-neutral-600">
+<p
+	class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[8.5pt] whitespace-nowrap text-neutral-700"
+>
 	<span class="flex items-center gap-1"><BandMark band="green" /> 70% or more</span>
 	<span class="flex items-center gap-1"><BandMark band="amber" /> 40–69%</span>
 	<span class="flex items-center gap-1"><BandMark band="red" /> below 40%</span>
