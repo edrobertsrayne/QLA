@@ -53,9 +53,10 @@ this ADR records, not deferred to a future cache effort:
   cannot use response differences to probe which internal ports are open
   or closed.
 - The response body is read incrementally and aborted the moment the
-  accumulated bytes exceed the per-file cap (`MAX_FILE_BYTES`, 15MB); it is
-  never buffered in full first, and a missing or understated
-  `content-length` header cannot bypass the cap.
+  accumulated bytes exceed the specification cap (`MAX_SPEC_BYTES`, 30MB); it
+  is never buffered in full first, and a missing or understated
+  `content-length` header cannot bypass the cap. The parsed page count is
+  capped at `MAX_SPEC_PAGES` (200), separately from the upload page ceiling.
 - The downloaded bytes are checked for the PDF magic header and parsed
   before use, so an HTML error page or corrupt file fails as
   `SPEC_UNREADABLE` rather than reaching the model.

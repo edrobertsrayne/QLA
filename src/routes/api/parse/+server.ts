@@ -181,8 +181,9 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Optional specification link: fetched fresh per run (no cache) and
 	// verified as a readable PDF. Any failure fails the run before model spend.
-	// The paper+markscheme ceiling is checked first so an already-oversize
-	// upload never pays for a spec download.
+	// The paper+markscheme page ceiling is checked first so an already-oversize
+	// upload never pays for a spec download; the spec has its own byte and page
+	// caps (`MAX_SPEC_BYTES`, `MAX_SPEC_PAGES`) enforced in `fetchSpecPdf`.
 	if (totalPages > MAX_TOTAL_PAGES) {
 		return error(
 			'FILE_TOO_BIG',
@@ -201,29 +202,11 @@ export const POST: RequestHandler = async ({ request }) => {
 			return error(INVALID_SPEC_URL_CODE, 'The specification link is not a valid URL.');
 		}
 		try {
-			const fetched = await fetchSpecPdf(specUrl, useNativePdf);
-			specDoc = fetched.doc;
-			totalPages += fetched.pages;
+			specDoc = await fetchSpecPdf(specUrl, useNativePdf);
 		} catch (specError) {
-			if (specError instanceof SpecUnreadableError && specError.code === 'FILE_TOO_BIG') {
-				return error('FILE_TOO_BIG', 'The specification exceeds the 15MB per-file limit.', {
-					file: specUrl.toString(),
-					limit: MAX_FILE_BYTES
-				});
-			}
 			if (specError instanceof SpecUnreadableError) return error(specError.code, specError.message);
 			return error(SPEC_UNREADABLE_CODE, 'The specification could not be downloaded.');
 		}
-	}
-
-	// Combined ceiling including the spec pages (paper+markscheme alone was
-	// already checked before the spec download above).
-	if (totalPages > MAX_TOTAL_PAGES) {
-		return error(
-			'FILE_TOO_BIG',
-			`The PDFs total ${totalPages} pages, above the ${MAX_TOTAL_PAGES}-page ceiling. Split or compress them and try again.`,
-			{ totalPages, limit: MAX_TOTAL_PAGES }
-		);
 	}
 
 	let rawJson: string | undefined;

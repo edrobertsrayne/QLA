@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { POST } from './+server';
 import {
 	MAX_FILE_BYTES,
+	MAX_SPEC_BYTES,
+	MAX_SPEC_PAGES,
 	MAX_TOTAL_PAGES,
 	SPEC_URL_FIELD,
 	type Breakdown
@@ -494,7 +496,7 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		expect(seen?.spec?.text).toContain('Specification topic code');
 	});
 
-	it('spec pages count toward the total page ceiling', async () => {
+	it('spec pages do not count toward the upload page ceiling', async () => {
 		let calls = 0;
 		setModelTransport(async () => {
 			calls += 1;
@@ -506,6 +508,31 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 
 		const form = new FormData();
 		form.set('assessmentPaper', pdfWithPages('paper.pdf', MAX_TOTAL_PAGES));
+		form.append(SPEC_URL_FIELD, 'https://example.com/spec.pdf');
+		const { status, body } = await post(form);
+
+		expect(status).toBe(200);
+		expect(calls).toBe(1);
+		expect(body.error).toBeUndefined();
+	});
+
+	it('a spec above the page cap fails with 413 before any model call', async () => {
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return stubResultWith(stubBreakdown());
+		});
+		setSpecFetch(
+			async () =>
+				new Response(
+					buildPdfBytes(
+						Array.from({ length: MAX_SPEC_PAGES + 1 }, (_, i) => `spec page ${i + 1}`)
+					) as unknown as BodyInit,
+					{ status: 200 }
+				)
+		);
+
+		const form = paperOnlyForm();
 		form.append(SPEC_URL_FIELD, 'https://example.com/spec.pdf');
 		const { status, body } = await post(form);
 
@@ -564,7 +591,7 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 
 	it('an oversized response with no content-length is aborted, never buffered whole', async () => {
 		const chunkSize = 1024 * 1024;
-		const totalBytes = MAX_FILE_BYTES + chunkSize;
+		const totalBytes = MAX_SPEC_BYTES + chunkSize;
 		let sent = 0;
 		const cappedStream = new ReadableStream<Uint8Array>({
 			pull(controller) {
@@ -585,6 +612,33 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 
 		expect(status).toBe(413);
 		expect(body.error?.code).toBe('FILE_TOO_BIG');
+	});
+
+	it('a spec larger than the upload cap but within the spec cap is downloaded in full', async () => {
+		const chunkSize = 1024 * 1024;
+		const totalBytes = MAX_FILE_BYTES + chunkSize;
+		let sent = 0;
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				if (sent >= totalBytes) {
+					controller.close();
+					return;
+				}
+				const size = Math.min(chunkSize, totalBytes - sent);
+				const chunk = new Uint8Array(size);
+				if (sent === 0) chunk.set(new TextEncoder().encode('%PDF-'));
+				controller.enqueue(chunk);
+				sent += size;
+			}
+		});
+		setSpecFetch(async () => new Response(stream, { status: 200 }));
+
+		const form = paperOnlyForm();
+		form.append(SPEC_URL_FIELD, 'https://example.com/spec.pdf');
+		const { status, body } = await post(form);
+
+		expect(status).toBe(400);
+		expect(body.error?.code).toBe('SPEC_UNREADABLE');
 	});
 });
 

@@ -6,11 +6,11 @@
 // fails the run (400) — the spec is never silently ignored.
 //
 // Guardrails: http(s) only (no credentials forwarded), `SPEC_FETCH_TIMEOUT_MS`
-// timeout, `MAX_FILE_BYTES` per-file cap enforced against the accumulated
+// timeout, `MAX_SPEC_BYTES` cap enforced against the accumulated
 // response body as it streams in (never buffered whole first), magic-byte +
 // `parsePdfBytes` check so an HTML error page or corrupt file becomes
-// `SPEC_UNREADABLE`, never model spend. Pages count toward the shared
-// `MAX_TOTAL_PAGES` ceiling (enforced by the route).
+// `SPEC_UNREADABLE`, never model spend. Pages are capped separately by
+// `MAX_SPEC_PAGES` and do not count toward the upload `MAX_TOTAL_PAGES` ceiling.
 //
 // SSRF: the resolved address of the link — and of every redirect hop, each
 // re-validated the same way, up to `MAX_SPEC_REDIRECTS` — is rejected if it
@@ -27,7 +27,8 @@
 import { lookup as nodeDnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import {
-	MAX_FILE_BYTES,
+	MAX_SPEC_BYTES,
+	MAX_SPEC_PAGES,
 	SPEC_FETCH_TIMEOUT_MS,
 	SPEC_UNREADABLE_CODE,
 	INVALID_SPEC_URL_CODE
@@ -38,6 +39,8 @@ import type { IngestedDocument } from './model';
 /** Generic message for every network-level failure (blocked, unreachable, non-OK, bad redirect). */
 const DOWNLOAD_FAILED_MESSAGE =
 	'The specification could not be downloaded. Check the link and try again.';
+
+const SPEC_TOO_BIG_MESSAGE = 'The specification exceeds the 30MB limit.';
 
 /** Redirect hops followed before giving up; each hop is re-validated like the original link. */
 const MAX_SPEC_REDIRECTS = 5;
@@ -205,10 +208,7 @@ async function readBodyCapped(response: Response, capBytes: number): Promise<Uin
 	if (!response.body) {
 		const buffer = new Uint8Array(await response.arrayBuffer());
 		if (buffer.length > capBytes) {
-			throw new SpecUnreadableError(
-				`The specification exceeds the 15MB per-file limit.`,
-				'FILE_TOO_BIG'
-			);
+			throw new SpecUnreadableError(SPEC_TOO_BIG_MESSAGE, 'FILE_TOO_BIG');
 		}
 		return buffer;
 	}
@@ -222,10 +222,7 @@ async function readBodyCapped(response: Response, capBytes: number): Promise<Uin
 		total += value.byteLength;
 		if (total > capBytes) {
 			await reader.cancel().catch(() => {});
-			throw new SpecUnreadableError(
-				`The specification exceeds the 15MB per-file limit.`,
-				'FILE_TOO_BIG'
-			);
+			throw new SpecUnreadableError(SPEC_TOO_BIG_MESSAGE, 'FILE_TOO_BIG');
 		}
 		chunks.push(value);
 	}
@@ -270,15 +267,12 @@ function isPdfMagic(bytes: Uint8Array): boolean {
 
 /**
  * Fetch, verify and ingest the specification PDF at `url`.
- * Returns the ingested document plus its page count for the shared ceiling.
  * `useNativePdf` decides whether the raw bytes are also base64-encoded —
  * skipped on the text-only path, where the encoded copy is never used.
- * Throws `SpecUrlError` (bad URL) or `SpecUnreadableError` (fetch/verify fail).
+ * Throws `SpecUrlError` (bad URL) or `SpecUnreadableError` (fetch/verify fail;
+ * code `FILE_TOO_BIG` above `MAX_SPEC_BYTES` / `MAX_SPEC_PAGES`).
  */
-export async function fetchSpecPdf(
-	url: URL,
-	useNativePdf: boolean
-): Promise<{ doc: IngestedDocument; pages: number }> {
+export async function fetchSpecPdf(url: URL, useNativePdf: boolean): Promise<IngestedDocument> {
 	const response = await fetchValidated(url);
 
 	if (!response.ok) {
@@ -286,14 +280,11 @@ export async function fetchSpecPdf(
 	}
 
 	const declared = response.headers.get('content-length');
-	if (declared !== null && Number.isFinite(Number(declared)) && Number(declared) > MAX_FILE_BYTES) {
-		throw new SpecUnreadableError(
-			`The specification exceeds the 15MB per-file limit.`,
-			'FILE_TOO_BIG'
-		);
+	if (declared !== null && Number.isFinite(Number(declared)) && Number(declared) > MAX_SPEC_BYTES) {
+		throw new SpecUnreadableError(SPEC_TOO_BIG_MESSAGE, 'FILE_TOO_BIG');
 	}
 
-	const bytes = await readBodyCapped(response, MAX_FILE_BYTES);
+	const bytes = await readBodyCapped(response, MAX_SPEC_BYTES);
 
 	if (!isPdfMagic(bytes)) {
 		throw new SpecUnreadableError(
@@ -311,14 +302,16 @@ export async function fetchSpecPdf(
 			{ cause: error }
 		);
 	}
-
+	if (parsed.pageCount > MAX_SPEC_PAGES) {
+		throw new SpecUnreadableError(
+			`The specification has ${parsed.pageCount} pages, above the ${MAX_SPEC_PAGES}-page limit.`,
+			'FILE_TOO_BIG'
+		);
+	}
 	return {
-		doc: {
-			filename: filenameFor(url),
-			pageCount: parsed.pageCount,
-			text: parsed.textWithMarkers,
-			pdfBase64: useNativePdf ? Buffer.from(bytes).toString('base64') : null
-		},
-		pages: parsed.pageCount
+		filename: filenameFor(url),
+		pageCount: parsed.pageCount,
+		text: parsed.textWithMarkers,
+		pdfBase64: useNativePdf ? Buffer.from(bytes).toString('base64') : null
 	};
 }

@@ -84,8 +84,14 @@ export const SPEC_UNREADABLE_CODE = 'SPEC_UNREADABLE';
 /** Per-file cap for assessment paper / markscheme PDFs. Fatal (413) when exceeded. */
 export const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
-/** Total page ceiling across provided PDFs (paper + markscheme + spec). Fatal (413) when exceeded. */
+/** Total page ceiling across the uploaded PDFs (paper + markscheme; the spec has its own cap). Fatal (413) when exceeded. */
 export const MAX_TOTAL_PAGES = 100;
+
+/** Byte cap for the fetched specification PDF (OCR H556 Physics A is 16.6MB). Fatal (413) when exceeded. */
+export const MAX_SPEC_BYTES = 30 * 1024 * 1024;
+
+/** Page cap for the fetched specification PDF, independent of MAX_TOTAL_PAGES. Fatal (413) when exceeded. */
+export const MAX_SPEC_PAGES = 200;
 
 /** Server timeout for fetching the optional spec URL. Fatal (400) on timeout. */
 export const SPEC_FETCH_TIMEOUT_MS = 30_000;
