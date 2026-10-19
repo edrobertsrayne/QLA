@@ -8,6 +8,7 @@ export const ssr = false;
 
 /** Every surface is the one the stored state allows: anything else redirects before it paints. */
 export function load({ url }: { url: URL }): void {
+	if (url.pathname.startsWith('/prototype/')) return; // PROTOTYPE (#53): throwaway routes skip the guard.
 	const store = marksheetStore();
 	store.load();
 	const route = store.route();
