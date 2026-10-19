@@ -125,6 +125,10 @@ _Avoid_: Reset, clear, start over
 One student's question-by-question account of an assessment, written to the student and handed back with the paper: their total, grade and marks to next grade (when the paper has grade boundaries), their marks per breakdown entry, their roll-up, and generated feedback. Only produced for a student who is not absent, has a mark on every breakdown entry, and has no mark above an entry's available marks. Distinct from **analysis**, which is the teacher's class-level view.
 _Avoid_: Analysis, results, feedback sheet (feedback is one part of a report)
 
+**Out of date**:
+A report whose generated feedback was written from a different generation input than the student's current one: the strengths and areas for improvement chosen, with their marks, topic names or question summaries. Applies only to the feedback, because a report's figures always show current values. An out-of-date report can still be printed. Rewriting it or the teacher choosing to keep its wording clears the state.
+_Avoid_: Stale, expired, invalid
+
 **Roll-up**:
 One student's marks summed by specification point (marks gained out of available, across every breakdown entry carrying that specification point) and separately by assessment objective. An entry with no specification point counts only toward its assessment objective. Never class-wide.
 _Avoid_: Topic summary, aggregate, spec breakdown
@@ -144,3 +148,11 @@ _Avoid_: Level, RAG band, result
 **Marks to next grade**:
 The next grade boundary above a student's total mark, minus that total. None at the top grade.
 _Avoid_: Gap, shortfall, distance to target
+
+**Strength**:
+A topic name, or a breakdown entry with no specification point, chosen from one student's own marks for praise in their report; never one in the red RAG band. Chosen by the app, never by the model, which only writes its prose. A report's **Strengths** section holds up to three.
+_Avoid_: What went well, WWW, highlight, success
+
+**Area for improvement**:
+A topic name, or a breakdown entry with no specification point, chosen from one student's own marks as a place they have the most marks to win back; never an assessment objective. Chosen by the app, never by the model, which only writes its prose: a concrete revision action and the question to redo. A report's **Areas for improvement** section holds up to two.
+_Avoid_: Even better if, EBI, target, weakness, next step
