@@ -21,8 +21,8 @@ A QLA-generated record of one class's marks, per student per question, built in 
 _Avoid_: Markscheme, gradebook, markbook
 
 **Local student id**:
-The stable identifier a marksheet uses to tie a student's marks to their name, so renaming a student or inserting one mid-list never reassigns marks. Generated on the teacher's device and never sent anywhere — distinct from the Phase 3 pseudonymization UUID, which exists to keep names away from the model.
-_Avoid_: Pseudonym, student UUID (those mean the Phase 3 concept)
+The stable identifier a marksheet uses to tie a student's marks to their name, so renaming a student or inserting one mid-list never reassigns marks. Generated on the teacher's device and never sent anywhere: no student identifier of any kind crosses to the server.
+_Avoid_: Pseudonym, student UUID
 
 **Assessment paper**:
 The exam paper itself (the questions), uploaded alongside and/or instead of its markscheme in Phase 1.

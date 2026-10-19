@@ -10,7 +10,7 @@ Terminology used throughout: see [`CONTEXT.md`](./CONTEXT.md) (markscheme, marks
 
 - **Single calling path, stateless server**: one SvelteKit server route proxies every OpenRouter call. It holds the OpenRouter API key (server-side only, never in the browser) and persists nothing — no student data, pseudonymized or not, is ever stored server-side.
 - **Browser is the sole source of truth for student data**: marksheets (student names + marks) live entirely in browser storage (IndexedDB/localStorage). The server never sees a student name.
-- **Pseudonymization at the boundary**: when a call needs per-student marks/answers, the browser tags each record with a UUID before sending it to the server; the server round-trips UUID-keyed data through OpenRouter and back. Only the browser holds the UUID → student-name mapping, and only the browser ever rejoins the two.
+- **No student identifier crosses the boundary**: when a call needs per-student marks, the browser sends them with no name, id or pseudonym of any kind, and matches each response to its student by the request it made. Only the browser ever joins marks to names.
 - **Model is configurable, not fixed**: env var sets a default (currently Gemini Flash, via OpenRouter), the UI can override per run. No model choice is locked in.
 - **Exam specifications are supplied per run, not cached**: user supplies a URL to the specification PDF; the server fetches it fresh on every run (no board/subject/tier picker, no cache, no reuse across runs) and forwards it to the model as extra grounding only — `specPoint` stays a verbatim lift from the markscheme, never checked against the fetched specification's codes. See [ADR-0001](./docs/adr/0001-specification-fetched-fresh-not-cached.md) for the full record, including the fetch's SSRF and memory-exhaustion hardening.
 - **Single-user, no auth.** Multi-teacher use is explicitly out of scope (see below).
@@ -33,9 +33,9 @@ Charted as [Phase 2 Marksheet — wayfinder map](https://github.com/edrobertsray
 
 ## Phase 3 — Report
 
-Marksheet → individual, question-by-question student report with generated feedback. Feedback generation is a server-proxied OpenRouter call over UUID-pseudonymized marks (per the locked decisions above); the browser rejoins UUID → name before rendering.
+Marksheet → individual, question-by-question student report with generated feedback. Feedback generation is a server-proxied OpenRouter call, one per student, over that student's marks with no identifier attached (per the locked decisions above); the browser matches each response to its student.
 
-Charted as [Phase 3 Report — wayfinder map](https://github.com/edrobertsrayne/QLA/issues/46). Scope settled at charting: reports are **student-facing only**, one per eligible student (not absent, fully marked, no over-max marks), printed from the browser one per page. Every figure is local arithmetic (marks per breakdown entry, a roll-up by topic name and assessment objective, and a grade with marks to next grade from optional teacher-typed grade boundaries, also shown on the marksheet); the model writes only the what-went-well / even-better-if prose, from marks alone (no student answers are captured). Remaining open decisions live as the map's child tickets.
+Charted as [Phase 3 Report — wayfinder map](https://github.com/edrobertsrayne/QLA/issues/46). Scope settled at charting: reports are **student-facing only**, one per eligible student (not absent, fully marked, no over-max marks), printed from the browser one per page. Every figure is local arithmetic (marks per breakdown entry, a roll-up by topic name and assessment objective, and a grade with marks to next grade from optional teacher-typed grade boundaries, also shown on the marksheet); the model writes only the **strengths** and **areas for improvement** prose, from the breakdown, the student's marks and the topic roll-up (no student answers are captured). Remaining open decisions live as the map's child tickets.
 
 ## Out of scope
 
