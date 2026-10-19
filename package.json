@@ -14,7 +14,8 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"test:unit": "vitest",
-		"test": "npm run test:unit -- --run"
+		"test": "npm run test:unit -- --run",
+		"proto:feedback": "mise x bun@1.4.0 -- bun --env-file=.env src/lib/prototypes/feedback-prompt/run.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
