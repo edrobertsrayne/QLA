@@ -5,7 +5,7 @@ import { generatedProse, initialProse, type Prose } from './sample.js';
 
 /**
  * What happens when the feedback no longer fits one side of A4:
- * - shrink: the feedback text steps down in size (to 70%) until the page fits.
+ * - shrink (chosen): the feedback text steps down to 90%, then the page is flagged.
  * - cap: the editor refuses words past a cap per strength / area.
  * - flag: nothing gives; the page is marked over on screen and print clips it.
  */

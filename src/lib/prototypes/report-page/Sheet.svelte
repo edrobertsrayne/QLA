@@ -12,7 +12,7 @@
 
 	const page = reportPage();
 	const PX_PER_MM = 96 / 25.4;
-	const MIN_SCALE = 0.7;
+	const MIN_SCALE = 0.9; // Chosen: shrink no further than 90%, then flag.
 
 	function fit(box: HTMLElement, content: HTMLElement): void {
 		const over = () => content.scrollHeight - box.clientHeight;
