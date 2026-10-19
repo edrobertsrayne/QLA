@@ -1,13 +1,16 @@
 // PROTOTYPE (throwaway) — "Prototype: feedback prompt against real marks" (#49).
 //
-// Reads a marksheet backup, selects each student's strengths and areas for improvement locally
-// (rules from "Feedback content and quality", #48), sends one OpenRouter call per student per
-// model with a strict json_schema, runs the local checks, and writes a review file to read.
+// Reads a marksheet backup, builds one payload per student, sends one OpenRouter call per student
+// per model with a strict json_schema, runs the local checks, and writes a review file to read.
 //
-//   pnpm proto:feedback [--sample PATH] [--models a,b] [--students 01,05|all] [--fixture spec]
+//   npm run proto:feedback -- [--mode selected|holistic] [--sample PATH] [--models a,b]
+//                             [--students 01,05|all] [--fixture spec]
 //
-// `--fixture spec` overlays hand-assigned H556 specification points, AOs and command words on the
-// real 13OA marks so the topic path is exercised (synthetic; the real sample has none).
+// --mode selected (v1–v2): items selected locally by the #48 rules, one prose line per item.
+// --mode holistic (v3+, default): the model sees the whole paper and picks the themes; local
+//   checks enforce the #48 guard-rails instead.
+// --fixture spec overlays hand-assigned H556 specification points, AOs and command words on the
+//   real 13OA marks so the topic path is exercised (synthetic; the real sample has none).
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -20,6 +23,12 @@ import {
 	type PayloadItem,
 	type StudentPayload
 } from './prompt.js';
+import {
+	HOLISTIC_PROMPT,
+	HOLISTIC_VERSION,
+	holisticSchema,
+	type HolisticPayload
+} from './prompt-holistic.js';
 
 const args = Object.fromEntries(
 	process.argv.slice(2).reduce<[string, string][]>((acc, a, i, all) => {
@@ -28,9 +37,9 @@ const args = Object.fromEntries(
 	}, [])
 );
 const SAMPLE = args.sample ?? '.scratch/qla-backup-thermal-physics-2026-10-19.json';
-const MODELS = (
-	args.models ?? 'google/gemini-2.5-flash,anthropic/claude-haiku-5.5,openai/gpt-6-luna'
-).split(',');
+const MODE = args.mode ?? 'holistic';
+const VERSION = MODE === 'holistic' ? HOLISTIC_VERSION : PROMPT_VERSION;
+const MODELS = (args.models ?? 'openai/gpt-6-luna').split(',');
 const CAP = 5;
 const MAX_ATTEMPTS = 3;
 const BOUNDARIES: [string, number][] = [
@@ -184,89 +193,137 @@ function toItem(c: Candidate, ref: string, marks: Record<string, number>): Paylo
 	};
 }
 
-// --- local checks (#48): refs once in the right section; no digits but handed question labels ---
+// --- local checks ---
 const paperLabels = new Set(entries.map((e) => e.label.toLowerCase()));
 
-interface Prose {
-	ref: string;
-	text: string;
+/** What the review file shows per item, whichever mode produced it. */
+interface Shown {
+	strengths: { heading: string; text: string }[];
+	areas: { heading: string; text: string }[];
 }
-interface Feedback {
-	strengths: Prose[];
-	areasForImprovement: Prose[];
-}
-
-const isProseList = (v: unknown): v is Prose[] =>
-	Array.isArray(v) &&
-	v.every(
-		(x) =>
-			x &&
-			typeof x === 'object' &&
-			'ref' in x &&
-			'text' in x &&
-			typeof x.ref === 'string' &&
-			typeof x.text === 'string'
-	);
-
-function isFeedback(v: unknown): v is Feedback {
-	return (
-		!!v &&
-		typeof v === 'object' &&
-		'strengths' in v &&
-		'areasForImprovement' in v &&
-		isProseList(v.strengths) &&
-		isProseList(v.areasForImprovement)
-	);
+interface Verdict {
+	problems: string[];
+	shown?: Shown;
 }
 
-function check(payload: StudentPayload, o: Feedback): string[] {
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object';
+const isList = <T>(v: unknown, item: (x: Record<string, unknown>) => boolean): v is T[] =>
+	Array.isArray(v) && v.every((x) => isObj(x) && item(x));
+
+/** Digits are figures; in selected mode "Q8c" / "Question 8c" for a handed label is allowed. */
+function figures(ref: string, text: string, allowLabels: Set<string> | null): string[] {
 	const problems: string[] = [];
-	for (const [section, items] of [
-		['strengths', payload.strengths],
-		['areasForImprovement', payload.areasForImprovement]
-	] as const) {
-		const got = (o[section] ?? []).map((x) => x.ref);
-		const want = items.map((i) => i.ref);
-		if (got.length !== want.length || want.some((r) => got.filter((g) => g === r).length !== 1))
-			problems.push(`${section}: refs ${JSON.stringify(got)} ≠ ${JSON.stringify(want)}`);
-		const handed = new Set(
-			[...payload.strengths, ...payload.areasForImprovement].flatMap((i) =>
-				i.questions.map((q) => q.label.toLowerCase())
-			)
-		);
-		for (const x of o[section] ?? []) {
-			// A question label is only allowed as "Q8c" / "Question 8c"; every other digit is a figure.
-			const rest = x.text.replace(
-				/\b(?:Q|Questions?\s+)(\d+[a-z]*)\b/gi,
-				(whole, label: string) => {
-					if (!paperLabels.has(label.toLowerCase()))
-						problems.push(`${x.ref}: unknown label "${whole}"`);
-					else if (!handed.has(label.toLowerCase()))
-						problems.push(`${x.ref}: label "${whole}" not handed`);
-					return '';
-				}
-			);
-			for (const m of rest.matchAll(/\S*\d\S*/g)) problems.push(`${x.ref}: figure "${m[0]}"`);
-		}
-	}
+	const rest = allowLabels
+		? text.replace(/\b(?:Q|Questions?\s+)(\d+[a-z]*)\b/gi, (whole, label: string) => {
+				if (!paperLabels.has(label.toLowerCase()))
+					problems.push(`${ref}: unknown label "${whole}"`);
+				else if (!allowLabels.has(label.toLowerCase()))
+					problems.push(`${ref}: label "${whole}" not handed`);
+				return '';
+			})
+		: text;
+	for (const m of rest.matchAll(/\S*\d\S*/g)) problems.push(`${ref}: figure "${m[0]}"`);
 	return problems;
 }
 
+type Prose = { ref: string; text: string };
+const isProse = (x: Record<string, unknown>) =>
+	typeof x.ref === 'string' && typeof x.text === 'string';
+
+function checkSelected(payload: StudentPayload, out: unknown): Verdict {
+	if (
+		!isObj(out) ||
+		!isList<Prose>(out.strengths, isProse) ||
+		!isList<Prose>(out.areasForImprovement, isProse)
+	)
+		return { problems: ['wrong shape'] };
+	const sections = { strengths: out.strengths, areasForImprovement: out.areasForImprovement };
+	const all = [...payload.strengths, ...payload.areasForImprovement];
+	const handed = new Set(all.flatMap((i) => i.questions.map((q) => q.label.toLowerCase())));
+	const problems: string[] = [];
+	for (const section of ['strengths', 'areasForImprovement'] as const) {
+		const got = sections[section].map((x) => x.ref);
+		const want = payload[section].map((i) => i.ref);
+		if (got.length !== want.length || want.some((r) => got.filter((g) => g === r).length !== 1))
+			problems.push(`${section}: refs ${JSON.stringify(got)} ≠ ${JSON.stringify(want)}`);
+		for (const x of sections[section]) problems.push(...figures(x.ref, x.text, handed));
+	}
+	const heading = (ref: string) => all.find((i) => i.ref === ref)?.name ?? ref;
+	const show = (xs: Prose[]) => xs.map((x) => ({ heading: heading(x.ref), text: x.text }));
+	return {
+		problems,
+		shown: { strengths: show(out.strengths), areas: show(out.areasForImprovement) }
+	};
+}
+
+type Theme = { text: string; questions: string[] };
+const isTheme = (x: Record<string, unknown>) =>
+	typeof x.text === 'string' &&
+	Array.isArray(x.questions) &&
+	x.questions.every((q) => typeof q === 'string');
+
+function checkHolistic(payload: HolisticPayload, out: unknown): Verdict {
+	if (
+		!isObj(out) ||
+		!isList<Theme>(out.strengths, isTheme) ||
+		!isList<Theme>(out.areasForImprovement, isTheme)
+	)
+		return { problems: ['wrong shape'] };
+	const q = new Map(payload.questions.map((x) => [x.label, x]));
+	const problems: string[] = [];
+	if (out.strengths.length > 3) problems.push(`${out.strengths.length} strengths`);
+	if (out.areasForImprovement.length > 2) problems.push(`${out.areasForImprovement.length} areas`);
+	const anyDropped = payload.questions.some((x) => x.gained < x.available);
+	if (anyDropped && !out.areasForImprovement.length)
+		problems.push('no areas despite dropped marks');
+	const used = { strength: new Set<string>(), area: new Set<string>() };
+	for (const [kind, themes] of [
+		['strength', out.strengths],
+		['area', out.areasForImprovement]
+	] as const) {
+		themes.forEach((t, i) => {
+			const ref = `${kind}-${i + 1}`;
+			if (!t.questions.length) problems.push(`${ref}: no questions`);
+			for (const label of t.questions) {
+				const x = q.get(label);
+				if (!x) problems.push(`${ref}: unknown label ${label}`);
+				else if (kind === 'strength' && facilityBand(x.gained / x.available) === 'red')
+					problems.push(`${ref}: red question ${label} as a strength`);
+				else if (kind === 'area' && x.gained === x.available)
+					problems.push(`${ref}: full-marks question ${label} as an area`);
+				used[kind].add(label);
+			}
+			problems.push(...figures(ref, t.text, null));
+		});
+	}
+	for (const label of used.strength)
+		if (used.area.has(label)) problems.push(`${label} is in both a strength and an area`);
+	const heading = (t: Theme) =>
+		t.questions.map((l) => `${l} ${q.get(l)?.gained}/${q.get(l)?.available}`).join(', ');
+	const show = (ts: Theme[]) => ts.map((t) => ({ heading: heading(t), text: t.text }));
+	return {
+		problems,
+		shown: { strengths: show(out.strengths), areas: show(out.areasForImprovement) }
+	};
+}
+
 // --- transport ---
+interface Request {
+	system: string;
+	user: string;
+	schema: object;
+	validate: (out: unknown) => Verdict;
+}
 interface Attempt {
 	ok: boolean;
 	problems: string[];
 	ms: number;
 	cost?: number;
 	tokens?: string;
-	raw?: string;
-	feedback?: Feedback;
+	shown?: Shown;
 }
 
-async function call(
-	model: string,
-	payload: StudentPayload
-): Promise<{ out?: Feedback; attempts: Attempt[] }> {
+async function call(model: string, req: Request): Promise<{ out?: Shown; attempts: Attempt[] }> {
 	const attempts: Attempt[] = [];
 	for (let n = 0; n < MAX_ATTEMPTS; n++) {
 		const t0 = performance.now();
@@ -280,12 +337,13 @@ async function call(
 				body: JSON.stringify({
 					model,
 					messages: [
-						{ role: 'system', content: SYSTEM_PROMPT },
-						{ role: 'user', content: JSON.stringify(payload, null, 2) }
+						{ role: 'system', content: req.system },
+						{ role: 'user', content: req.user }
 					],
-					response_format: { type: 'json_schema', json_schema: outputSchema(payload) },
+					response_format: { type: 'json_schema', json_schema: req.schema },
 					provider: { require_parameters: true },
-					max_tokens: 4000,
+					max_tokens: 8000,
+					...(args.effort ? { reasoning: { effort: args.effort } } : {}),
 					usage: { include: true },
 					stream: false
 				}),
@@ -308,8 +366,7 @@ async function call(
 			const base = {
 				ms,
 				cost: u.cost,
-				tokens: `${u.prompt_tokens}/${u.completion_tokens}${u.completion_tokens_details?.reasoning_tokens ? ` (${u.completion_tokens_details.reasoning_tokens} reasoning)` : ''}`,
-				raw
+				tokens: `${u.prompt_tokens}/${u.completion_tokens}${u.completion_tokens_details?.reasoning_tokens ? ` (${u.completion_tokens_details.reasoning_tokens} reasoning)` : ''}`
 			};
 			let out: unknown;
 			try {
@@ -322,13 +379,9 @@ async function call(
 				});
 				continue;
 			}
-			if (!isFeedback(out)) {
-				attempts.push({ ...base, ok: false, problems: ['wrong shape'] });
-				continue;
-			}
-			const problems = check(payload, out);
-			attempts.push({ ...base, ok: !problems.length, problems, feedback: out });
-			if (!problems.length) return { out, attempts };
+			const { problems, shown } = req.validate(out);
+			attempts.push({ ...base, ok: !problems.length, problems, shown });
+			if (!problems.length) return { out: shown, attempts };
 		} catch (e) {
 			attempts.push({ ok: false, problems: [String(e)], ms: Math.round(performance.now() - t0) });
 		}
@@ -367,30 +420,64 @@ const toNext = (t: number) => {
 	const above = BOUNDARIES.filter(([, min]) => min > t).at(-1);
 	return above ? `${above[1] - t} to ${above[0]}` : 'top grade';
 };
+const paper = doc.paper.label ?? 'Untitled paper';
+
+function holisticPayload(marks: Record<string, number>): HolisticPayload {
+	const topics = candidates(marks).filter((c) => c.kind === 'topic');
+	return {
+		paper,
+		questions: entries.map((e) => ({
+			label: e.label,
+			summary: e.summary,
+			commandWord: e.commandWord,
+			ao: e.ao,
+			topics: codes(e.specPoint).map((c) => TOPIC_NAMES[c] ?? c),
+			gained: marks[e.id],
+			available: e.marks
+		})),
+		topics: topics.map((t) => ({ name: t.name, gained: t.gained, available: t.available }))
+	};
+}
 
 const plans = chosen.map((s) => {
 	const marks = doc.marks[s.id];
 	const { strengths, areas } = select(marks);
+	if (MODE === 'holistic') {
+		const payload = holisticPayload(marks);
+		const req: Request = {
+			system: HOLISTIC_PROMPT,
+			user: JSON.stringify(payload, null, 2),
+			schema: holisticSchema(payload),
+			validate: (out) => checkHolistic(payload, out)
+		};
+		return { s, t: total(s), strengths, areas, payload, req };
+	}
 	const payload: StudentPayload = {
-		paper: doc.paper.label ?? 'Untitled paper',
+		paper,
 		strengths: strengths.map((c, i) => toItem(c, `strength-${i + 1}`, marks)),
 		areasForImprovement: areas.map((c, i) => toItem(c, `area-${i + 1}`, marks))
 	};
-	return { s, t: total(s), strengths, areas, payload };
+	const req: Request = {
+		system: SYSTEM_PROMPT,
+		user: JSON.stringify(payload, null, 2),
+		schema: outputSchema(payload),
+		validate: (out) => checkSelected(payload, out)
+	};
+	return { s, t: total(s), strengths, areas, payload, req };
 });
 
 const jobs = plans.flatMap((p) =>
-	MODELS.map((m) => () => call(m, p.payload).then((r) => ({ p, m, ...r })))
+	MODELS.map((m) => () => call(m, p.req).then((r) => ({ p, m, ...r })))
 );
 console.error(
-	`${jobs.length} calls (${plans.length} students × ${MODELS.length} models), prompt ${PROMPT_VERSION}`
+	`${jobs.length} calls (${plans.length} students × ${MODELS.length} models), ${MODE} ${VERSION}`
 );
 const results = await pool(jobs, CAP);
 
 // --- review file ---
 const pct = (g: number, a: number) => `${Math.round((100 * g) / a)}%`;
 const lines: string[] = [
-	`# Feedback run — prompt ${PROMPT_VERSION}${args.fixture ? `, fixture ${args.fixture}` : ''}`,
+	`# Feedback run — ${MODE} ${VERSION}${args.fixture ? `, fixture ${args.fixture}` : ''}${args.effort ? `, effort ${args.effort}` : ''}`,
 	'',
 	`Paper: ${doc.paper.label} (${doc.paper.className}), ${available} marks. Models: ${MODELS.join(', ')}.`,
 	''
@@ -401,7 +488,12 @@ for (const p of plans) {
 		`## ${p.s.firstName} ${p.s.surname} — ${p.t}/${available} (${pct(p.t, available)}), grade ${grade(p.t)}, ${toNext(p.t)}`,
 		''
 	);
-	lines.push('| Section | Item | Labels | Marks | Band |', '| - | - | - | - | - |');
+	lines.push(
+		`Local selection (${MODE === 'holistic' ? 'for comparison, not sent' : 'sent'}):`,
+		'',
+		'| Section | Item | Labels | Marks | Band |',
+		'| - | - | - | - | - |'
+	);
 	for (const [sec, cs] of [
 		['Strength', p.strengths],
 		['Area', p.areas]
@@ -421,17 +513,13 @@ for (const p of plans) {
 		);
 		for (const [i, a] of r.attempts.entries())
 			if (!a.ok) lines.push(`> attempt ${i + 1}: ${a.problems.join('; ')}`, '');
-		const out = r.out ?? last.feedback;
+		const out = r.out ?? last.shown;
 		if (!out) continue;
-		const name = (ref: string) =>
-			[...p.payload.strengths, ...p.payload.areasForImprovement].find((i) => i.ref === ref)?.name ??
-			ref;
+		const words = (t: string) => t.split(/\s+/).length;
 		lines.push('**Strengths**', '');
-		for (const x of out.strengths)
-			lines.push(`- _${name(x.ref)}_ — ${x.text} (${x.text.split(/\s+/).length}w)`);
+		for (const x of out.strengths) lines.push(`- _${x.heading}_ — ${x.text} (${words(x.text)}w)`);
 		lines.push('', '**Areas for improvement**', '');
-		for (const x of out.areasForImprovement)
-			lines.push(`- _${name(x.ref)}_ — ${x.text} (${x.text.split(/\s+/).length}w)`);
+		for (const x of out.areas) lines.push(`- _${x.heading}_ — ${x.text} (${words(x.text)}w)`);
 		lines.push('');
 	}
 }
@@ -451,7 +539,7 @@ const outDir = join(dirname(SAMPLE), 'feedback-runs');
 mkdirSync(outDir, { recursive: true });
 const file = join(
 	outDir,
-	`${new Date().toISOString().replace(/[:.]/g, '-')}-${PROMPT_VERSION}${args.fixture ? `-${args.fixture}` : ''}.md`
+	`${new Date().toISOString().replace(/[:.]/g, '-')}-${MODE}-${VERSION}${args.fixture ? `-${args.fixture}` : ''}${args.effort ? `-${args.effort}` : ''}.md`
 );
 writeFileSync(file, lines.join('\n'));
 console.log(file);
