@@ -1,19 +1,13 @@
 // `GET|POST /api/feedback` — the in-app feedback button.
 //
 // GET answers `{ enabled }` (a GitHub token is configured). POST takes JSON
-// (`validateFeedbackBody`) and answers `{ number, url }` of the new issue. The
-// title comes from one call on the shared default model (`resolveModelId`), with a first-line fallback. Request bodies
-// and the token are never logged.
+// (`validateFeedbackBody`) and answers `{ number, url }` of the new issue
+// (`fileFeedback`: titled on the shared default model, first-line fallback).
+// Request bodies and the token are never logged.
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import {
-	createFeedbackIssue,
-	FeedbackError,
-	feedbackIssue,
-	feedbackTitle,
-	validateFeedbackBody
-} from '$lib/server/feedback';
+import { FeedbackError, fileFeedback, validateFeedbackBody } from '$lib/server/feedback';
 import { getServerEnv } from '$lib/server/parse/env';
 import { failure, readRequest } from '$lib/server/structured-route';
 
@@ -39,17 +33,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		validateFeedbackBody
 	);
 	if (valid instanceof Response) return valid;
-	const title = await feedbackTitle(valid);
 	try {
-		return json(await createFeedbackIssue(token, feedbackIssue(valid, title)), { status: 201 });
+		return json(await fileFeedback(token, valid), { status: 201 });
 	} catch (e) {
-		if (e instanceof FeedbackError) {
-			return failure(502, {
-				code: e.code,
-				message: e.message,
-				retryable: e.code === 'GITHUB_UNREACHABLE'
-			});
-		}
-		throw e;
+		if (!(e instanceof FeedbackError)) throw e;
+		return failure(502, { code: e.code, message: e.message, retryable: e.retryable });
 	}
 };

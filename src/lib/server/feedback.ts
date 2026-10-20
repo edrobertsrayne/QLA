@@ -1,14 +1,14 @@
 // The in-app feedback button's server side: validate the note, title it with
-// one call on the shared default model (first-line fallback), and file it as a GitHub issue.
-// Feedback text and the token are never logged.
+// one call on the shared default model (first-line fallback), and file it as a
+// GitHub issue. Feedback text and the token are never logged.
 
 import { callStructuredModel, StructuredModelError } from './openrouter';
 import { resolveModelId } from './parse/pdf';
 import { isRecord } from '$lib/parse/is-breakdown.js';
 import { readRecord, readString, rejectUnknownKeys } from './request-fields';
 
-export const FEEDBACK_REPO = 'edrobertsrayne/QLA';
-export const FEEDBACK_LABELS = ['feedback', 'needs-triage'];
+const FEEDBACK_REPO = 'edrobertsrayne/QLA';
+const FEEDBACK_LABELS = ['feedback', 'needs-triage'];
 export const FEEDBACK_MAX_CHARS = 10_000;
 export const FEEDBACK_TITLE_MAX = 80;
 
@@ -29,7 +29,7 @@ export function validateFeedbackBody(body: unknown): FeedbackInput {
 	};
 }
 
-export function fallbackTitle(text: string): string {
+function fallbackTitle(text: string): string {
 	const first = text.trim().split('\n')[0].trim();
 	return first.length <= 70 ? 'Feedback: ' + first : 'Feedback: ' + first.slice(0, 69) + '…';
 }
@@ -60,7 +60,7 @@ function usableTitle(content: string): string | null {
 }
 
 /** The model's title, or the first-line fallback; titling never blocks filing. */
-export async function feedbackTitle(input: FeedbackInput): Promise<string> {
+async function feedbackTitle(input: FeedbackInput): Promise<string> {
 	let content: string;
 	try {
 		({ content } = await callStructuredModel({
@@ -85,23 +85,10 @@ function titleFallback(input: FeedbackInput, code: string): string {
 	return fallbackTitle(input.text);
 }
 
-export interface FeedbackIssue {
-	title: string;
-	body: string;
-	labels: string[];
-}
-
-export function feedbackIssue(input: FeedbackInput, title: string): FeedbackIssue {
-	return {
-		title,
-		body: `${input.text.trim()}\n\n---\nPage: \`${input.page}\`\nSent from the in-app feedback button.`,
-		labels: [...FEEDBACK_LABELS]
-	};
-}
-
 export type FeedbackFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
-let feedbackFetch: FeedbackFetch = (url, init) => fetch(url, init);
+const liveFetch: FeedbackFetch = (url, init) => fetch(url, init);
+let feedbackFetch = liveFetch;
 
 /** Test seam: replace the GitHub fetch. */
 export function setFeedbackFetch(fn: FeedbackFetch): void {
@@ -109,23 +96,31 @@ export function setFeedbackFetch(fn: FeedbackFetch): void {
 }
 
 export function resetFeedbackFetch(): void {
-	feedbackFetch = (url, init) => fetch(url, init);
+	feedbackFetch = liveFetch;
 }
 
+/** GitHub could not file the issue; `retryable` when it was never reached. */
 export class FeedbackError extends Error {
 	readonly code: 'GITHUB_UNREACHABLE' | 'GITHUB_REJECTED';
-	constructor(message: string, code: 'GITHUB_UNREACHABLE' | 'GITHUB_REJECTED') {
+	readonly retryable: boolean;
+	constructor(message: string, code: FeedbackError['code']) {
 		super(message);
 		this.name = 'FeedbackError';
 		this.code = code;
+		this.retryable = code === 'GITHUB_UNREACHABLE';
 	}
 }
 
-/** One call, no retry. */
-export async function createFeedbackIssue(
+/** Title the note and file it as one GitHub issue (no retry). Throws FeedbackError. */
+export async function fileFeedback(
 	token: string,
-	issue: FeedbackIssue
+	input: FeedbackInput
 ): Promise<{ number: number; url: string }> {
+	const issue = {
+		title: await feedbackTitle(input),
+		body: `${input.text.trim()}\n\n---\nPage: \`${input.page}\`\nSent from the in-app feedback button.`,
+		labels: FEEDBACK_LABELS
+	};
 	let response: Response;
 	try {
 		response = await feedbackFetch(`https://api.github.com/repos/${FEEDBACK_REPO}/issues`, {
@@ -149,12 +144,7 @@ export async function createFeedbackIssue(
 			'GITHUB_REJECTED'
 		);
 	}
-	let body: unknown = null;
-	try {
-		body = await response.json();
-	} catch {
-		// handled below
-	}
+	const body: unknown = await response.json().catch(() => null);
 	if (!isRecord(body) || typeof body.number !== 'number' || typeof body.html_url !== 'string') {
 		throw new FeedbackError('GitHub returned an unreadable response.', 'GITHUB_REJECTED');
 	}
