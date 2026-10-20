@@ -26,6 +26,7 @@
 	import { MAX_LABEL_LENGTH } from '$lib/marksheet/report-limits.js';
 	import { specPointCodes, topicCodesOf } from '$lib/marksheet/document.js';
 	import { boundariesOf } from '$lib/marksheet/grades.js';
+	import { droppedNoMarks, reportFiguresFor } from '$lib/marksheet/report-figures.js';
 	type Step = 'topics' | 'grades' | 'who' | 'writing' | 'review';
 
 	const store = marksheetStore();
@@ -81,6 +82,17 @@
 		}
 		run.retry([id], modelOverride);
 	}
+
+	/** An emptied areas section that claims nothing: flagged because print leaves it blank. */
+	const areasEmptied = (id: string): boolean => {
+		const report = document?.reports[id];
+		return (
+			!!document &&
+			!!report &&
+			(report.edit ?? report).areasForImprovement.length === 0 &&
+			!droppedNoMarks(reportFiguresFor(document, id))
+		);
+	};
 
 	/** Every out-of-date page, leaving edited ones alone unless opted in. */
 	function rewriteOutOfDate(): void {
@@ -602,6 +614,9 @@
 								<Button variant="outline" size="sm" onclick={() => store.keepReportWording(id)}
 									>Keep wording</Button
 								>
+							{/if}
+							{#if areasEmptied(id)}
+								<Badge variant="destructive">Areas for improvement is empty</Badge>
 							{/if}
 							{#if isFlagged(pageFit)}
 								<Badge variant="destructive"
