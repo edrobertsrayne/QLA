@@ -40,8 +40,10 @@ export default defineConfig(
 		rules: { 'svelte/no-navigation-without-resolve': 'off' }
 	},
 	{
-		// Override or add rule settings here, such as:
-		// 'svelte/button-has-type': 'error'
-		rules: {}
+		// Retro-adopted rules: each one caught a real mistake on a branch.
+		rules: {
+			// Phase 3 shipped window.confirm; confirmations use the shadcn dialog.
+			'no-alert': 'error'
+		}
 	}
 );
