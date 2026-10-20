@@ -61,7 +61,18 @@ describe('the breadcrumb', () => {
 	});
 
 	it('leaves out the paper when it has no label', async () => {
-		seed(parsed({ paper: { label: null, className: '10C1', sourceFilenames: [], parsedAt: NOW } }));
+		seed(
+			parsed({
+				paper: {
+					label: null,
+					className: '10C1',
+					sourceFilenames: [],
+					parsedAt: NOW,
+					boundaries: null,
+					belowLowestLabel: 'U'
+				}
+			})
+		);
 		openShell();
 
 		await expect.element(breadcrumb()).toHaveTextContent(/^QLA\s*\/\s*10C1$/);

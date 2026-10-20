@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+	dropOrphanedTopicNames,
 	dropUnreachableMarks,
+	dropUnreachableReports,
 	entryValuesOf,
 	parseStoredDocument,
 	type EntryValues,
 	type MarksheetDocument
 } from './document.js';
-import { entry, parsed, student } from './fixtures.spec-helpers.js';
+import { confirmed, entry, parsed, student } from './fixtures.spec-helpers.js';
 
 /** A document as storage hands it back: serialised, then read. */
 function read(document: MarksheetDocument): MarksheetDocument {
@@ -68,6 +70,125 @@ describe('dropping unreachable marks', () => {
 
 		expect(dropUnreachableMarks(read(document)).marks).toEqual({
 			'student-1': { 'entry-1': 3 }
+		});
+	});
+});
+describe('reading a v2 document', () => {
+	it('reads grade boundaries, topic names and reports back unchanged', () => {
+		const document = confirmed({
+			paper: {
+				...confirmed().paper,
+				boundaries: [
+					{ label: 'A', minimum: 52 },
+					{ label: 'B', minimum: 41 }
+				],
+				belowLowestLabel: 'U'
+			},
+			topicNames: { '3.2.1.4': 'Rates of reaction' },
+			reports: {
+				'student-1': {
+					strengths: ['You explain processes clearly.'],
+					areasForImprovement: ['Practise multi-step calculations weekly.'],
+					edit: null,
+					input: {
+						paperLabel: '10X Ph1',
+						entries: [
+							{
+								label: '2bii',
+								summary: 'Describe the rate change',
+								commandWord: 'Describe',
+								ao: 'AO2',
+								topics: ['Rates of reaction'],
+								gained: 3,
+								available: 4
+							}
+						]
+					},
+					model: 'openai/gpt-6-luna',
+					generatedAt: '2026-01-02T10:00:00.000Z'
+				}
+			}
+		});
+
+		expect(read(document)).toEqual(document);
+	});
+
+	it('reads a document with no grade boundaries as marks only', () => {
+		expect(read(confirmed()).paper.boundaries).toBeNull();
+		expect(read(confirmed()).paper.belowLowestLabel).toBe('U');
+	});
+
+	it('treats a v1 document as unreadable, like any other version', () => {
+		const written = JSON.parse(JSON.stringify(confirmed()));
+		written.schemaVersion = 1;
+
+		expect(parseStoredDocument(JSON.stringify(written))).toBeNull();
+	});
+
+	it('treats a boundary of the wrong shape as unreadable', () => {
+		const written = JSON.parse(JSON.stringify(confirmed()));
+		written.paper.boundaries = [{ label: 'A' }];
+
+		expect(parseStoredDocument(JSON.stringify(written))).toBeNull();
+	});
+
+	it('treats a report of the wrong shape as unreadable', () => {
+		const written = JSON.parse(JSON.stringify(confirmed()));
+		written.reports = { 'student-1': { strengths: ['Well done.'] } };
+
+		expect(parseStoredDocument(JSON.stringify(written))).toBeNull();
+	});
+
+	it('treats an empty below-lowest label as unreadable rather than correcting it', () => {
+		const written = JSON.parse(JSON.stringify(confirmed()));
+		written.paper.belowLowestLabel = '';
+
+		expect(parseStoredDocument(JSON.stringify(written))).toBeNull();
+	});
+});
+
+describe('dropping what no longer exists', () => {
+	it('drops reports for removed students but keeps reports for students still present', () => {
+		const report = {
+			strengths: ['You explain processes clearly.'],
+			areasForImprovement: [] as string[],
+			edit: null,
+			input: { paperLabel: '10X Ph1', entries: [] as never[] },
+			model: 'openai/gpt-6-luna',
+			generatedAt: '2026-01-02T10:00:00.000Z'
+		};
+		const document = confirmed({
+			students: [student('student-1', 'Ada', 'Lovelace')],
+			reports: { 'student-1': report, 'student-gone': report }
+		});
+
+		expect(dropUnreachableReports(read(document))).toEqual({ 'student-1': report });
+	});
+
+	it('drops topic names whose code appears on no entry, including inside comma and slash lists', () => {
+		const document = confirmed({
+			breakdown: {
+				entries: [
+					entry('entry-1', '2bii', '2', { specPoint: '5.1.1, 5.1.2' }),
+					entry('entry-2', '3a', '3', { specPoint: '5.2.1/5.2.2' }),
+					entry('entry-3', '4a', '4', { specPoint: null })
+				],
+				warnings: []
+			},
+			topicNames: {
+				'5.1.1': 'Waves',
+				'5.1.2': 'Sound',
+				'5.2.1': 'Energy',
+				'5.2.2': 'Power',
+				'9.9.9': 'Gone'
+			}
+		});
+
+		expect(dropOrphanedTopicNames(read(document))).toEqual({
+			'5.1.1': 'Waves',
+			'5.1.2': 'Sound',
+			'5.2.1': 'Energy',
+			'5.2.2': 'Power'
 		});
 	});
 });

@@ -130,7 +130,18 @@ describe('the new-upload dialog', () => {
 	});
 
 	it('names a paper the teacher never labelled without one', async () => {
-		seed(parsed({ paper: { label: null, className: null, sourceFilenames: [], parsedAt: NOW } }));
+		seed(
+			parsed({
+				paper: {
+					label: null,
+					className: null,
+					sourceFilenames: [],
+					parsedAt: NOW,
+					boundaries: null,
+					belowLowestLabel: 'U'
+				}
+			})
+		);
 		openBreakdownPage();
 
 		const dialog = await openNewUpload();
