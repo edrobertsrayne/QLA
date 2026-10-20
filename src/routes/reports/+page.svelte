@@ -16,7 +16,8 @@
 	import { studentName } from '$lib/marksheet/students.js';
 	import { count } from '$lib/prose.js';
 
-	type Step = 'who' | 'writing' | 'review';
+	import { specPointCodes } from '$lib/marksheet/document.js';
+	type Step = 'topics' | 'who' | 'writing' | 'review';
 
 	const store = marksheetStore();
 	const document = $derived(store.document);
@@ -32,16 +33,42 @@
 		document ? students.filter((s) => document.reports[s.id]).map((s) => s.id) : []
 	);
 
-	let step = $state<Step>(
-		Object.keys(marksheetStore().document?.reports ?? {}).length > 0 ? 'review' : 'who'
-	);
+	/**
+	 * Every normalised specification-point code on the paper, in first-seen
+	 * order. A paper with none skips the Topic names step and makes no
+	 * proposal call.
+	 */
+	const topicCodes = $derived.by(() => {
+		if (!document) return [];
+		const seen: string[] = [];
+		for (const entry of document.breakdown.entries) {
+			for (const code of specPointCodes(entry.specPoint)) {
+				if (!seen.includes(code)) seen.push(code);
+			}
+		}
+		return seen;
+	});
+
+	// The step the teacher lands on: reports written means Review, otherwise
+	// the first step of the flow (Topic names when the paper has codes).
+	let step = $state<Step>('who');
+	let stepInitialised = $state(false);
 
 	// The paper has topic codes only when some entry carries a specification point.
-	const STEPS: { id: Step; label: string }[] = [
-		{ id: 'who', label: 'Who gets one' },
-		{ id: 'writing', label: 'Writing' },
-		{ id: 'review', label: 'Review and print' }
-	];
+	const STEPS: { id: Step; label: string }[] = $derived(
+		topicCodes.length > 0
+			? [
+					{ id: 'topics', label: 'Topic names' },
+					{ id: 'who', label: 'Who gets one' },
+					{ id: 'writing', label: 'Writing' },
+					{ id: 'review', label: 'Review and print' }
+				]
+			: [
+					{ id: 'who', label: 'Who gets one' },
+					{ id: 'writing', label: 'Writing' },
+					{ id: 'review', label: 'Review and print' }
+				]
+	);
 
 	let modelOverride = $state('');
 	let modelCustom = $state(false);
@@ -69,6 +96,94 @@
 		void loadModels();
 	});
 
+	/**
+	 * Where the teacher lands: reports written means Review, otherwise the
+	 * first step of the flow. Runs once the document is in hand, since the
+	 * step depends on whether the paper has topic codes.
+	 */
+	$effect(() => {
+		if (stepInitialised || !document) return;
+		stepInitialised = true;
+		step =
+			Object.keys(document.reports).length > 0
+				? 'review'
+				: topicCodes.length > 0
+					? 'topics'
+					: 'who';
+	});
+	const missingNames = $derived(
+		topicCodes.filter((code) => (document?.topicNames[code] ?? '').trim() === '')
+	);
+	// A typed name past the server's 120-character cap would fail every report
+	// write, so it blocks Next like a blank one.
+	const overLongNames = $derived(
+		topicCodes.filter((code) => (document?.topicNames[code] ?? '').trim().length > 120)
+	);
+	const topicsBlocked = $derived(missingNames.length > 0 || overLongNames.length > 0);
+
+	let proposing = $state(false);
+	let proposeError = $state<string | null>(null);
+
+	/**
+	 * Ask the model to name the codes still missing one. Typed names are never
+	 * overwritten, and unusable answers (blank, over-long, contact) are dropped
+	 * by the server, leaving the gap for the teacher.
+	 */
+	async function proposeMissing(): Promise<void> {
+		if (!document || proposing) return;
+		const missing = [...missingNames];
+		if (missing.length === 0) return;
+		proposing = true;
+		proposeError = null;
+		try {
+			const summariesOf = (wanted: string): string[] => {
+				const summaries: string[] = [];
+				for (const entry of document.breakdown.entries) {
+					if (specPointCodes(entry.specPoint).includes(wanted)) {
+						summaries.push(entry.summary || entry.label);
+					}
+				}
+				return summaries.slice(0, 200);
+			};
+			const response = await fetch('/api/topic-names', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					...(modelOverride.trim() === '' ? {} : { model: modelOverride.trim() }),
+					paperLabel: document.paper.label ?? '',
+					codes: missing.map((code) => ({ code, summaries: summariesOf(code) }))
+				})
+			});
+			const payload = (await response.json().catch(() => null)) as {
+				names?: Record<string, string>;
+				error?: { message?: string };
+			} | null;
+			if (!response.ok || !payload?.names) {
+				throw new Error(payload?.error?.message ?? `Proposal failed (status ${response.status}).`);
+			}
+			for (const code of missing) {
+				const name = payload.names[code];
+				if (typeof name === 'string' && store.document) {
+					const current = store.document.topicNames[code] ?? '';
+					if (current.trim() === '') store.setTopicName(code, name);
+				}
+			}
+		} catch (error) {
+			proposeError = error instanceof Error ? error.message : 'Proposal failed.';
+		} finally {
+			proposing = false;
+		}
+	}
+
+	// The proposal runs on arrival when some code lacks a name — not on every
+	// new gap, so blanking a name to retype it never fires a model call.
+	let prevStep = $state<Step>('who');
+	$effect(() => {
+		if (step === 'topics' && prevStep !== 'topics' && document && missingNames.length > 0) {
+			void proposeMissing();
+		}
+		prevStep = step;
+	});
 	const run = new ReportRun(store, () => {
 		step = 'review';
 	});
@@ -153,6 +268,10 @@
 								? 'border-primary bg-primary text-primary-foreground'
 								: 'hover:bg-muted'}"
 							aria-current={step === item.id ? 'step' : undefined}
+							disabled={step === 'topics' && item.id !== 'topics' && topicsBlocked}
+							title={step === 'topics' && item.id !== 'topics' && topicsBlocked
+								? 'Name every topic first'
+								: undefined}
 							onclick={() => (step = item.id)}>{index + 1}. {item.label}</button
 						>
 					</li>
@@ -161,7 +280,62 @@
 		</nav>
 	</div>
 
-	{#if step === 'who'}
+	{#if step === 'topics'}
+		<section class="space-y-4">
+			<h1 class="text-xl font-semibold">Topic names</h1>
+			<p class="max-w-prose text-sm text-muted-foreground">
+				Reports show a student-readable name for every specification point on the paper, never a
+				bare code. Names stay with their code; retyping a code drops its name.
+			</p>
+			{#if proposeError}
+				<p role="alert" class="rounded-md border border-destructive p-3 text-sm">
+					{proposeError}
+					<Button
+						variant="outline"
+						size="sm"
+						class="ml-2"
+						disabled={proposing}
+						onclick={() => void proposeMissing()}>Retry</Button
+					>
+				</p>
+			{/if}
+			<ul class="max-w-xl space-y-2">
+				{#each topicCodes as code (code)}
+					<li class="flex items-center gap-3">
+						<span class="w-24 shrink-0 font-mono text-sm">{code}</span>
+						<Label class="sr-only" for={`topic-${code}`}>Name for {code}</Label>
+						<input
+							id={`topic-${code}`}
+							class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+							value={document?.topicNames[code] ?? ''}
+							maxlength={120}
+							placeholder={proposing ? 'Proposing…' : 'Name this topic'}
+							oninput={(event) => store.setTopicName(code, event.currentTarget.value)}
+						/>
+					</li>
+				{/each}
+			</ul>
+			<div class="flex flex-wrap gap-2">
+				<Button
+					variant="outline"
+					disabled={proposing || missingNames.length === 0}
+					onclick={() => void proposeMissing()}
+				>
+					{proposing ? 'Proposing…' : 'Propose missing names'}
+				</Button>
+				<Button disabled={topicsBlocked} onclick={() => (step = 'who')}>Next</Button>
+			</div>
+			{#if topicsBlocked}
+				<p class="text-sm text-muted-foreground">
+					{#if overLongNames.length > 0}
+						Keep every name to 120 characters: longer names fail the report run.
+					{:else}
+						Name every topic before continuing: reports never show a bare code.
+					{/if}
+				</p>
+			{/if}
+		</section>
+	{:else if step === 'who'}
 		<section class="space-y-4">
 			<h1 class="text-xl font-semibold">{count(eligibleIds.length, 'student')} get a report</h1>
 			{#if blocked.length > 0}
