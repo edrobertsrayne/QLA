@@ -97,6 +97,24 @@ export function stubUsage(): ParseUsage {
 	return { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 };
 }
 
+/** Token counts from an OpenRouter `usage` block, with the estimated cost for the model. */
+export function usageFrom(
+	raw: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined,
+	modelId: string
+): ParseUsage {
+	const promptTokens = Math.max(0, Math.trunc(raw?.prompt_tokens ?? 0));
+	const completionTokens = Math.max(0, Math.trunc(raw?.completion_tokens ?? 0));
+	const totalTokens =
+		Math.max(0, Math.trunc(raw?.total_tokens ?? promptTokens + completionTokens)) ||
+		promptTokens + completionTokens;
+	return {
+		promptTokens,
+		completionTokens,
+		totalTokens,
+		estCost: estimateCost(promptTokens, completionTokens, modelId)
+	};
+}
+
 /**
  * Deterministic fixture breakdown for the prototype slice.
  * Schema-valid with zero warnings.
@@ -289,18 +307,7 @@ export async function liveTransport(input: ModelInput): Promise<ModelResult> {
 		throw new ModelFatalError('The model returned an empty response. Please try again.');
 	}
 
-	const promptTokens = Math.max(0, Math.trunc(body.usage?.prompt_tokens ?? 0));
-	const completionTokens = Math.max(0, Math.trunc(body.usage?.completion_tokens ?? 0));
-	const totalTokens =
-		Math.max(0, Math.trunc(body.usage?.total_tokens ?? promptTokens + completionTokens)) ||
-		promptTokens + completionTokens;
-	const usage: ParseUsage = {
-		promptTokens,
-		completionTokens,
-		totalTokens,
-		estCost: estimateCost(promptTokens, completionTokens, input.modelId)
-	};
-
+	const usage = usageFrom(body.usage, input.modelId);
 	return { rawJson: extractJsonText(rawContent), usage };
 }
 

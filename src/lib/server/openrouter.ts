@@ -15,28 +15,27 @@
 import { getApiKey } from './parse/env';
 import {
 	contentToText,
-	estimateCost,
 	extractJsonText,
 	MODEL_RETRYABLE_CODE as STRUCTURED_RETRYABLE_CODE,
-	OPENROUTER_URL
+	OPENROUTER_URL,
+	usageFrom
 } from './parse/model';
+import { OPENROUTER_TIMEOUT_MS } from './parse/pdf';
+import type { RunStoppingCode } from '$lib/marksheet/report-errors';
 import type { ParseUsage } from './parse/schema';
 import { fenceDocuments } from './fence';
-
-/** Structured-call timeout (~120 s, Named in the spec). */
-export const STRUCTURED_TIMEOUT_MS = 120_000;
 
 /** Structured-call completion cap (~8000 tokens per the spec). */
 export const STRUCTURED_DEFAULT_MAX_TOKENS = 8000;
 
 /** Missing server key → caller treats it as a run-stopping misconfiguration. */
-export const MISSING_API_KEY_CODE = 'MISSING_API_KEY';
+export const MISSING_API_KEY_CODE: RunStoppingCode = 'MISSING_API_KEY';
 /** Upstream 401 → caller stops the run. */
-export const STRUCTURED_AUTH_CODE = 'MODEL_AUTH';
+export const STRUCTURED_AUTH_CODE: RunStoppingCode = 'MODEL_AUTH';
 /** Upstream 402 for anything but the in-flight budget → caller stops the run. */
-export const STRUCTURED_CREDIT_CODE = 'MODEL_CREDIT';
+export const STRUCTURED_CREDIT_CODE: RunStoppingCode = 'MODEL_CREDIT';
 /** Any other upstream 4xx → caller stops the run. */
-export const STRUCTURED_REJECTED_CODE = 'MODEL_REJECTED';
+export const STRUCTURED_REJECTED_CODE: RunStoppingCode = 'MODEL_REJECTED';
 
 /** Structured model failure: carries the spec code, `retryable` for the run loop, and `retryAfter` when upstream sent one. */
 export class StructuredModelError extends Error {
@@ -78,7 +77,7 @@ export interface StructuredModelInput {
 	caller: { referer: string; title: string };
 	/** Completion cap; defaults to `STRUCTURED_DEFAULT_MAX_TOKENS`. */
 	maxTokens?: number;
-	/** Timeout override; defaults to `STRUCTURED_TIMEOUT_MS`. */
+	/** Timeout override; defaults to `OPENROUTER_TIMEOUT_MS`. */
 	timeoutMs?: number;
 }
 
@@ -232,7 +231,7 @@ export async function liveStructuredTransport(
 				'X-Title': input.caller.title
 			},
 			body: JSON.stringify(payload),
-			signal: AbortSignal.timeout(input.timeoutMs ?? STRUCTURED_TIMEOUT_MS)
+			signal: AbortSignal.timeout(input.timeoutMs ?? OPENROUTER_TIMEOUT_MS)
 		});
 	} catch (error) {
 		throw new StructuredModelError('The model call failed. Please try again.', {
@@ -281,17 +280,7 @@ export async function liveStructuredTransport(
 		});
 	}
 
-	const promptTokens = Math.max(0, Math.trunc(body.usage?.prompt_tokens ?? 0));
-	const completionTokens = Math.max(0, Math.trunc(body.usage?.completion_tokens ?? 0));
-	const totalTokens =
-		Math.max(0, Math.trunc(body.usage?.total_tokens ?? promptTokens + completionTokens)) ||
-		promptTokens + completionTokens;
-	const usage: ParseUsage = {
-		promptTokens,
-		completionTokens,
-		totalTokens,
-		estCost: estimateCost(promptTokens, completionTokens, input.modelId)
-	};
+	const usage = usageFrom(body.usage, input.modelId);
 	console.info(JSON.stringify({ scope: 'structured-model', model: input.modelId, usage }));
 
 	return { content, usage };

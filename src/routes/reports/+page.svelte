@@ -21,6 +21,7 @@
 	import { studentName } from '$lib/marksheet/students.js';
 	import { changedInputFields, generationInputFor } from '$lib/marksheet/report-input.js';
 	import { agree, count } from '$lib/prose.js';
+	import { MAX_LABEL_LENGTH } from '$lib/marksheet/report-limits.js';
 	import { specPointCodes } from '$lib/marksheet/document.js';
 	type Step = 'topics' | 'grades' | 'who' | 'writing' | 'review';
 
@@ -185,10 +186,10 @@
 	const missingNames = $derived(
 		topicCodes.filter((code) => (document?.topicNames[code] ?? '').trim() === '')
 	);
-	// A typed name past the server's 120-character cap would fail every report
+	// A typed name past the server's length cap would fail every report
 	// write, so it blocks Next like a blank one.
 	const overLongNames = $derived(
-		topicCodes.filter((code) => (document?.topicNames[code] ?? '').trim().length > 120)
+		topicCodes.filter((code) => (document?.topicNames[code] ?? '').trim().length > MAX_LABEL_LENGTH)
 	);
 	const topicsBlocked = $derived(missingNames.length > 0 || overLongNames.length > 0);
 
@@ -379,7 +380,7 @@
 							id={`topic-${code}`}
 							class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 							value={document?.topicNames[code] ?? ''}
-							maxlength={120}
+							maxlength={MAX_LABEL_LENGTH}
 							placeholder={proposing ? 'Proposing…' : 'Name this topic'}
 							oninput={(event) => store.setTopicName(code, event.currentTarget.value)}
 						/>
@@ -399,7 +400,7 @@
 			{#if topicsBlocked}
 				<p class="text-sm text-muted-foreground">
 					{#if overLongNames.length > 0}
-						Keep every name to 120 characters: longer names fail the report run.
+						Keep every name to {MAX_LABEL_LENGTH} characters: longer names fail the report run.
 					{:else}
 						Name every topic before continuing: reports never show a bare code.
 					{/if}

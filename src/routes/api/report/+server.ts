@@ -16,99 +16,40 @@ import {
 	checkFeedback,
 	reportPayload,
 	reportSchema,
-	validateReportBody,
-	type CheckFailure
+	validateReportBody
 } from '$lib/server/report';
-import {
-	MISSING_API_KEY_CODE,
-	STRUCTURED_AUTH_CODE,
-	STRUCTURED_CREDIT_CODE,
-	STRUCTURED_REJECTED_CODE,
-	StructuredModelError,
-	callStructuredModel
-} from '$lib/server/openrouter';
-import { MODEL_RETRYABLE_CODE, extractJsonText } from '$lib/server/parse/model';
-import { getEnvDefaultModel } from '$lib/server/parse/env';
+import { StructuredModelError, callStructuredModel } from '$lib/server/openrouter';
+import { extractJsonText } from '$lib/server/parse/model';
+import { resolveModelId } from '$lib/server/parse/pdf';
+import { invalidInput, invalidOutput, modelErrorResponse } from '$lib/server/structured-route';
 
 const INVALID_INPUT_CODE = 'INVALID_REPORT_INPUT';
-const INVALID_OUTPUT_CODE = 'INVALID_MODEL_OUTPUT';
-
-function failure(status: number, error: Record<string, unknown>): Response {
-	return json({ error }, { status });
-}
-
-function invalidInput(
-	status: number,
-	message: string,
-	problems?: { field: string; message: string }[]
-): Response {
-	return failure(status, {
-		code: INVALID_INPUT_CODE,
-		message,
-		retryable: false,
-		field: problems?.[0]?.field ?? '',
-		...(problems ? { problems } : {})
-	});
-}
-
-function invalidOutput(checks: CheckFailure[]): Response {
-	return failure(502, {
-		code: INVALID_OUTPUT_CODE,
-		message: 'The model answer failed the feedback checks. Please try again.',
-		retryable: true,
-		checks
-	});
-}
-
-function modelError(error: StructuredModelError): Response {
-	switch (error.code) {
-		case MISSING_API_KEY_CODE:
-			return failure(500, { code: MISSING_API_KEY_CODE, message: error.message, retryable: false });
-		case STRUCTURED_AUTH_CODE:
-			return failure(500, { code: STRUCTURED_AUTH_CODE, message: error.message, retryable: false });
-		case STRUCTURED_CREDIT_CODE:
-			return failure(502, {
-				code: STRUCTURED_CREDIT_CODE,
-				message: error.message,
-				retryable: false
-			});
-		case STRUCTURED_REJECTED_CODE:
-			return failure(502, {
-				code: STRUCTURED_REJECTED_CODE,
-				message: error.message,
-				retryable: false
-			});
-		case MODEL_RETRYABLE_CODE:
-			return failure(502, {
-				code: MODEL_RETRYABLE_CODE,
-				message: error.message,
-				retryable: true,
-				...(error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter })
-			});
-		default:
-			throw error;
-	}
-}
+const CHECKS_FAILED_MESSAGE = 'The model answer failed the feedback checks. Please try again.';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const text = await request.text();
 	if (new TextEncoder().encode(text).byteLength > REPORT_MAX_BODY_BYTES) {
-		return invalidInput(413, 'The report request is too large.');
+		return invalidInput(INVALID_INPUT_CODE, 413, 'The report request is too large.');
 	}
 
 	let body: unknown;
 	try {
 		body = JSON.parse(text);
 	} catch {
-		return invalidInput(400, 'The report request is not valid JSON.');
+		return invalidInput(INVALID_INPUT_CODE, 400, 'The report request is not valid JSON.');
 	}
 
 	const { request: valid, problems } = validateReportBody(body);
 	if (!valid) {
-		return invalidInput(400, problems[0]?.message ?? 'The report request is invalid.', problems);
+		return invalidInput(
+			INVALID_INPUT_CODE,
+			400,
+			problems[0]?.message ?? 'The report request is invalid.',
+			problems[0]?.field ?? ''
+		);
 	}
 
-	const modelId = valid.model ?? (getEnvDefaultModel() || REPORT_DEFAULT_MODEL);
+	const modelId = resolveModelId(valid.model, REPORT_DEFAULT_MODEL);
 	const payload = reportPayload(valid);
 
 	let result;
@@ -122,7 +63,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			caller: { referer: 'https://qla.local/report', title: 'QLA Phase 3 Report' }
 		});
 	} catch (error) {
-		if (error instanceof StructuredModelError) return modelError(error);
+		if (error instanceof StructuredModelError) return modelErrorResponse(error);
 		throw error;
 	}
 
@@ -130,11 +71,13 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		parsed = JSON.parse(extractJsonText(result.content));
 	} catch {
-		return invalidOutput([{ id: 'shape', message: 'The model answer was not valid JSON.' }]);
+		return invalidOutput(CHECKS_FAILED_MESSAGE, [
+			{ id: 'shape', message: 'The model answer was not valid JSON.' }
+		]);
 	}
 
 	const checked = checkFeedback(valid, parsed);
-	if ('failures' in checked) return invalidOutput(checked.failures);
+	if ('failures' in checked) return invalidOutput(CHECKS_FAILED_MESSAGE, checked.failures);
 
 	return json({
 		strengths: checked.strengths,

@@ -36,7 +36,6 @@ interface Envelope {
 		retryable?: boolean;
 		retryAfter?: number;
 		field?: string;
-		problems?: { field: string; message: string }[];
 		checks?: { id: string; message: string }[];
 	};
 }
@@ -302,18 +301,8 @@ describe('POST /api/report input validation (no model spend)', () => {
 		expect(status).toBe(400);
 		expect(json.error?.code).toBe('INVALID_REPORT_INPUT');
 		expect(json.error?.retryable).toBe(false);
-		expect(json.error?.problems?.map((problem) => problem.field)).toContain(field);
+		expect(json.error?.field).toBe(field);
 		expect(calls).toHaveLength(0);
-	});
-
-	it('reports every problem at once', async () => {
-		const { json } = await post(body({ paperLabel: 5, entries: [entry('', 3, 2)], extra: true }));
-
-		const fields = json.error?.problems?.map((problem) => problem.field);
-		expect(fields).toEqual(
-			expect.arrayContaining(['paperLabel', 'extra', 'entries[0].label', 'entries[0].gained'])
-		);
-		expect(json.error?.field).toBeTypeOf('string');
 	});
 
 	it('rejects non-JSON with 400 and an empty field', async () => {

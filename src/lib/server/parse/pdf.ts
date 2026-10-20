@@ -31,11 +31,14 @@ export const OPENROUTER_TIMEOUT_MS = 120_000;
 export const DIAGRAM_UNVERIFIED_CODE = 'DIAGRAM_UNVERIFIED';
 
 /** Resolve the effective model id: trimmed override or the Gemini Flash default. */
-export function resolveModelId(modelOverride?: string): string {
+export function resolveModelId(
+	modelOverride?: string,
+	fallback: string = DEFAULT_MODEL_ID
+): string {
 	const trimmed = modelOverride?.trim();
 	if (trimmed) return trimmed;
 	const envDefault = getEnvDefaultModel();
-	return envDefault ? envDefault : DEFAULT_MODEL_ID;
+	return envDefault ? envDefault : fallback;
 }
 
 /**
