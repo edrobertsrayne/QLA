@@ -116,6 +116,101 @@ describe('boot gate', () => {
 		expect(store.document?.topicNames).toEqual({});
 	});
 
+	describe('report edits', () => {
+		const prose = {
+			strengths: ['You explain processes clearly.'],
+			areasForImprovement: [] as string[]
+		};
+		const input = { paperLabel: '10X Ph1', entries: [] as never[] };
+
+		/** A store holding one student's generated report with no edit beside it. */
+		function storeWithReport() {
+			const report = {
+				...prose,
+				edit: null,
+				input,
+				model: 'openai/gpt-6-luna',
+				generatedAt: NOW.toISOString()
+			};
+			const { store, storage } = openStore({
+				breakdownConfirmedAt: NOW.toISOString(),
+				students: [student('student-1', 'Ada', 'Lovelace')],
+				reports: { 'student-1': report }
+			});
+			return { store, storage };
+		}
+
+		it('stores the edit beside the generated prose, and persists it', () => {
+			const { store, storage } = storeWithReport();
+
+			store.editReport('student-1', {
+				strengths: ['Teacher wording.'],
+				areasForImprovement: ['Do more.']
+			});
+			store.flush();
+
+			expect(store.document?.reports['student-1'].strengths).toEqual([
+				'You explain processes clearly.'
+			]);
+			expect(store.document?.reports['student-1'].edit).toEqual({
+				strengths: ['Teacher wording.'],
+				areasForImprovement: ['Do more.']
+			});
+			expect(stored(storage).reports['student-1'].edit).toEqual({
+				strengths: ['Teacher wording.'],
+				areasForImprovement: ['Do more.']
+			});
+		});
+
+		it('reverts to the generated wording, and undo takes the edit back', () => {
+			const { store } = storeWithReport();
+
+			store.editReport('student-1', { strengths: ['Teacher wording.'], areasForImprovement: [] });
+			expect(store.undoable).toMatchObject({ kind: 'report-edit' });
+
+			expect(store.undo()).toBe(true);
+			expect(store.document?.reports['student-1'].edit).toBeNull();
+
+			store.editReport('student-1', { strengths: ['Teacher wording.'], areasForImprovement: [] });
+			store.revertReport('student-1');
+			expect(store.document?.reports['student-1'].edit).toBeNull();
+			expect(store.document?.reports['student-1'].strengths).toEqual([
+				'You explain processes clearly.'
+			]);
+		});
+
+		it('leaves a report with no edit alone, spending no undo', () => {
+			const { store } = storeWithReport();
+
+			store.revertReport('student-1');
+			expect(store.undoable).toBeNull();
+			expect(store.undo()).toBe(false);
+		});
+
+		it('takes a twice-typed edit back in one undo', () => {
+			const { store } = storeWithReport();
+
+			store.editReport('student-1', { strengths: ['Teach.'], areasForImprovement: [] });
+			store.editReport('student-1', { strengths: ['Teacher wording.'], areasForImprovement: [] });
+
+			expect(store.undo()).toBe(true);
+			expect(store.document?.reports['student-1'].edit).toBeNull();
+			expect(store.undo()).toBe(false);
+		});
+
+		it('leaves no edit when the wording matches the generated prose', () => {
+			const { store } = storeWithReport();
+
+			store.editReport('student-1', {
+				strengths: ['You explain processes clearly.'],
+				areasForImprovement: []
+			});
+
+			expect(store.document?.reports['student-1'].edit).toBeNull();
+			expect(store.undoable).toBeNull();
+		});
+	});
+
 	// Kept whole, under its own key: a version this app cannot read is still the
 	// teacher's only copy of their marks.
 	it.each([

@@ -9,6 +9,8 @@
 	import PrintRoot from '$lib/components/report/PrintRoot.svelte';
 	import ReportSheet from '$lib/components/report/ReportSheet.svelte';
 	import { ReportRun } from '$lib/components/report/report-run.svelte.js';
+	import { Alert, AlertDescription } from '$lib/components/ui/alert';
+	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 	import { marksheetStore } from '$lib/marksheet/index.js';
@@ -448,12 +450,37 @@
 				{#if writtenIds.length === 0}
 					<p>No reports have been written yet.</p>
 				{/if}
+				{#if store.undoable?.kind === 'report-edit'}
+					{@const undone = nameOf(store.undoable.studentId)}
+					{@const stillEdited = document.reports[store.undoable.studentId]?.edit !== null}
+					<Alert data-testid="report-edit-undo">
+						<AlertDescription>
+							{stillEdited ? 'Edited' : 'Reverted'}
+							{undone === '' ? 'a report' : undone}.
+						</AlertDescription>
+						<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
+					</Alert>
+				{/if}
 				{#each writtenIds as id (id)}
 					<div data-page-for={id} class="space-y-2">
-						<Button variant="outline" size="sm" onclick={() => void print([id])}
-							>Print this page</Button
-						>
-						<ReportSheet {document} studentId={id} report={document.reports[id]} />
+						<div class="flex flex-wrap items-center gap-2">
+							<Button variant="outline" size="sm" onclick={() => void print([id])}
+								>Print this page</Button
+							>
+							{#if document.reports[id].edit !== null}
+								<Badge variant="secondary">edited</Badge>
+								<Button variant="outline" size="sm" onclick={() => store.revertReport(id)}
+									>Revert</Button
+								>
+							{/if}
+						</div>
+						<ReportSheet
+							{document}
+							studentId={id}
+							report={document.reports[id]}
+							editable
+							onedit={(prose) => store.editReport(id, prose)}
+						/>
 					</div>
 				{/each}
 			</div>

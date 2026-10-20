@@ -74,7 +74,8 @@ export type Undoable =
 			name: string;
 			before: MarksheetDocument;
 	  }
-	| { kind: 'mark-paste'; before: MarksheetDocument };
+	| { kind: 'mark-paste'; before: MarksheetDocument }
+	| { kind: 'report-edit'; studentId: string; before: MarksheetDocument };
 
 export interface CreateFromParseInput {
 	breakdown: Breakdown;
@@ -653,6 +654,66 @@ export class MarksheetStore {
 			generatedAt: this.#now().toISOString()
 		};
 		this.#mutated();
+	}
+	/**
+	 * Edit one student's generated feedback in place. The teacher's wording is
+	 * stored beside the generated prose, so a rewrite or a Revert restores the
+	 * generated wording without a model call. Wording identical to the
+	 * generated prose leaves no edit behind, so typing the text back clears the
+	 * badge. Typing a report twice running keeps one undo, not one per
+	 * keystroke: the edit is one change, whatever it took to type it.
+	 */
+	editReport(studentId: string, prose: ReportProse): void {
+		this.#setReportEdit(studentId, {
+			strengths: [...prose.strengths],
+			areasForImprovement: [...prose.areasForImprovement]
+		});
+	}
+
+	/**
+	 * Drop the teacher's edit beside one student's generated prose, showing the
+	 * generated wording again with no model call. A report with no edit is left
+	 * alone: there is nothing to take back, so nothing is spent.
+	 */
+	revertReport(studentId: string): void {
+		this.#setReportEdit(studentId, null);
+	}
+
+	/**
+	 * Put the teacher's edit beside one student's generated prose, or take it
+	 * away. Edits to the same report in a row share one undo — the document as
+	 * it was before the first of them — so a whole edit is one thing to take
+	 * back. A change anywhere else starts a new undo, like every other change.
+	 */
+	#setReportEdit(studentId: string, edit: ReportProse | null): void {
+		const document = this.document;
+		const report = document?.reports[studentId];
+		if (!document || !report) return;
+		const next =
+			edit !== null &&
+			(edit.strengths.join('\n') !== report.strengths.join('\n') ||
+				edit.areasForImprovement.join('\n') !== report.areasForImprovement.join('\n'))
+				? edit
+				: null;
+		// Wording that resolves to what is already there — the generated prose
+		// when unedited, the edit beside it otherwise — changes nothing: no
+		// write, no spent undo.
+		const resolvesTo =
+			next === null
+				? report.edit === null
+				: report.edit !== null &&
+					next.strengths.join('\n') === report.edit.strengths.join('\n') &&
+					next.areasForImprovement.join('\n') === report.edit.areasForImprovement.join('\n');
+		if (resolvesTo) return;
+		const undoable = this.undoable;
+		const before =
+			undoable?.kind === 'report-edit' && undoable.studentId === studentId
+				? undoable.before
+				: copyOf(document);
+		report.edit = next;
+		// After the change, since the change itself clears any undo on offer.
+		this.#mutated();
+		this.undoable = { kind: 'report-edit', studentId, before };
 	}
 
 	/** Say no to the reminder for this session. The next document asks again. */

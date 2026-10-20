@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { goto } from '$app/navigation';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import {
@@ -213,7 +213,7 @@ describe('reports flow', () => {
 		expect(sheet?.textContent).toContain('Ada Lovelace');
 		expect(sheet?.textContent).toContain('5/10');
 		expect(sheet?.textContent).toContain('50%');
-		expect(sheet?.textContent).toContain('Careful working');
+		expect(sheet?.querySelector('textarea')?.value).toContain('Careful working');
 	});
 
 	it('stays on Writing and names a failure, keeping the finished reports', async () => {
@@ -585,5 +585,127 @@ describe('topic names step', () => {
 			second.container.querySelector(`#topic-${CSS.escape(code)}`);
 		expect(again('5.1.1')?.value).toBe('First proposal');
 		expect(again('5.1.2')?.value).toBe('Hand typed');
+	});
+});
+
+describe('report editing', () => {
+	/** One eligible student with a written report and no teacher edit. */
+	function written(): MarksheetDocument {
+		const doc = solo();
+		const input = generationInputFor(doc, 'ada');
+		if (!input) throw new Error('no generation input for ada');
+		doc.reports = {
+			ada: {
+				strengths: ['Careful working'],
+				areasForImprovement: ['Check units'],
+				edit: null,
+				input,
+				model: 'test/model',
+				generatedAt: '2026-01-01T10:00:00.000Z'
+			}
+		};
+		return doc;
+	}
+
+	it('edits a strength in place, keeps it across a reload, and prints it', async () => {
+		seed(written());
+		stubFetch();
+		const first = openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		await page.getByLabelText('Strengths for Ada Lovelace').fill('Beautifully clear working');
+		await userEvent.keyboard('{Tab}');
+		await expect.element(page.getByText('edited', { exact: true })).toBeInTheDocument();
+
+		marksheetStore().flush();
+		first.unmount();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		await expect
+			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.toHaveValue('Beautifully clear working');
+
+		const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+		print.mockClear();
+		await page.getByRole('button', { name: 'Print this page' }).click();
+		expect(document.querySelector('[data-testid="print-root"]')?.textContent).toContain(
+			'Beautifully clear working'
+		);
+		expect(print).toHaveBeenCalledTimes(1);
+		print.mockRestore();
+	});
+
+	it('reverts an edited report to its generated wording', async () => {
+		seed(written());
+		stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		await page.getByLabelText('Strengths for Ada Lovelace').fill('Teacher wording');
+		await userEvent.keyboard('{Tab}');
+		await expect.element(page.getByText('edited', { exact: true })).toBeInTheDocument();
+
+		await page.getByRole('button', { name: 'Revert' }).click();
+		await expect
+			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.toHaveValue('Careful working');
+		expect(page.getByText('edited', { exact: true }).query()).toBeNull();
+	});
+
+	it('undoes an edit', async () => {
+		seed(written());
+		stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		await page.getByLabelText('Strengths for Ada Lovelace').fill('Teacher wording');
+		await userEvent.keyboard('{Tab}');
+		await expect.element(page.getByText('edited', { exact: true })).toBeInTheDocument();
+
+		await page.getByTestId('report-edit-undo').getByRole('button', { name: 'Undo' }).click();
+		await expect
+			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.toHaveValue('Careful working');
+		expect(page.getByText('edited', { exact: true }).query()).toBeNull();
+	});
+
+	it('takes a typed edit back in one undo', async () => {
+		seed(written());
+		stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		await page.getByLabelText('Strengths for Ada Lovelace').fill('Teacher');
+		await userEvent.keyboard('{Tab}');
+		await page.getByLabelText('Strengths for Ada Lovelace').fill('Teacher wording');
+		await userEvent.keyboard('{Tab}');
+		await expect.element(page.getByText('edited', { exact: true })).toBeInTheDocument();
+
+		await page.getByTestId('report-edit-undo').getByRole('button', { name: 'Undo' }).click();
+		await expect
+			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.toHaveValue('Careful working');
+		expect(page.getByText('edited', { exact: true }).query()).toBeNull();
+	});
+
+	it('shows pasted markup as literal text on screen and in print', async () => {
+		seed(written());
+		stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		await page.getByLabelText('Strengths for Ada Lovelace').fill(HOSTILE);
+		await userEvent.keyboard('{Tab}');
+		await expect.element(page.getByText(HOSTILE).first()).toBeInTheDocument();
+		expect(document.querySelector('img')).toBeNull();
+
+		const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+		print.mockClear();
+		await page.getByRole('button', { name: 'Print this page' }).click();
+		expect(document.querySelector('[data-testid="print-root"] img')).toBeNull();
+		expect(document.querySelector('[data-testid="print-root"]')?.textContent).toContain(HOSTILE);
+		expect(print).toHaveBeenCalledTimes(1);
+		print.mockRestore();
 	});
 });
