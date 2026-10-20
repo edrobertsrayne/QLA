@@ -27,13 +27,6 @@ export function blockerText(blocker: ReportBlocker): string {
 	}
 }
 
-/** One student, and why they do or do not get a report. */
-export interface EligibilityRow {
-	studentId: string;
-	eligible: boolean;
-	blockers: ReportBlocker[];
-}
-
 /** Why one student is blocked: absent, unmarked entries, over-max entries. */
 export function blockersFor(document: MarksheetDocument, studentId: string): ReportBlocker[] {
 	const student = document.students.find((candidate) => candidate.id === studentId);
@@ -53,12 +46,4 @@ export function blockersFor(document: MarksheetDocument, studentId: string): Rep
 /** Whether one student gets a report: no blockers at all. */
 export function isEligible(document: MarksheetDocument, studentId: string): boolean {
 	return blockersFor(document, studentId).length === 0;
-}
-
-/** Every student, and why each does or does not get a report. */
-export function eligibilityRows(document: MarksheetDocument): EligibilityRow[] {
-	return document.students.map((student) => {
-		const blockers = blockersFor(document, student.id);
-		return { studentId: student.id, eligible: blockers.length === 0, blockers };
-	});
 }
