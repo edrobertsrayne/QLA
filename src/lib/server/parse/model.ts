@@ -172,7 +172,8 @@ export function extractJsonText(content: string): string {
 	return (fenced?.[1] ?? trimmed).trim();
 }
 
-function contentToText(content: unknown): string {
+/** Coerce an OpenRouter message `content` part (string or parts array) to plain text. */
+export function contentToText(content: unknown): string {
 	if (typeof content === 'string') return content;
 	if (Array.isArray(content)) {
 		return content
