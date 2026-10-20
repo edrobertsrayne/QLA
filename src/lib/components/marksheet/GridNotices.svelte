@@ -17,7 +17,7 @@
 	const described = $derived(pasteNotice ? describePaste(pasteNotice) : null);
 </script>
 
-{#if undoable?.kind === 'student-removal' || refusal || pasteNotice}
+{#if undoable?.kind === 'student-removal' || undoable?.kind === 'grade-boundaries' || refusal || pasteNotice}
 	<!-- Sticky, and above the toolbar: a notice about a cell far down a long class
 	     must still be where the teacher is looking. Neither notice takes a click,
 	     so the mark cells it passes over stay reachable. -->
@@ -29,6 +29,17 @@
 			>
 				<AlertDescription>
 					Removed <strong>{undoable.name}</strong>.
+				</AlertDescription>
+				<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
+			</Alert>
+		{/if}
+		{#if undoable?.kind === 'grade-boundaries'}
+			<Alert
+				class="pointer-events-auto flex flex-row items-center gap-2 py-2 shadow-sm"
+				data-testid="undo"
+			>
+				<AlertDescription>
+					{undoable.action === 'saved' ? 'Grade boundaries saved.' : 'Grade boundaries removed.'}
 				</AlertDescription>
 				<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
 			</Alert>

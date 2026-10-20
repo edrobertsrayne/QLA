@@ -19,8 +19,13 @@
 
 	let {
 		cursorEntryId,
-		onJump
-	}: { cursorEntryId: string | null; onJump: (band: QuestionBand) => void } = $props();
+		onJump,
+		endColumns = 1
+	}: {
+		cursorEntryId: string | null;
+		onJump: (band: QuestionBand) => void;
+		endColumns?: number;
+	} = $props();
 
 	const store = marksheetStore();
 	const bands = $derived(store.questionBands);
@@ -73,4 +78,5 @@
 			</span>
 		</Table.Head>
 	{/each}
+	<Table.Head colspan={endColumns} class="border-l-2 bg-muted/50" />
 </Table.Row>

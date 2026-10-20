@@ -75,7 +75,8 @@ export type Undoable =
 			before: MarksheetDocument;
 	  }
 	| { kind: 'mark-paste'; before: MarksheetDocument }
-	| { kind: 'report-edit'; studentId: string; before: MarksheetDocument };
+	| { kind: 'report-edit'; studentId: string; before: MarksheetDocument }
+	| { kind: 'grade-boundaries'; action: 'saved' | 'removed'; before: MarksheetDocument };
 
 export interface CreateFromParseInput {
 	breakdown: Breakdown;
@@ -715,12 +716,44 @@ export class MarksheetStore {
 		this.#mutated();
 		this.undoable = { kind: 'report-edit', studentId, before };
 	}
+	/**
+	 * Save the paper's grade boundaries: the kept rows top grade first, with
+	 * blank and unawarded rows left out, and the below-lowest label. One undo
+	 * takes the save back, like every other marksheet change.
+	 */
+	saveBoundaries(boundaries: { label: string; minimum: number }[], belowLowestLabel: string): void {
+		const document = this.document;
+		if (!document) return;
+		const before = copyOf(document);
+		const trimmed = belowLowestLabel.trim() === '' ? 'U' : belowLowestLabel.trim();
+		// Saving what amounts to nothing is marks only: a blank scale stores
+		// null like a paper that never had grades.
+		document.paper.boundaries = boundaries.length === 0 ? null : boundaries.map((b) => ({ ...b }));
+		document.paper.belowLowestLabel = trimmed;
+		// After the change, since the change itself clears any undo on offer.
+		this.#mutated();
+		this.undoable = { kind: 'grade-boundaries', action: 'saved', before };
+	}
+
+	/**
+	 * Drop every boundary, back to marks only. The below-lowest label stays
+	 * where it was, so re-adding grades finds it as the teacher left it.
+	 */
+	removeBoundaries(): void {
+		const document = this.document;
+		if (!document) return;
+		if (document.paper.boundaries === null) return;
+		const before = copyOf(document);
+		document.paper.boundaries = null;
+		// After the change, since the change itself clears any undo on offer.
+		this.#mutated();
+		this.undoable = { kind: 'grade-boundaries', action: 'removed', before };
+	}
 
 	/** Say no to the reminder for this session. The next document asks again. */
 	dismissBackupReminder(): void {
 		this.backupReminderDismissed = true;
 	}
-
 	/**
 	 * Adopt a document read from a backup file, and say whether it was taken —
 	 * not when this browser already holds a document (replacing one is the

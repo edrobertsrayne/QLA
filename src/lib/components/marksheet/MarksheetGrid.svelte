@@ -19,6 +19,7 @@
 		type BreakdownEntry,
 		type StoredStudent
 	} from '$lib/marksheet/document.js';
+	import { studentGrade, toNextText } from '$lib/marksheet/grades.js';
 	import { resolveCell, step, type GridCell } from '$lib/marksheet/grid-cursor.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { clipboardGrid } from '$lib/marksheet/paste.js';
@@ -47,6 +48,15 @@
 	const entries = $derived(store.entries);
 	const students = $derived(store.students);
 	const marks = $derived(store.document?.marks ?? {});
+	/** Grade columns beside the marks: total always, grade and to-next only with boundaries. */
+	const hasGrades = $derived((store.document?.paper.boundaries?.length ?? 0) > 0);
+	const graded = $derived.by(() => {
+		const document = store.document;
+		if (!document) return new Map<string, ReturnType<typeof studentGrade>>();
+		return new Map(
+			students.map((student) => [student.id, studentGrade(document, student, entries)])
+		);
+	});
 
 	/** Where the cursor is: a mark cell, or a row's name cell when `entryId` is null. */
 	let cursor = $state<GridCell | null>(null);
@@ -341,10 +351,19 @@
 			{#each entries as entry (entry.id)}
 				<col style="width: {COLUMN.entry}" />
 			{/each}
+			<col style="width: 3rem" />
+			{#if hasGrades}
+				<col style="width: 3rem" />
+				<col style="width: 5rem" />
+			{/if}
 		</colgroup>
 		<Table.Header>
 			{#if store.questionBands.length > 0}
-				<BandHeaderRow cursorEntryId={cursor?.entryId ?? null} onJump={jumpToBand} />
+				<BandHeaderRow
+					cursorEntryId={cursor?.entryId ?? null}
+					onJump={jumpToBand}
+					endColumns={hasGrades ? 3 : 1}
+				/>
 			{/if}
 			<Table.Row role="row" class="hover:bg-transparent">
 				<Table.Head class={cn(NAME_COLUMN, 'px-1.5 text-left text-xs')}>Student</Table.Head>
@@ -354,6 +373,11 @@
 				{#each entries as entry (entry.id)}
 					<EntryColumnHead {entry} active={cursor?.entryId === entry.id} />
 				{/each}
+				<Table.Head class="border-l-2 px-1 text-center text-xs">Total</Table.Head>
+				{#if hasGrades}
+					<Table.Head class="px-1 text-center text-xs">Grade</Table.Head>
+					<Table.Head class="px-1 text-center text-xs">To next</Table.Head>
+				{/if}
 			</Table.Row>
 		</Table.Header>
 		<Table.Body>
@@ -431,6 +455,46 @@
 							{/if}
 						</Table.Cell>
 					{/each}
+					{@const grade = graded.get(student.id)}
+					<Table.Cell
+						data-testid="total-cell"
+						data-student-id={student.id}
+						class={cn(
+							'border-l-2 px-1 text-center tabular-nums',
+							grade?.kind === 'partial' && 'text-muted-foreground italic'
+						)}
+					>
+						{#if grade?.kind === 'complete' || grade?.kind === 'partial'}{grade.total}{/if}
+					</Table.Cell>
+					{#if hasGrades}
+						<Table.Cell
+							data-testid="grade-cell"
+							data-student-id={student.id}
+							class={cn(
+								'px-1 text-center font-semibold',
+								grade?.kind === 'partial' && 'font-normal text-muted-foreground italic'
+							)}
+							title={grade?.kind === 'partial' ? 'Provisional: not every mark is in' : undefined}
+						>
+							{#if (grade?.kind === 'complete' || grade?.kind === 'partial') && grade.grade}{grade
+									.grade.label}{grade.kind === 'partial'
+									? '*'
+									: ''}{:else if grade?.kind === 'over-max'}<span class="text-destructive">!</span
+								>{/if}
+						</Table.Cell>
+						<Table.Cell
+							data-testid="to-next-cell"
+							data-student-id={student.id}
+							class={cn(
+								'px-1 text-center text-xs tabular-nums',
+								grade?.kind === 'partial' && 'text-muted-foreground italic'
+							)}
+						>
+							{#if grade?.kind === 'partial' && grade.grade}so far{:else if (grade?.kind === 'complete' || grade?.kind === 'partial') && grade.grade}{toNextText(
+									grade.grade
+								)}{/if}
+						</Table.Cell>
+					{/if}
 				</Table.Row>
 			{/each}
 			<Table.Row role="row" class="hover:bg-transparent">
@@ -455,7 +519,7 @@
 						</Button>
 					{/if}
 				</Table.Cell>
-				<Table.Cell colspan={entries.length + 1} role="gridcell" />
+				<Table.Cell colspan={entries.length + (hasGrades ? 3 : 1)} role="gridcell" />
 			</Table.Row>
 		</Table.Body>
 		<FacilityFooter {onViewAnalysis} />

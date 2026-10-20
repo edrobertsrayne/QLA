@@ -379,7 +379,7 @@ describe('marksheet page', () => {
 		};
 		const nameCell = find('[data-testid="name-cell"]');
 		const progressCell = find('[data-testid="progress-cell"]');
-		const lastColumn = find('[data-testid="student-row"] [role="gridcell"]:last-of-type');
+		const lastColumn = markCell(screen, 'student-1', 'entry-39');
 		let scroller: HTMLElement | null = nameCell.parentElement;
 		while (scroller && scroller.scrollWidth <= scroller.clientWidth) {
 			scroller = scroller.parentElement;
