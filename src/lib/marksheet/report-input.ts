@@ -7,7 +7,8 @@
 // no student identifier of any kind; the browser matches each response to its
 // `fetch`.
 
-import { specPointCodes, type MarksheetDocument, type ReportGenerationInput } from './document.js';
+import type { MarksheetDocument, ReportGenerationInput } from './document.js';
+import { topicNamesFor } from './report-rollup.js';
 import { isEligible } from './report-eligibility.js';
 
 /**
@@ -29,9 +30,7 @@ export function generationInputFor(
 			summary: entry.summary,
 			commandWord: entry.commandWord,
 			ao: entry.ao,
-			topics: specPointCodes(entry.specPoint).map(
-				(code) => document.topicNames[code]?.trim() || code
-			),
+			topics: topicNamesFor(document, entry.specPoint),
 			gained,
 			available: entry.marks ?? 0
 		});

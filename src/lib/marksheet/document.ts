@@ -501,14 +501,20 @@ export function specPointCodes(specPoint: string | null): string[] {
 		.filter((code) => code !== '');
 }
 
+/** Every normalised specification-point code on the breakdown, in first-seen order. */
+export function topicCodesOf(document: MarksheetDocument): string[] {
+	const seen = new Set<string>();
+	for (const entry of document.breakdown.entries) {
+		for (const code of specPointCodes(entry.specPoint)) seen.add(code);
+	}
+	return [...seen];
+}
+
 /** Drop topic names whose code appears on no entry, even inside a comma or slash list. */
 export function dropOrphanedTopicNames(
 	document: MarksheetDocument
 ): MarksheetDocument['topicNames'] {
-	const live = new Set<string>();
-	for (const entry of document.breakdown.entries) {
-		for (const code of specPointCodes(entry.specPoint)) live.add(code);
-	}
+	const live = new Set(topicCodesOf(document));
 	const topicNames: MarksheetDocument['topicNames'] = {};
 	for (const [code, name] of Object.entries(document.topicNames)) {
 		if (live.has(code)) topicNames[code] = name;
