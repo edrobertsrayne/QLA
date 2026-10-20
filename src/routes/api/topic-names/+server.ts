@@ -15,7 +15,6 @@ import {
 	usableTopicNames,
 	validateTopicNamesBody
 } from '$lib/server/topic-names';
-import { REPORT_DEFAULT_MODEL } from '$lib/server/report';
 import { resolveModelId } from '$lib/server/parse/pdf';
 import { askModel, readRequest } from '$lib/server/structured-route';
 
@@ -30,7 +29,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	);
 	if (valid instanceof Response) return valid;
 
-	const modelId = resolveModelId(valid.model, REPORT_DEFAULT_MODEL);
+	const modelId = resolveModelId(valid.model);
 	const asked = await askModel(
 		{
 			modelId,

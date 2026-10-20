@@ -2,7 +2,7 @@
 //
 // Server extracts per-page text with `unpdf` (deterministic, works with any
 // per-run model) AND forwards the original PDFs natively (`engine: 'native'`
-// on the Gemini Flash default) in the same OpenRouter call, so layout,
+// on the default model) in the same OpenRouter call, so layout,
 // tables, emphasis and diagrams ground the breakdown. If the per-run override
 // model lacks native file support, the route degrades to text-only with a
 // visible diagram-unverified warning — never a silent paid-OCR fallback and
@@ -18,8 +18,8 @@ import { fenceDocuments } from '../fence';
 import type { ParseWarning } from './schema';
 import { getEnvDefaultModel } from './env';
 
-/** Default model when no per-run override is given (Gemini Flash via OpenRouter). */
-export const DEFAULT_MODEL_ID = 'google/gemini-2.5-flash';
+/** Default model for every OpenRouter call when no per-run override or OPENROUTER_MODEL is given. */
+export const DEFAULT_MODEL_ID = 'openai/gpt-6-luna';
 
 /** Guardrail: cap completion so a full GCSE paper completes in one run. */
 export const OPENROUTER_MAX_TOKENS = 4000;
@@ -30,27 +30,22 @@ export const OPENROUTER_TIMEOUT_MS = 120_000;
 /** Warning code for the text-only degradation path. */
 export const DIAGRAM_UNVERIFIED_CODE = 'DIAGRAM_UNVERIFIED';
 
-/** Resolve the effective model id: trimmed override or the Gemini Flash default. */
-export function resolveModelId(
-	modelOverride?: string,
-	fallback: string = DEFAULT_MODEL_ID
-): string {
+/** Resolve the effective model id: trimmed override, else OPENROUTER_MODEL, else DEFAULT_MODEL_ID. */
+export function resolveModelId(modelOverride?: string): string {
 	const trimmed = modelOverride?.trim();
-	if (trimmed) return trimmed;
-	const envDefault = getEnvDefaultModel();
-	return envDefault ? envDefault : fallback;
+	return trimmed || getEnvDefaultModel() || DEFAULT_MODEL_ID;
 }
 
 /**
  * Whether a model id supports native PDF file input through OpenRouter.
- * The default (no override → Gemini Flash) always supports native.
+ * The default (`DEFAULT_MODEL_ID`) always supports native.
  * Overrides match a small allowlist of known multimodal families; anything
  * else degrades to text-only rather than risking the silent `mistral-ocr`
  * paid fallback (which is what OpenRouter picks when `engine` is unset on a
  * non-multimodal model).
  */
 export function supportsNativePdf(modelId: string): boolean {
-	return /gemini|claude|gpt-4o|gpt-4\.1|gpt-5|sonnet|opus|haiku/i.test(modelId);
+	return /gemini|claude|gpt-4o|gpt-4\.1|gpt-5|gpt-6|sonnet|opus|haiku/i.test(modelId);
 }
 
 /** Deterministic text extraction of one PDF. */

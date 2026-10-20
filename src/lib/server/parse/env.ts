@@ -24,7 +24,7 @@ export function getApiKey(): string {
 	return process.env.OPENROUTER_API_KEY?.trim() ?? '';
 }
 
-/** Trimmed `OPENROUTER_MODEL` default, or `''` when unset. Callers fall back to Gemini Flash. */
+/** Trimmed `OPENROUTER_MODEL` default, or `''` when unset. Callers fall back to `DEFAULT_MODEL_ID`. */
 export function getEnvDefaultModel(): string {
 	if (defaultModelTestOverride !== undefined) return defaultModelTestOverride.trim();
 	const fromDynamic = env.OPENROUTER_MODEL?.trim();

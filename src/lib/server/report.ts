@@ -24,9 +24,6 @@ import {
 	rejectUnknownKeys
 } from './request-fields.js';
 
-/** Model resolves override → env → this default. Not checked against the curated list. */
-export const REPORT_DEFAULT_MODEL = 'openai/gpt-6-luna';
-
 /** One entry as the request carries it. */
 export interface ReportRequestEntry {
 	label: string;

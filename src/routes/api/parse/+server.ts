@@ -3,8 +3,7 @@
 // Multipart in, `{ breakdown, warnings, usage }` out. Accepts an assessment
 // paper and/or a markscheme PDF (at least one required), plus an optional
 // exam specification URL fetched server-side per run (no cache). The live
-// model call goes through the real configurable OpenRouter model (Gemini
-// Flash default, per-run override) with max_tokens 4000, a 120s timeout,
+// model (GPT-6 Luna default, per-run override) with max_tokens 4000, a 120s timeout,
 // usage on every response, one silent retry on malformed JSON, and
 // 429/5xx → 502 mapping. Spec failures fail the run (400) before any model
 // spend; the spec never changes the verbatim specPoint rule.
