@@ -5,15 +5,17 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount, tick } from 'svelte';
-	import ModelSelect, { type ModelOption } from '$lib/components/parse/ModelSelect.svelte';
+	import ModelSelect from '$lib/components/parse/ModelSelect.svelte';
+	import { ModelList } from '$lib/components/parse/model-list.svelte.js';
 	import PrintRoot from '$lib/components/report/PrintRoot.svelte';
 	import ReportSheet from '$lib/components/report/ReportSheet.svelte';
 	import GradeBoundariesForm from '$lib/components/report/GradeBoundariesForm.svelte';
-	import { isFlagged, isShrunk, reportFit } from '$lib/components/report/report-fit.svelte.js';
+	import { isFlagged, reportFit } from '$lib/components/report/report-fit.svelte.js';
 	import { ReportRun } from '$lib/components/report/report-run.svelte.js';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { Label } from '$lib/components/ui/label';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { marksheetStore } from '$lib/marksheet/index.js';
@@ -66,11 +68,17 @@
 	);
 	let includeEdited = $state(false);
 
+	/** The report awaiting the teacher's say-so before their edits are discarded. */
+	let confirmRewrite = $state<string | null>(null);
+
 	/** One fresh page: over a teacher's edit only with their say-so. */
 	function rewriteOne(id: string): void {
 		const report = document?.reports[id];
 		if (!report) return;
-		if (report.edit !== null && !window.confirm('This discards your edits')) return;
+		if (report.edit !== null) {
+			confirmRewrite = id;
+			return;
+		}
 		run.retry([id], modelOverride);
 	}
 
@@ -89,15 +97,15 @@
 	let confirmOverflow = $state<PendingPrint | null>(null);
 	function askPrint(ids: string[] | null): void {
 		const targets = ids ?? reviewIds;
-		const stale = targets.filter((id) => outOfDateChanges(id).length > 0).length;
-		if (stale > 0) {
-			confirmPrint = { ids, count: stale };
+		const outOfDate = targets.filter((id) => outOfDateChanges(id).length > 0).length;
+		if (outOfDate > 0) {
+			confirmPrint = { ids, count: outOfDate };
 			return;
 		}
 		askOverflow(ids, targets);
 	}
 
-	/** A flagged page never prints unannounced, even past the stale check. */
+	/** A flagged page never prints unannounced, even past the out-of-date check. */
 	function askOverflow(ids: string[] | null, targets: string[]): void {
 		const over = targets.filter((id) => isFlagged(fit.fitOf(id))).length;
 		if (over > 0) confirmOverflow = { ids, count: over };
@@ -112,9 +120,16 @@
 	const topicCodes = $derived(document ? topicCodesOf(document) : []);
 
 	// The step the teacher lands on: reports written means Review, otherwise
-	// the first step of the flow (Topic names when the paper has codes).
-	let step = $state<Step>('who');
-	let stepInitialised = $state(false);
+	// the first step of the flow (Topic names when the paper has codes). The
+	// layout load has already read the document before this page renders.
+	const landing = store.document;
+	let step = $state<Step>(
+		landing && Object.keys(landing.reports).length > 0
+			? 'review'
+			: landing && topicCodesOf(landing).length > 0
+				? 'topics'
+				: 'grades'
+	);
 
 	// The paper has topic codes only when some entry carries a specification point.
 	const STEPS: { id: Step; label: string }[] = $derived(
@@ -136,44 +151,11 @@
 
 	let modelOverride = $state('');
 	let modelCustom = $state(false);
-	let modelOptions = $state<ModelOption[]>([]);
-	let modelsLoading = $state(false);
-	let modelsError = $state<string | null>(null);
-
-	async function loadModels(): Promise<void> {
-		modelsLoading = true;
-		modelsError = null;
-		try {
-			const response = await fetch('/api/models');
-			if (!response.ok) throw new Error(`status ${response.status}`);
-			const body = (await response.json()) as { models?: ModelOption[] };
-			modelOptions = Array.isArray(body.models) ? body.models : [];
-		} catch {
-			modelsError = 'The model list could not be loaded. Server default still works.';
-			modelOptions = [];
-		} finally {
-			modelsLoading = false;
-		}
-	}
+	const models = new ModelList();
 
 	onMount(() => {
-		void loadModels();
-	});
-
-	/**
-	 * Where the teacher lands: reports written means Review, otherwise the
-	 * first step of the flow. Runs once the document is in hand, since the
-	 * step depends on whether the paper has topic codes.
-	 */
-	$effect(() => {
-		if (stepInitialised || !document) return;
-		stepInitialised = true;
-		step =
-			Object.keys(document.reports).length > 0
-				? 'review'
-				: topicCodes.length > 0
-					? 'topics'
-					: 'grades';
+		void models.load();
+		if (step === 'topics' && missingNames.length > 0) void proposeMissing();
 	});
 	const missingNames = $derived(
 		topicCodes.filter((code) => (document?.topicNames[code] ?? '').trim() === '')
@@ -239,27 +221,32 @@
 		}
 	}
 
-	// The proposal runs on arrival when some code lacks a name — not on every
-	// new gap, so blanking a name to retype it never fires a model call.
-	let prevStep = $state<Step>('who');
-	$effect(() => {
-		if (step === 'topics' && prevStep !== 'topics' && document && missingNames.length > 0) {
-			void proposeMissing();
-		}
-		prevStep = step;
-	});
+	/**
+	 * Every move between steps goes through here: arriving at Topic names with
+	 * a gap proposes names once — not on every new gap, so blanking a name to
+	 * retype it never fires a model call.
+	 */
+	function goTo(next: Step): void {
+		const arriving = next === 'topics' && step !== 'topics';
+		step = next;
+		if (arriving && missingNames.length > 0) void proposeMissing();
+	}
+
 	const run = new ReportRun(store, () => {
 		step = 'review';
 	});
 
 	function startRun(studentIds: string[]): void {
 		if (modelCustom) modelOverride = modelOverride.trim();
-		step = 'writing';
+		goTo('writing');
 		run.start(studentIds, modelOverride);
 	}
 
+	/** Eligible students with no report: Who gets one never writes over a stored one. */
+	const unwrittenIds = $derived(eligibleIds.filter((id) => document && !document.reports[id]));
+
 	function write(): void {
-		startRun(eligibleIds);
+		startRun(unwrittenIds);
 	}
 
 	/**
@@ -272,12 +259,12 @@
 	);
 
 	function writeMore(): void {
-		step = 'writing';
+		goTo('writing');
 		run.retry(pendingIds, modelOverride);
 	}
 
 	function retryFailed(): void {
-		step = 'writing';
+		goTo('writing');
 		run.retry([...run.failed], modelOverride);
 	}
 
@@ -317,6 +304,18 @@
 	<title>Reports · QLA</title>
 </svelte:head>
 
+{#snippet namesNeeded()}
+	{@const needing = missingNames.length + overLongNames.length}
+	<Alert>
+		<AlertDescription>
+			{count(needing, 'topic')}
+			{agree(needing, 'needs', 'need')} a name of at most {MAX_LABEL_LENGTH} characters before reports
+			are written or printed.
+		</AlertDescription>
+		<Button size="xs" variant="outline" onclick={() => goTo('topics')}>Name topics</Button>
+	</Alert>
+{/snippet}
+
 <main class="mx-auto max-w-6xl space-y-6 p-6 print:hidden">
 	<div class="flex flex-wrap items-center gap-4">
 		<Button variant="ghost" size="sm" onclick={() => void goto(resolve('/marksheet'))}>
@@ -326,17 +325,15 @@
 			<ol class="flex flex-wrap items-center gap-2 text-sm">
 				{#each STEPS as item, index (item.id)}
 					<li>
-						<button
-							type="button"
-							class="rounded-md border px-3 py-1 {step === item.id
-								? 'border-primary bg-primary text-primary-foreground'
-								: 'hover:bg-muted'}"
+						<Button
+							size="sm"
+							variant={step === item.id ? 'default' : 'outline'}
 							aria-current={step === item.id ? 'step' : undefined}
 							disabled={step === 'topics' && item.id !== 'topics' && topicsBlocked}
 							title={step === 'topics' && item.id !== 'topics' && topicsBlocked
 								? 'Name every topic first'
 								: undefined}
-							onclick={() => (step = item.id)}>{index + 1}. {item.label}</button
+							onclick={() => goTo(item.id)}>{index + 1}. {item.label}</Button
 						>
 					</li>
 				{/each}
@@ -387,7 +384,7 @@
 				>
 					{proposing ? 'Proposing…' : 'Propose missing names'}
 				</Button>
-				<Button disabled={topicsBlocked} onclick={() => (step = 'grades')}>Next</Button>
+				<Button disabled={topicsBlocked} onclick={() => goTo('grades')}>Next</Button>
 			</div>
 			{#if topicsBlocked}
 				<p class="text-sm text-muted-foreground">
@@ -406,12 +403,12 @@
 				Reports show a grade when the paper has boundaries. Set them now, or skip and reports show
 				marks only.
 			</p>
-			<GradeBoundariesForm onDone={() => (step = 'who')} />
+			<GradeBoundariesForm onDone={() => goTo('who')} />
 			<div class="flex flex-wrap gap-2">
 				{#if document && boundariesOf(document)}
-					<Button onclick={() => (step = 'who')}>Next</Button>
+					<Button onclick={() => goTo('who')}>Next</Button>
 				{:else}
-					<Button variant="outline" onclick={() => (step = 'who')}>
+					<Button variant="outline" onclick={() => goTo('who')}>
 						Skip: no grades on these reports
 					</Button>
 				{/if}
@@ -420,6 +417,7 @@
 	{:else if step === 'who'}
 		<section class="space-y-4">
 			<h1 class="text-xl font-semibold">{count(eligibleIds.length, 'student')} get a report</h1>
+			{#if topicsBlocked}{@render namesNeeded()}{/if}
 			{#if blocked.length > 0}
 				<div class="space-y-2 rounded-md border p-3">
 					<h2 class="font-medium">Not getting one yet</h2>
@@ -443,18 +441,24 @@
 				<ModelSelect
 					bind:value={modelOverride}
 					bind:custom={modelCustom}
-					models={modelOptions}
-					loading={modelsLoading}
-					loadError={modelsError}
-					onretry={() => void loadModels()}
+					models={models.options}
+					loading={models.loading}
+					loadError={models.error}
+					onretry={() => void models.load()}
 				/>
 			</div>
-			<Button disabled={eligibleIds.length === 0 || run.running} onclick={write}>
-				Write {count(eligibleIds.length, 'report')}
+			<Button disabled={unwrittenIds.length === 0 || run.running || topicsBlocked} onclick={write}>
+				Write {count(unwrittenIds.length, 'report')}
 			</Button>
+			{#if eligibleIds.length > 0 && unwrittenIds.length === 0}
+				<p class="text-sm text-muted-foreground">
+					Every student here has a report. Rewrite them from Review and print.
+				</p>
+			{/if}
 		</section>
 	{:else if step === 'writing'}
 		<section class="space-y-4">
+			{#if topicsBlocked}{@render namesNeeded()}{/if}
 			{#if run.order.length === 0}
 				<h1 class="text-xl font-semibold">Nothing is being written</h1>
 			{:else}
@@ -472,12 +476,14 @@
 			{:else if run.order.length > 0}
 				<div class="flex gap-2">
 					{#if run.failed.length > 0}
-						<Button variant="outline" onclick={retryFailed}>Retry failed</Button>
+						<Button variant="outline" disabled={topicsBlocked} onclick={retryFailed}>
+							Retry failed
+						</Button>
 					{/if}
 					{#if run.failed.length > 0 || writtenIds.length > 0}
-						<Button onclick={() => (step = 'review')}>Review {writtenIds.length}</Button>
+						<Button onclick={() => goTo('review')}>Review {writtenIds.length}</Button>
 					{/if}
-					<Button variant="outline" onclick={() => (step = 'who')}>Back to Who gets one</Button>
+					<Button variant="outline" onclick={() => goTo('who')}>Back to Who gets one</Button>
 				</div>
 			{/if}
 			<ul class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -491,9 +497,9 @@
 							<Button
 								size="sm"
 								variant="outline"
-								disabled={run.running}
+								disabled={run.running || topicsBlocked}
 								onclick={() => {
-									step = 'writing';
+									goTo('writing');
 									run.retry([id], modelOverride);
 								}}>Retry</Button
 							>
@@ -505,81 +511,15 @@
 	{:else if document}
 		<section class="flex items-start gap-6">
 			<aside class="sticky top-4 w-56 shrink-0 space-y-3 self-start">
-				<Button disabled={reviewIds.length === 0} onclick={() => askPrint(null)}>
+				<Button disabled={reviewIds.length === 0 || topicsBlocked} onclick={() => askPrint(null)}>
 					Print all {reviewIds.length}
 				</Button>
-				{#if confirmPrint}
-					{@const outOfDateCount = confirmPrint.count}
-					<div
-						role="alertdialog"
-						aria-label="Out-of-date reports"
-						class="space-y-2 rounded-md border p-3 text-sm"
-					>
-						<p>
-							{count(outOfDateCount, 'report')}
-							{agree(outOfDateCount, 'is', 'are')} out of date: print anyway / rewrite {outOfDateCount ===
-							1
-								? 'it'
-								: 'them'} first
-						</p>
-						<div class="flex flex-wrap gap-2">
-							<Button
-								size="sm"
-								onclick={() => {
-									const pending = confirmPrint;
-									confirmPrint = null;
-									askOverflow(pending?.ids ?? null, pending?.ids ?? reviewIds);
-								}}
-							>
-								Print anyway
-							</Button>
-							<Button
-								size="sm"
-								variant="outline"
-								onclick={() => {
-									confirmPrint = null;
-									rewriteOutOfDate();
-								}}
-							>
-								Rewrite {outOfDateCount === 1 ? 'it' : 'them'} first
-							</Button>
-						</div>
-					</div>
-				{/if}
-				{#if confirmOverflow}
-					{@const overCount = confirmOverflow.count}
-					<div
-						role="alertdialog"
-						aria-label="Overflowing reports"
-						class="space-y-2 rounded-md border p-3 text-sm"
-					>
-						<p>
-							{count(overCount, 'report')}
-							{agree(overCount, 'runs', 'run')} over the page; print cuts the overflow off. Print anyway?
-						</p>
-						<div class="flex flex-wrap gap-2">
-							<Button
-								size="sm"
-								onclick={() => {
-									const pending = confirmOverflow;
-									confirmOverflow = null;
-									void print(pending?.ids ?? null);
-								}}
-							>
-								Print anyway
-							</Button>
-							<Button size="sm" variant="outline" onclick={() => (confirmOverflow = null)}>
-								Keep editing
-							</Button>
-						</div>
-					</div>
-				{/if}
 				{#if outOfDateIds.length > 0 && !run.running}
 					{@const skipped = includeEdited ? 0 : editedOutOfDateIds.length}
 					{@const rewritable = outOfDateIds.length - skipped}
 					<Button
 						variant="outline"
-						disabled={rewritable === 0}
+						disabled={rewritable === 0 || topicsBlocked}
 						onclick={rewriteOutOfDate}
 						title={skipped > 0 ? 'Tick the box to include edited reports' : undefined}
 					>
@@ -596,7 +536,9 @@
 					<p class="text-sm text-muted-foreground">Rewriting…</p>
 				{/if}
 				{#if pendingIds.length > 0 && !run.running}
-					<Button variant="outline" onclick={writeMore}>Write {pendingIds.length} more</Button>
+					<Button variant="outline" disabled={topicsBlocked} onclick={writeMore}
+						>Write {pendingIds.length} more</Button
+					>
 				{/if}
 				<ul class="space-y-1 text-sm">
 					{#each students as student (student.id)}
@@ -621,6 +563,7 @@
 				</ul>
 			</aside>
 			<div class="min-w-0 flex-1 space-y-8 overflow-x-auto">
+				{#if topicsBlocked}{@render namesNeeded()}{/if}
 				{#if reviewIds.length === 0}
 					<p>No reports have been written yet.</p>
 				{/if}
@@ -642,8 +585,11 @@
 					{@const pageFit = fit.fitOf(id)}
 					<div data-page-for={id} class="space-y-2">
 						<div class="flex flex-wrap items-center gap-2">
-							<Button variant="outline" size="sm" onclick={() => void print([id])}
-								>Print this page</Button
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={topicsBlocked}
+								onclick={() => void print([id])}>Print this page</Button
 							>
 							{#if document.reports[id].edit !== null}
 								<Badge variant="secondary">edited</Badge>
@@ -661,12 +607,13 @@
 								<Badge variant="destructive"
 									>Runs {pageFit.overMm} mm over the page; print cuts it off</Badge
 								>
-							{:else if isShrunk(pageFit)}
-								<Badge variant="secondary"
-									>Feedback shrunk to {Math.round(pageFit.scale * 100)}% to fit</Badge
-								>
 							{/if}
-							<Button variant="outline" size="sm" onclick={() => rewriteOne(id)}>Rewrite</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={topicsBlocked}
+								onclick={() => rewriteOne(id)}>Rewrite</Button
+							>
 							{#if tile?.kind === 'writing'}
 								<span class="text-sm text-muted-foreground">Rewriting…</span>
 							{/if}
@@ -674,7 +621,12 @@
 						{#if tile?.kind === 'failed'}
 							<p role="alert" class="rounded-md border border-destructive p-3 text-sm">
 								{tile.message}
-								<Button size="sm" variant="outline" onclick={() => rewriteOne(id)}>Retry</Button>
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={topicsBlocked}
+									onclick={() => rewriteOne(id)}>Retry</Button
+								>
 							</p>
 						{/if}
 						<ReportSheet
@@ -689,6 +641,109 @@
 				{/each}
 			</div>
 		</section>
+	{/if}
+	{#if confirmRewrite !== null}
+		<Dialog.Root
+			open
+			onOpenChange={(isOpen) => {
+				if (!isOpen) confirmRewrite = null;
+			}}
+		>
+			<Dialog.Content>
+				<Dialog.Header>
+					<Dialog.Title>Rewrite this report?</Dialog.Title>
+					<Dialog.Description>This discards your edits.</Dialog.Description>
+				</Dialog.Header>
+				<Dialog.Footer>
+					<Button variant="outline" onclick={() => (confirmRewrite = null)}>Keep my edits</Button>
+					<Button
+						variant="destructive"
+						onclick={() => {
+							const id = confirmRewrite;
+							confirmRewrite = null;
+							if (id) run.retry([id], modelOverride);
+						}}
+					>
+						Discard edits and rewrite
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
+	{#if confirmPrint}
+		{@const outOfDateCount = confirmPrint.count}
+		<Dialog.Root
+			open
+			onOpenChange={(isOpen) => {
+				if (!isOpen) confirmPrint = null;
+			}}
+		>
+			<Dialog.Content>
+				<Dialog.Header>
+					<Dialog.Title>Out-of-date reports</Dialog.Title>
+					<Dialog.Description>
+						{count(outOfDateCount, 'report')}
+						{agree(outOfDateCount, 'is', 'are')} out of date: print anyway / rewrite {outOfDateCount ===
+						1
+							? 'it'
+							: 'them'} first
+					</Dialog.Description>
+				</Dialog.Header>
+				<Dialog.Footer>
+					<Button
+						disabled={topicsBlocked}
+						onclick={() => {
+							const pending = confirmPrint;
+							confirmPrint = null;
+							askOverflow(pending?.ids ?? null, pending?.ids ?? reviewIds);
+						}}
+					>
+						Print anyway
+					</Button>
+					<Button
+						variant="outline"
+						disabled={topicsBlocked}
+						onclick={() => {
+							confirmPrint = null;
+							rewriteOutOfDate();
+						}}
+					>
+						Rewrite {outOfDateCount === 1 ? 'it' : 'them'} first
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+	{/if}
+	{#if confirmOverflow}
+		{@const overCount = confirmOverflow.count}
+		<Dialog.Root
+			open
+			onOpenChange={(isOpen) => {
+				if (!isOpen) confirmOverflow = null;
+			}}
+		>
+			<Dialog.Content>
+				<Dialog.Header>
+					<Dialog.Title>Overflowing reports</Dialog.Title>
+					<Dialog.Description>
+						{count(overCount, 'report')}
+						{agree(overCount, 'runs', 'run')} over the page; print cuts the overflow off. Print anyway?
+					</Dialog.Description>
+				</Dialog.Header>
+				<Dialog.Footer>
+					<Button
+						onclick={() => {
+							const pending = confirmOverflow;
+							confirmOverflow = null;
+							void print(pending?.ids ?? null);
+						}}
+					>
+						Print anyway
+					</Button>
+					<Button variant="outline" onclick={() => (confirmOverflow = null)}>Keep editing</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
 	{/if}
 </main>
 

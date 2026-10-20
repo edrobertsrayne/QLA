@@ -820,13 +820,15 @@ describe('out-of-date reports', () => {
 		const strip = document.querySelector('[data-page-for="ada"]');
 		await expect.element(page.getByText(/^Out of date/).first()).toBeInTheDocument();
 
-		const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(false);
 		await page.getByRole('button', { name: 'Rewrite', exact: true }).first().click();
-		expect(confirmed).toHaveBeenCalledWith('This discards your edits');
+		const dialog = page.getByRole('dialog', { name: 'Rewrite this report?' });
+		await expect.element(dialog).toBeInTheDocument();
+		await expect.element(dialog).toHaveTextContent('This discards your edits.');
+		await page.getByRole('button', { name: 'Keep my edits' }).click();
 		expect(reportCalls(stub)).toBe(0);
-		confirmed.mockReturnValue(true);
 
 		await page.getByRole('button', { name: 'Rewrite', exact: true }).first().click();
+		await page.getByRole('button', { name: 'Discard edits and rewrite' }).click();
 		await vi.waitFor(() => expect(reportCalls(stub)).toBe(1), { timeout: 5000 });
 		await vi.waitFor(() => expect(strip?.textContent).not.toContain('Out of date'), {
 			timeout: 5000
@@ -836,7 +838,6 @@ describe('out-of-date reports', () => {
 			.element(page.getByLabelText('Strengths for Ada Lovelace'))
 			.toHaveValue('Fresh wording');
 		expect(strip?.textContent).not.toContain('edited');
-		confirmed.mockRestore();
 	});
 
 	it('a failed rewrite keeps prose, edit and marker, and Retry writes it', async () => {
@@ -868,8 +869,8 @@ describe('out-of-date reports', () => {
 		const strip = document.querySelector('[data-page-for="ada"]');
 		await expect.element(page.getByText(/^Out of date/).first()).toBeInTheDocument();
 
-		const confirmed = vi.spyOn(window, 'confirm').mockReturnValue(true);
 		await page.getByRole('button', { name: 'Rewrite', exact: true }).first().click();
+		await page.getByRole('button', { name: 'Discard edits and rewrite' }).click();
 		await vi.waitFor(() => expect(reportCalls(stub)).toBe(1), { timeout: 5000 });
 
 		// The failure stays in the strip; nothing is lost.
@@ -881,11 +882,11 @@ describe('out-of-date reports', () => {
 		expect(strip?.textContent).toContain('Out of date');
 
 		await page.getByRole('button', { name: 'Retry', exact: true }).click();
+		await page.getByRole('button', { name: 'Discard edits and rewrite' }).click();
 		await vi.waitFor(() => expect(reportCalls(stub)).toBe(2), { timeout: 5000 });
 		await expect
 			.element(page.getByLabelText('Strengths for Ada Lovelace'))
 			.toHaveValue('Fresh wording');
-		confirmed.mockRestore();
 	});
 
 	it('marks a report out of date when its mark changes mid-write', async () => {
@@ -925,7 +926,7 @@ describe('out-of-date reports', () => {
 		// its reports when this click lands.
 		const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
 		await page.getByRole('button', { name: 'Print all 2' }).click();
-		const dialog = page.getByRole('alertdialog', { name: 'Out-of-date reports' });
+		const dialog = page.getByRole('dialog', { name: 'Out-of-date reports' });
 		await expect.element(dialog).toBeInTheDocument();
 		await vi.waitFor(() =>
 			expect(dialog.element().textContent).toMatch(/1 report\s+is out of date/)
@@ -1000,9 +1001,9 @@ describe('out-of-date reports', () => {
 		const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
 		await page.getByRole('button', { name: 'Print all 2' }).click();
 		await expect
-			.element(page.getByRole('alertdialog', { name: 'Out-of-date reports' }))
+			.element(page.getByRole('dialog', { name: 'Out-of-date reports' }))
 			.toBeInTheDocument();
-		expect(document.querySelector('[role="alertdialog"]')?.textContent).toMatch(
+		expect(document.querySelector('[role="dialog"]')?.textContent).toMatch(
 			/2 reports\s+are out of date/
 		);
 		await page.getByRole('button', { name: 'Rewrite them first' }).click();
@@ -1107,8 +1108,6 @@ describe('one-page fit', () => {
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await page.getByLabelText('Areas for improvement for Ada Lovelace').fill(proseWords(300));
 		await page.getByLabelText('Strengths for Ada Lovelace').click();
-		// The page absorbs the edit by shrinking its feedback: no flag.
-		await expect.element(page.getByText(/shrunk to 90% to fit/)).toBeInTheDocument();
 		expect(document.querySelector('[data-page-for="ada"]')?.textContent).not.toMatch(/mm over/);
 
 		await page.getByLabelText('Areas for improvement for Ada Lovelace').fill(proseWords(370));
@@ -1179,7 +1178,6 @@ describe('one-page fit', () => {
 		);
 		await new Promise((resolve) => setTimeout(resolve, 500));
 		const strip = document.querySelector('[data-page-for="ada"]')?.textContent ?? '';
-		expect(strip).not.toMatch(/shrunk/);
 		expect(strip).not.toMatch(/mm over/);
 	});
 
@@ -1195,7 +1193,7 @@ describe('one-page fit', () => {
 
 		const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
 		await page.getByRole('button', { name: 'Print all 1' }).click();
-		const dialog = page.getByRole('alertdialog', { name: 'Overflowing reports' });
+		const dialog = page.getByRole('dialog', { name: 'Overflowing reports' });
 		await expect.element(dialog).toBeInTheDocument();
 		expect(print).not.toHaveBeenCalled();
 
