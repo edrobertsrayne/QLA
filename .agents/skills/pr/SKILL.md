@@ -159,7 +159,7 @@ You may use one of these, you may use several, it is unlikely you will use all o
 
 Concrete evidence that the change works. Show a before and after.
 
-Screenshots are S-tier - when the environment is set up for it and the change is visual. Embed them with the `upload-screenshots` skill.
+Screenshots are S-tier - when the environment is set up for it and the change is visual. Embed them with the `upload-screenshots` skill. If the UI supports light and dark mode, show both.
 
 Execution-based evidence is A-tier. Test results, console output. Show the exact test that now fails and passes, using pseudocode.
 
