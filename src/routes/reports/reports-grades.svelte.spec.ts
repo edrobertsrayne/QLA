@@ -1,0 +1,202 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { page, userEvent } from 'vitest/browser';
+import { cleanup } from 'vitest-browser-svelte';
+import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import { seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { generationInputFor } from '$lib/marksheet/report-input.js';
+import { marksheetStore } from '$lib/marksheet/index.js';
+import { openPage } from '../spec-helpers.js';
+import MarksheetPage from '../marksheet/+page.svelte';
+import ReportsPage from './+page.svelte';
+import { plain, h556, solo, stubFetch, topicNames, skipGrades } from './reports.spec-helpers.js';
+
+afterEach(() => {
+	cleanup();
+	vi.unstubAllGlobals();
+});
+
+describe('grades on reports', () => {
+	/** Two eligible students: Ada clears the top grade, Bo sits one below it. */
+	function gradedPair(): MarksheetDocument {
+		const doc = plain();
+		doc.paper.boundaries = [
+			{ label: 'A', minimum: 8 },
+			{ label: 'B', minimum: 5 },
+			{ label: 'C', minimum: 2 }
+		];
+		doc.students = [student('ada', 'Ada', 'Lovelace'), student('bo', 'Bo', 'Brown')];
+		// Paper total is 10: Ada's 3 + 5 takes A, Bo's 3 + 2 takes B.
+		doc.marks = {
+			ada: { 'entry-1': 3, 'entry-2': 5 },
+			bo: { 'entry-1': 3, 'entry-2': 2 }
+		};
+		return doc;
+	}
+
+	/** Both students with a written report and no teacher edit. */
+	function writtenPair(): MarksheetDocument {
+		const doc = gradedPair();
+		doc.reports = {};
+		for (const id of ['ada', 'bo']) {
+			const input = generationInputFor(doc, id);
+			if (!input) throw new Error(`no input for ${id}`);
+			doc.reports[id] = {
+				strengths: ['Careful working'],
+				areasForImprovement: ['Check units'],
+				edit: null,
+				input,
+				model: 'test/model',
+				generatedAt: '2026-01-01T10:00:00.000Z'
+			};
+		}
+		return doc;
+	}
+
+	/** One eligible student with a written report and no teacher edit. */
+	function soloWritten(): MarksheetDocument {
+		const doc = solo();
+		const input = generationInputFor(doc, 'ada');
+		if (!input) throw new Error('no generation input for ada');
+		doc.reports = {
+			ada: {
+				strengths: ['Careful working'],
+				areasForImprovement: ['Check units'],
+				edit: null,
+				input,
+				model: 'test/model',
+				generatedAt: '2026-01-01T10:00:00.000Z'
+			}
+		};
+		return doc;
+	}
+
+	it('shows grade and marks to next on each page, Top grade at the top', async () => {
+		seed(writtenPair());
+		stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
+		const ada = document.querySelector('main [data-report-id="ada"]');
+		expect(ada?.querySelector('[data-testid="report-grade"]')?.textContent).toMatch(/Grade\s+A/);
+		expect(ada?.querySelector('[data-testid="report-to-next"]')?.textContent?.trim()).toBe(
+			'Top grade'
+		);
+		const bo = document.querySelector('main [data-report-id="bo"]');
+		expect(bo?.querySelector('[data-testid="report-grade"]')?.textContent).toMatch(/Grade\s+B/);
+		expect(bo?.querySelector('[data-testid="report-to-next"]')?.textContent?.trim()).toBe(
+			'3 more marks for grade A'
+		);
+	});
+
+	it('sends no grade fields in the report request', async () => {
+		const doc = solo();
+		doc.paper.boundaries = [
+			{ label: 'B', minimum: 5 },
+			{ label: 'C', minimum: 2 }
+		];
+		seed(doc);
+		const { stub } = stubFetch();
+		openPage(ReportsPage);
+
+		// No specification points: the flow starts at the Grades step.
+		await skipGrades();
+		await page.getByRole('button', { name: 'Write 1 report' }).click();
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		const bodies = stub.mock.calls
+			.filter(([url]) => String(url) === '/api/report')
+			.map(([, init]) => JSON.parse((init as { body: string }).body));
+		expect(bodies.length).toBeGreaterThan(0);
+		for (const body of bodies) {
+			expect(Object.keys(body).sort()).toEqual(['entries', 'paperLabel']);
+			for (const entry of body.entries) {
+				expect(entry).not.toHaveProperty('grade');
+			}
+		}
+	});
+
+	it('omits every grade cell when the paper has no boundaries', async () => {
+		seed(soloWritten());
+		stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		expect(document.querySelector('main [data-testid="report-grade"]')).toBeNull();
+		expect(document.querySelector('main [data-testid="report-to-next"]')).toBeNull();
+	});
+
+	it('walks Topic names, Grades, Who gets one when the paper has codes', async () => {
+		seed(h556());
+		stubFetch(() => topicNames());
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		await page.getByRole('button', { name: 'Next' }).click();
+
+		await expect.element(page.getByRole('heading', { name: 'Grades' })).toBeInTheDocument();
+		// The same editor as the dialog: raw marks, never percentages.
+		await expect.element(page.getByText('Raw marks out of 12.')).toBeInTheDocument();
+		await page.getByRole('button', { name: 'Skip: no grades on these reports' }).click();
+		await expect
+			.element(page.getByRole('heading', { name: '7 students get a report' }))
+			.toBeInTheDocument();
+		expect(marksheetStore().document?.paper.boundaries).toBeNull();
+	});
+
+	it('saving in the Grades step updates the marksheet columns', async () => {
+		seed(h556());
+		stubFetch(() => topicNames());
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		await page.getByRole('button', { name: 'Next' }).click();
+		await expect.element(page.getByRole('heading', { name: 'Grades' })).toBeInTheDocument();
+
+		await page.getByRole('radio', { name: 'GCSE 9–1' }).click();
+		// Paper total is 12: the 9-boundary at 10 keeps every minimum under it.
+		await userEvent.fill(page.getByLabelText('Lowest mark for 9'), '10');
+		await page.getByRole('button', { name: 'Save boundaries' }).click();
+		expect(marksheetStore().document?.paper.boundaries?.[0]).toEqual({ label: '9', minimum: 10 });
+
+		await expect
+			.element(page.getByRole('heading', { name: '7 students get a report' }))
+			.toBeInTheDocument();
+
+		// The same stored boundaries drive the marksheet's Total | Grade | To next
+		// columns: Ada's 7 of 12 takes U, three marks short of 9.
+		openPage(MarksheetPage);
+		expect(
+			document
+				.querySelector('[data-testid="total-cell"][data-student-id="ada"]')
+				?.textContent?.trim()
+		).toBe('7');
+		expect(
+			document
+				.querySelector('[data-testid="grade-cell"][data-student-id="ada"]')
+				?.textContent?.trim()
+		).toBe('U');
+		expect(
+			document
+				.querySelector('[data-testid="to-next-cell"][data-student-id="ada"]')
+				?.textContent?.trim()
+		).toBe('3 to 9');
+	});
+
+	it('skipping with saved grades keeps them and says so', async () => {
+		const doc = h556();
+		doc.paper.boundaries = [{ label: 'B', minimum: 5 }];
+		seed(doc);
+		stubFetch(() => topicNames());
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		await page.getByRole('button', { name: 'Next' }).click();
+		await expect.element(page.getByRole('heading', { name: 'Grades' })).toBeInTheDocument();
+
+		await page.getByRole('button', { name: 'Next' }).click();
+		await expect
+			.element(page.getByRole('heading', { name: '7 students get a report' }))
+			.toBeInTheDocument();
+		expect(marksheetStore().document?.paper.boundaries).toEqual([{ label: 'B', minimum: 5 }]);
+	});
+});
