@@ -8,8 +8,9 @@
 // where it is rather than refusing the keystroke.
 
 import {
+	DEFAULT_BELOW_LOWEST_LABEL,
 	isOverMax,
-	type BreakdownEntry,
+	studentTotal,
 	type GradeBoundary,
 	type MarksheetDocument,
 	type StoredStudent
@@ -44,9 +45,9 @@ export const GRADE_SCALES: { name: string; labels: string[] }[] = [
 	{ name: 'Custom', labels: [] }
 ];
 
-/** A row with neither a label nor a mark: a grade in the middle of being added. */
-export function isBlankRow(row: BoundaryRow): boolean {
-	return row.label.trim() === '' && row.min.trim() === '';
+/** The below-lowest label as saved: trimmed, or the default when left blank. */
+export function belowLabelOf(raw: string): string {
+	return raw.trim() === '' ? DEFAULT_BELOW_LOWEST_LABEL : raw.trim();
 }
 
 /** A grade with no minimum: one this paper doesn't award. */
@@ -66,7 +67,7 @@ export function workingCopyOf(document: MarksheetDocument | null): {
 	below: string;
 	scale: string;
 } {
-	const below = document?.paper.belowLowestLabel ?? 'U';
+	const below = document?.paper.belowLowestLabel ?? DEFAULT_BELOW_LOWEST_LABEL;
 	const stored = document ? boundariesOf(document) : null;
 	if (!stored) return { rows: [], below, scale: '' };
 	const labels = stored.map((boundary) => boundary.label).join('|');
@@ -96,14 +97,14 @@ export function boundaryIssues(
 	const seen = new Map<string, number>();
 	let previous: number | null = null;
 	rows.forEach((row, index) => {
-		if (isBlankRow(row) || isUnused(row)) return;
+		if (isUnused(row)) return;
 		const label = row.label.trim();
 		if (label === '') {
 			issues.push({ index, field: 'label', message: 'Needs a grade label' });
 		} else {
 			// A blank below-lowest label saves as U, so a grade called U would
 			// be indistinguishable from it.
-			const below = belowLowestLabel.trim() === '' ? 'U' : belowLowestLabel.trim();
+			const below = belowLabelOf(belowLowestLabel);
 			const key = label.toLowerCase();
 			if (seen.has(key)) {
 				issues.push({ index, field: 'label', message: `“${label}” is listed twice` });
@@ -137,23 +138,25 @@ export function boundaryIssues(
 	return issues;
 }
 
-/** What the teacher typed, with blank and unawarded rows left out. */
-export function keptRows(rows: readonly BoundaryRow[]): BoundaryRow[] {
-	return rows.filter((row) => !isBlankRow(row) && !isUnused(row));
+/** What the rows would store: unused rows left out, labels trimmed. Meaningful once `boundaryIssues` is empty. */
+export function boundariesFrom(rows: readonly BoundaryRow[]): GradeBoundary[] {
+	return rows
+		.filter((row) => !isUnused(row))
+		.map((row) => ({ label: row.label.trim(), minimum: Number(row.min.trim()) }));
 }
 
 /** A teacher's grade, and what it would take to reach the next one up. */
 export interface GradeResult {
 	label: string;
-	/** Marks to reach the next grade up; null at the top grade. */
-	toNext: number | null;
-	nextLabel: string | null;
+	/** The next grade up and the marks to reach it; null at the top grade. */
+	next: { label: string; marks: number } | null;
 }
 
 /**
  * From boundaries and the below-lowest label, the grade a total earns. The
  * next grade up is the boundary above the one the total cleared, so marks to
  * next is that boundary minus the total; the top grade has none to reach.
+ * Labels are stored non-blank, so the below-lowest label is used as given.
  */
 export function gradeOf(
 	total: number,
@@ -164,24 +167,26 @@ export function gradeOf(
 	if (at === -1) {
 		const lowest = boundaries[boundaries.length - 1];
 		return {
-			label: belowLowestLabel.trim() === '' ? 'U' : belowLowestLabel.trim(),
-			toNext: lowest.minimum - total,
-			nextLabel: lowest.label
+			label: belowLowestLabel,
+			next: { label: lowest.label, marks: lowest.minimum - total }
 		};
 	}
-	if (at === 0) return { label: boundaries[0].label, toNext: null, nextLabel: null };
+	if (at === 0) return { label: boundaries[0].label, next: null };
 	return {
 		label: boundaries[at].label,
-		toNext: boundaries[at - 1].minimum - total,
-		nextLabel: boundaries[at - 1].label
+		next: { label: boundaries[at - 1].label, marks: boundaries[at - 1].minimum - total }
 	};
 }
 
 /** "2 to C", the nudge toward the next grade — blank at the top grade. */
 export function toNextText(grade: GradeResult): string {
-	return grade.toNext === null || grade.nextLabel === null
-		? ''
-		: `${grade.toNext} to ${grade.nextLabel}`;
+	return grade.next === null ? '' : `${grade.next.marks} to ${grade.next.label}`;
+}
+
+/** The grade a total earns on this paper, or null when it has no boundaries. */
+export function paperGrade(document: MarksheetDocument, total: number): GradeResult | null {
+	const boundaries = boundariesOf(document);
+	return boundaries === null ? null : gradeOf(total, boundaries, document.paper.belowLowestLabel);
 }
 
 export type StudentGrade =
@@ -191,20 +196,15 @@ export type StudentGrade =
 	| { kind: 'partial'; total: number; grade: GradeResult | null };
 
 /** What the marksheet knows about one student's grade: totals are live figures. */
-export function studentGrade(
-	document: MarksheetDocument,
-	student: StoredStudent,
-	entries: readonly BreakdownEntry[]
-): StudentGrade {
+export function studentGrade(document: MarksheetDocument, student: StoredStudent): StudentGrade {
 	if (student.absent) return { kind: 'absent' };
+	const entries = document.breakdown.entries;
 	const marks = document.marks[student.id] ?? {};
 	if (entries.some((entry) => marks[entry.id] !== undefined && isOverMax(marks[entry.id], entry))) {
 		return { kind: 'over-max' };
 	}
-	const total = entries.reduce((sum, entry) => sum + (marks[entry.id] ?? 0), 0);
-	const boundaries = boundariesOf(document);
-	const grade =
-		boundaries === null ? null : gradeOf(total, boundaries, document.paper.belowLowestLabel);
+	const total = studentTotal(document, student.id);
+	const grade = paperGrade(document, total);
 	const { marked, total: of } = progressOf(marks, entries);
 	return marked === of ? { kind: 'complete', total, grade } : { kind: 'partial', total, grade };
 }

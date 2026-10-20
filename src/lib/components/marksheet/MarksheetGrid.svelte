@@ -53,9 +53,7 @@
 	const graded = $derived.by(() => {
 		const document = store.document;
 		if (!document) return new Map<string, ReturnType<typeof studentGrade>>();
-		return new Map(
-			students.map((student) => [student.id, studentGrade(document, student, entries)])
-		);
+		return new Map(students.map((student) => [student.id, studentGrade(document, student)]));
 	});
 
 	/** Where the cursor is: a mark cell, or a row's name cell when `entryId` is null. */

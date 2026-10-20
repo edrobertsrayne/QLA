@@ -541,6 +541,20 @@ export function totalMarks(entries: readonly BreakdownEntry[]): number {
 	return entries.reduce((sum, entry) => sum + (entry.marks ?? 0), 0);
 }
 
+/** Marks one student gained across the breakdown: unmarked entries count 0. */
+export function studentTotal(document: MarksheetDocument, studentId: string): number {
+	const marks = document.marks[studentId] ?? {};
+	return document.breakdown.entries.reduce((sum, entry) => sum + (marks[entry.id] ?? 0), 0);
+}
+
+/** Same wording, item for item, in both sections. */
+export function sameProse(a: ReportProse, b: ReportProse): boolean {
+	return (
+		a.strengths.join('\n') === b.strengths.join('\n') &&
+		a.areasForImprovement.join('\n') === b.areasForImprovement.join('\n')
+	);
+}
+
 /** How many marks the document holds: one per student per entry answered. */
 export function markCount(document: MarksheetDocument): number {
 	return Object.values(document.marks).reduce(
