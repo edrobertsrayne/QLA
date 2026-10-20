@@ -46,10 +46,24 @@ export function feedbackTitleSchema(): Record<string, unknown> {
 	};
 }
 
+/** The model's title when it is one line, non-blank and within the cap; else null. */
+function usableTitle(content: string): string | null {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(content);
+	} catch {
+		return null;
+	}
+	if (!isRecord(parsed) || typeof parsed.title !== 'string') return null;
+	const title = parsed.title.trim().replace(/^["'“”]+|["'“”]+$/g, '');
+	return title !== '' && title.length <= FEEDBACK_TITLE_MAX && !title.includes('\n') ? title : null;
+}
+
 /** The model's title, or the first-line fallback; titling never blocks filing. */
 export async function feedbackTitle(input: FeedbackInput): Promise<string> {
+	let content: string;
 	try {
-		const result = await callStructuredModel({
+		({ content } = await callStructuredModel({
 			modelId: resolveModelId(),
 			systemPrompt: FEEDBACK_TITLE_SYSTEM_PROMPT,
 			data: { feedback: input.text.trim(), page: input.page },
@@ -58,24 +72,17 @@ export async function feedbackTitle(input: FeedbackInput): Promise<string> {
 			caller: { referer: 'https://qla.local/feedback', title: 'QLA Feedback title' },
 			maxTokens: 200,
 			timeoutMs: 20_000
-		});
-		const parsed: unknown = JSON.parse(result.content);
-		const raw = isRecord(parsed) ? parsed.title : null;
-		if (typeof raw === 'string') {
-			const title = raw.trim().replace(/^["'“”]+|["'“”]+$/g, '');
-			if (title !== '' && title.length <= FEEDBACK_TITLE_MAX && !title.includes('\n')) return title;
-		}
-		throw new Error('unusable title');
+		}));
 	} catch (error) {
-		console.warn(
-			JSON.stringify({
-				scope: 'feedback-title',
-				fallback: true,
-				code: error instanceof StructuredModelError ? error.code : 'UNUSABLE'
-			})
-		);
-		return fallbackTitle(input.text);
+		if (!(error instanceof StructuredModelError)) throw error;
+		return titleFallback(input, error.code);
 	}
+	return usableTitle(content) ?? titleFallback(input, 'UNUSABLE');
+}
+
+function titleFallback(input: FeedbackInput, code: string): string {
+	console.warn(JSON.stringify({ scope: 'feedback-title', fallback: true, code }));
+	return fallbackTitle(input.text);
 }
 
 export interface FeedbackIssue {

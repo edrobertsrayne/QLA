@@ -140,6 +140,12 @@ describe('POST /api/feedback', () => {
 		expect(filedTitle()).toBe('Feedback: Grid header overlaps');
 	});
 
+	it('lets a non-model error escape instead of masking it as a fallback', async () => {
+		stubModel(new TypeError('bug'));
+		await expect(post({ text: 'x', page: '/' })).rejects.toThrow('bug');
+		expect(githubCalls).toHaveLength(0);
+	});
+
 	it.each([['{"title":""}'], [JSON.stringify({ title: 'a'.repeat(81) })]])(
 		'falls back on an unusable title %#',
 		async (content) => {
@@ -150,7 +156,7 @@ describe('POST /api/feedback', () => {
 	);
 
 	it('caps a long fallback title at 80 characters', async () => {
-		stubModel(new Error('down'));
+		stubModel(new StructuredModelError('x', { code: MODEL_RETRYABLE_CODE, retryable: true }));
 		await post({ text: 'a'.repeat(100), page: '/' });
 		expect(filedTitle()).toHaveLength(80);
 	});
