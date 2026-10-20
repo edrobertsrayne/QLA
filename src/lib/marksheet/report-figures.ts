@@ -26,6 +26,11 @@ export const EMPTY_STRENGTHS_LINE = 'No particular strengths stood out on this p
 export const EMPTY_AREAS_LINE =
 	'You dropped no marks on this paper: keep doing what you are doing.';
 
+/** Whether the student gained every mark: the only time the app's no-areas line is true. */
+export function droppedNoMarks(figures: StudentReportFigures): boolean {
+	return figures.total >= figures.available;
+}
+
 /** One entry's figures on a report: what the student gained, and its band. */
 export interface ReportEntryFigures {
 	entryId: string;

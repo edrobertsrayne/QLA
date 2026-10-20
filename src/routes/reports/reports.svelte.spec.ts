@@ -634,7 +634,7 @@ describe('report editing', () => {
 		const first = openPage(ReportsPage);
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
-		await page.getByLabelText('Strengths for Ada Lovelace').fill('Beautifully clear working');
+		await page.getByLabelText('Strength 1 for Ada Lovelace').fill('Beautifully clear working');
 		await userEvent.keyboard('{Tab}');
 		await expect.element(page.getByText('edited', { exact: true })).toBeInTheDocument();
 
@@ -644,7 +644,7 @@ describe('report editing', () => {
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await expect
-			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.element(page.getByLabelText('Strength 1 for Ada Lovelace'))
 			.toHaveValue('Beautifully clear working');
 
 		const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
@@ -663,13 +663,13 @@ describe('report editing', () => {
 		openPage(ReportsPage);
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
-		await page.getByLabelText('Strengths for Ada Lovelace').fill('Teacher wording');
+		await page.getByLabelText('Strength 1 for Ada Lovelace').fill('Teacher wording');
 		await userEvent.keyboard('{Tab}');
 		await expect.element(page.getByText('edited', { exact: true })).toBeInTheDocument();
 
 		await page.getByRole('button', { name: 'Revert' }).click();
 		await expect
-			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.element(page.getByLabelText('Strength 1 for Ada Lovelace'))
 			.toHaveValue('Careful working');
 		expect(page.getByText('edited', { exact: true }).query()).toBeNull();
 	});
@@ -680,13 +680,13 @@ describe('report editing', () => {
 		openPage(ReportsPage);
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
-		await page.getByLabelText('Strengths for Ada Lovelace').fill('Teacher wording');
+		await page.getByLabelText('Strength 1 for Ada Lovelace').fill('Teacher wording');
 		await userEvent.keyboard('{Tab}');
 		await expect.element(page.getByText('edited', { exact: true })).toBeInTheDocument();
 
 		await page.getByTestId('report-edit-undo').getByRole('button', { name: 'Undo' }).click();
 		await expect
-			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.element(page.getByLabelText('Strength 1 for Ada Lovelace'))
 			.toHaveValue('Careful working');
 		expect(page.getByText('edited', { exact: true }).query()).toBeNull();
 	});
@@ -697,15 +697,15 @@ describe('report editing', () => {
 		openPage(ReportsPage);
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
-		await page.getByLabelText('Strengths for Ada Lovelace').fill('Teacher');
+		await page.getByLabelText('Strength 1 for Ada Lovelace').fill('Teacher');
 		await userEvent.keyboard('{Tab}');
-		await page.getByLabelText('Strengths for Ada Lovelace').fill('Teacher wording');
+		await page.getByLabelText('Strength 1 for Ada Lovelace').fill('Teacher wording');
 		await userEvent.keyboard('{Tab}');
 		await expect.element(page.getByText('edited', { exact: true })).toBeInTheDocument();
 
 		await page.getByTestId('report-edit-undo').getByRole('button', { name: 'Undo' }).click();
 		await expect
-			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.element(page.getByLabelText('Strength 1 for Ada Lovelace'))
 			.toHaveValue('Careful working');
 		expect(page.getByText('edited', { exact: true }).query()).toBeNull();
 	});
@@ -716,7 +716,7 @@ describe('report editing', () => {
 		openPage(ReportsPage);
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
-		await page.getByLabelText('Strengths for Ada Lovelace').fill(HOSTILE);
+		await page.getByLabelText('Strength 1 for Ada Lovelace').fill(HOSTILE);
 		await userEvent.keyboard('{Tab}');
 		await expect.element(page.getByText(HOSTILE).first()).toBeInTheDocument();
 		expect(document.querySelector('img')).toBeNull();
@@ -835,7 +835,7 @@ describe('out-of-date reports', () => {
 		});
 		// Fresh wording replaces the prose and clears the teacher's edit.
 		await expect
-			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.element(page.getByLabelText('Strength 1 for Ada Lovelace'))
 			.toHaveValue('Fresh wording');
 		expect(strip?.textContent).not.toContain('edited');
 	});
@@ -876,7 +876,7 @@ describe('out-of-date reports', () => {
 		// The failure stays in the strip; nothing is lost.
 		await expect.element(page.getByText('Bad entry')).toBeInTheDocument();
 		await expect
-			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.element(page.getByLabelText('Strength 1 for Ada Lovelace'))
 			.toHaveValue('Teacher wording');
 		expect(strip?.textContent).toContain('edited');
 		expect(strip?.textContent).toContain('Out of date');
@@ -885,7 +885,7 @@ describe('out-of-date reports', () => {
 		await page.getByRole('button', { name: 'Discard edits and rewrite' }).click();
 		await vi.waitFor(() => expect(reportCalls(stub)).toBe(2), { timeout: 5000 });
 		await expect
-			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.element(page.getByLabelText('Strength 1 for Ada Lovelace'))
 			.toHaveValue('Fresh wording');
 	});
 
@@ -969,7 +969,7 @@ describe('out-of-date reports', () => {
 		// The edited report keeps its wording and its marker.
 		expect(document.querySelector('[data-page-for="ada"]')?.textContent).toContain('Out of date');
 		await expect
-			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.element(page.getByLabelText('Strength 1 for Ada Lovelace'))
 			.toHaveValue('Teacher wording');
 
 		await page.getByLabelText('also rewrite 1 edited (discards edits)').click();
@@ -1011,7 +1011,7 @@ describe('out-of-date reports', () => {
 		await vi.waitFor(() => expect(reportCalls(stub)).toBe(1), { timeout: 5000 });
 		expect(print).not.toHaveBeenCalled();
 		await expect
-			.element(page.getByLabelText('Strengths for Ada Lovelace'))
+			.element(page.getByLabelText('Strength 1 for Ada Lovelace'))
 			.toHaveValue('Teacher wording');
 		expect(document.querySelector('[data-page-for="ada"]')?.textContent).toContain('Out of date');
 		print.mockRestore();
@@ -1106,12 +1106,12 @@ describe('one-page fit', () => {
 		openPage(ReportsPage);
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
-		await page.getByLabelText('Areas for improvement for Ada Lovelace').fill(proseWords(300));
-		await page.getByLabelText('Strengths for Ada Lovelace').click();
+		await page.getByLabelText('Area for improvement 1 for Ada Lovelace').fill(proseWords(300));
+		await page.getByLabelText('Strength 1 for Ada Lovelace').click();
 		expect(document.querySelector('[data-page-for="ada"]')?.textContent).not.toMatch(/mm over/);
 
-		await page.getByLabelText('Areas for improvement for Ada Lovelace').fill(proseWords(370));
-		await page.getByLabelText('Strengths for Ada Lovelace').click();
+		await page.getByLabelText('Area for improvement 1 for Ada Lovelace').fill(proseWords(370));
+		await page.getByLabelText('Strength 1 for Ada Lovelace').click();
 		// Past 90% the page flags how far over it runs.
 		await expect.element(page.getByText(/mm over the page/, { exact: false })).toBeInTheDocument();
 	});
@@ -1187,8 +1187,8 @@ describe('one-page fit', () => {
 		const shown = openPage(ReportsPage);
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
-		await page.getByLabelText('Areas for improvement for Ada Lovelace').fill(proseWords(370));
-		await page.getByLabelText('Strengths for Ada Lovelace').click();
+		await page.getByLabelText('Area for improvement 1 for Ada Lovelace').fill(proseWords(370));
+		await page.getByLabelText('Strength 1 for Ada Lovelace').click();
 		await expect.element(page.getByText(/mm over the page/, { exact: false })).toBeInTheDocument();
 
 		const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);

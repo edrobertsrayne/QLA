@@ -8,6 +8,7 @@
 	import { boundariesOf, gradeOf } from '$lib/marksheet/grades.js';
 	import { questionBands } from '$lib/marksheet/breakdown.js';
 	import {
+		droppedNoMarks,
 		EMPTY_AREAS_LINE,
 		EMPTY_STRENGTHS_LINE,
 		reportFiguresFor
@@ -56,15 +57,10 @@
 	const displayName = $derived(student ? studentName(student) : '');
 
 	/**
-	 * The edit as textareas hold it: one line per item, so a strength stays one
-	 * strength and an area stays one area through the edit. Empty sections edit
-	 * as blank. What is typed past the fixed lines is teacher wording, not an
-	 * edit of the app's own line.
+	 * The edit as the fields hold it: one field per item, so a strength stays
+	 * one strength and an area stays one area through the edit. A typed
+	 * newline splits an item and an emptied item is dropped.
 	 */
-	function linesOf(values: string[]): string {
-		return values.join('\n');
-	}
-
 	function valuesOf(draft: string): string[] {
 		return draft
 			.split('\n')
@@ -79,17 +75,28 @@
 		);
 	}
 
+	type Section = 'strengths' | 'areasForImprovement';
+
 	/**
 	 * Save on blur, not on input: every keystroke is not a change, and trimming
 	 * never lands while the teacher is still typing. An unchanged field saves
 	 * nothing, so tabbing through the page spends no undo.
 	 */
-	function saveEdit(draft: { strengths: string; areas: string }): void {
+	function saveSection(section: Section, values: string[]): void {
 		const prose: ReportProse = {
-			strengths: valuesOf(draft.strengths),
-			areasForImprovement: valuesOf(draft.areas)
+			strengths: section === 'strengths' ? values : [...strengths],
+			areasForImprovement: section === 'areasForImprovement' ? values : [...areas]
 		};
 		if (!sameProse(prose, report.edit ?? report)) onedit?.(prose);
+	}
+
+	/** Replace one item of a section with what was typed in its field. */
+	function saveItem(section: Section, index: number, value: string): void {
+		const current = section === 'strengths' ? strengths : areas;
+		saveSection(
+			section,
+			current.flatMap((line, i) => (i === index ? valuesOf(value) : [line]))
+		);
 	}
 
 	const figureOf = $derived(new Map(figures.entries.map((row) => [row.entryId, row])));
@@ -199,51 +206,62 @@
 				class="grid grid-cols-2 gap-6 text-[10.5pt] leading-snug"
 				style:font-size={!measure ? feedbackFontSize(settled.scale) : undefined}
 			>
-				{#snippet feedback(
-					title: string,
-					label: string,
-					lines: string[],
-					empty: string,
-					ordered: boolean,
-					draft: (text: string) => { strengths: string; areas: string }
-				)}
-					<div>
-						<h3 class="mb-1 text-[1.15em] font-bold">{title}</h3>
+				{#snippet feedback(section: Section, title: string, noun: string, ordered: boolean)}
+					{@const lines = section === 'strengths' ? strengths : areas}
+					{@const emptyLine =
+						section === 'strengths'
+							? EMPTY_STRENGTHS_LINE
+							: droppedNoMarks(figures)
+								? EMPTY_AREAS_LINE
+								: null}
+					{#snippet item(line: string, i: number)}
 						{#if editable}
 							<textarea
-								aria-label={label}
-								rows={Math.max(lines.length, 1)}
-								class="field-sizing-content w-full resize-none bg-transparent outline-none"
-								value={linesOf(lines)}
-								onchange={(event) => saveEdit(draft(event.currentTarget.value))}></textarea>
-						{:else if lines.length === 0}
-							<p>{empty}</p>
+								aria-label={displayName
+									? `${noun} ${i + 1} for ${displayName}`
+									: `${noun} ${i + 1}`}
+								rows={1}
+								class="field-sizing-content w-full resize-none bg-transparent align-top outline-none"
+								value={line}
+								onchange={(event) => saveItem(section, i, event.currentTarget.value)}></textarea>
+						{:else}
+							{line}
+						{/if}
+					{/snippet}
+					<div>
+						<h3 class="mb-1 text-[1.15em] font-bold">{title}</h3>
+						{#if lines.length === 0}
+							{#if editable}
+								<textarea
+									aria-label={displayName ? `${title} for ${displayName}` : title}
+									rows={1}
+									class="field-sizing-content w-full resize-none bg-transparent outline-none {emptyLine
+										? 'placeholder:text-current'
+										: ''}"
+									placeholder={emptyLine ?? `Add ${noun.toLowerCase()}`}
+									value=""
+									onchange={(event) => saveSection(section, valuesOf(event.currentTarget.value))}
+								></textarea>
+							{:else if emptyLine}
+								<p>{emptyLine}</p>
+							{/if}
 						{:else if ordered}
 							<ol class="list-decimal space-y-1.5 pl-[1.2em]">
-								{#each lines as line, i (i)}<li>{line}</li>{/each}
+								{#each lines as line, i (i)}<li>{@render item(line, i)}</li>{/each}
 							</ol>
 						{:else}
 							<ul class="list-disc space-y-1 pl-[1.2em]">
-								{#each lines as line, i (i)}<li>{line}</li>{/each}
+								{#each lines as line, i (i)}<li>{@render item(line, i)}</li>{/each}
 							</ul>
 						{/if}
 					</div>
 				{/snippet}
+				{@render feedback('strengths', 'Strengths', 'Strength', false)}
 				{@render feedback(
-					'Strengths',
-					displayName ? `Strengths for ${displayName}` : 'Strengths',
-					strengths,
-					EMPTY_STRENGTHS_LINE,
-					false,
-					(text) => ({ strengths: text, areas: linesOf(areas) })
-				)}
-				{@render feedback(
+					'areasForImprovement',
 					'Areas for improvement',
-					displayName ? `Areas for improvement for ${displayName}` : 'Areas for improvement',
-					areas,
-					EMPTY_AREAS_LINE,
-					true,
-					(text) => ({ strengths: linesOf(strengths), areas: text })
+					'Area for improvement',
+					true
 				)}
 			</section>
 		</div>
