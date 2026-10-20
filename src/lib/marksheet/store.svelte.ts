@@ -479,8 +479,9 @@ export class MarksheetStore {
 		if (index === -1) return false;
 		const [student] = students.splice(index, 1);
 
-		// A mark whose student is gone can never be read again, so it goes too.
+		// Marks and a report whose student is gone can never be read again, so they go too.
 		delete document.marks[studentId];
+		delete document.reports[studentId];
 
 		// After the change, since the change itself clears any undo on offer.
 		this.#mutated();
