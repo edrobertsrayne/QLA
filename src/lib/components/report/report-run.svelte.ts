@@ -6,7 +6,7 @@
 import { isRecord } from '$lib/parse/is-breakdown.js';
 import { generationInputFor } from '$lib/marksheet/report-input.js';
 import { isRunStoppingCode } from '$lib/marksheet/report-errors.js';
-import { ApiFailure, failureFrom } from './api-error.js';
+import { ApiFailure, failureFrom } from '$lib/api-error.js';
 import type { MarksheetStore } from '$lib/marksheet/store.svelte.js';
 
 /** Most requests in flight at once. */
