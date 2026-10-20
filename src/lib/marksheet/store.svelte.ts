@@ -33,6 +33,8 @@ import {
 import type {
 	BreakdownEntry,
 	MarksheetDocument,
+	ReportGenerationInput,
+	ReportProse,
 	StoredStudent,
 	StoredWarning
 } from './document.js';
@@ -613,6 +615,30 @@ export class MarksheetStore {
 		document.updatedAt = at;
 		this.#persistence.writeNow();
 		return backupFile(document, this.#now());
+	}
+	/**
+	 * Store one student's generated report: prose, the verbatim generation
+	 * input it was written from, the model used (display only) and the clock.
+	 * A rewrite clears any teacher edit beside it: this is fresh wording.
+	 */
+	storeReport(
+		studentId: string,
+		prose: ReportProse,
+		input: ReportGenerationInput,
+		model: string
+	): void {
+		const document = this.document;
+		if (!document) return;
+		if (!document.students.some((student) => student.id === studentId)) return;
+		document.reports[studentId] = {
+			strengths: [...prose.strengths],
+			areasForImprovement: [...prose.areasForImprovement],
+			edit: null,
+			input: structuredClone(input),
+			model,
+			generatedAt: this.#now().toISOString()
+		};
+		this.#mutated();
 	}
 
 	/** Say no to the reminder for this session. The next document asks again. */

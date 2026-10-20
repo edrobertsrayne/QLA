@@ -6,6 +6,7 @@
 <script lang="ts">
 	import AnalysisView from '$lib/components/marksheet/AnalysisView.svelte';
 	import MarksheetGrid from '$lib/components/marksheet/MarksheetGrid.svelte';
+	import ReportBanner from '$lib/components/report/ReportBanner.svelte';
 	import BackupCard from '$lib/components/shell/BackupCard.svelte';
 	import PaperLabelInput from '$lib/components/shell/PaperLabelInput.svelte';
 	import { Input } from '$lib/components/ui/input';
@@ -63,6 +64,8 @@
 			</div>
 			<BackupCard />
 		</header>
+
+		<ReportBanner />
 
 		<MarksheetGrid onViewAnalysis={openAnalysis} />
 	{:else}
