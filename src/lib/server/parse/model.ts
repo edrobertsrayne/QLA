@@ -1,7 +1,7 @@
 // Live model transport for the parse slice (issue #11).
 //
 // A classroom teacher's Run calls a real configurable model through the
-// stateless server proxy — Gemini Flash by default with a per-run override —
+// stateless server proxy — GPT-6 Luna by default with a per-run override —
 // and every response tells the teacher what the run spent. Transient
 // model-output slips are absorbed by a single silent server-side retry (in the
 // route); transient outages and fatal misconfiguration are distinguishable at
@@ -29,7 +29,7 @@ export interface IngestedDocument {
 /** Inputs the route forwards to the model transport. */
 export interface ModelInput {
 	modelOverride?: string;
-	/** Effective model id (override or Gemini Flash default). */
+	/** Effective model id (override, env, or `DEFAULT_MODEL_ID`). */
 	modelId: string;
 	/** False when the override lacks native PDF support → text-only + warning. */
 	useNativePdf: boolean;

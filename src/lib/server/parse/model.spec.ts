@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { estimateCost } from './model';
 import { CURATED_MODELS, CURATED_PRICING } from './models';
+import { DEFAULT_MODEL_ID } from './pdf';
 
 describe('CURATED_PRICING', () => {
 	it('has an entry for every curated model id', () => {
@@ -17,13 +18,12 @@ describe('CURATED_PRICING', () => {
 });
 
 describe('estimateCost', () => {
-	it('prices the default model from CURATED_PRICING, not a separate guess', () => {
-		const { promptPrice, completionPrice } = CURATED_PRICING['google/gemini-2.5-flash'];
-		const cost = estimateCost(1_000_000, 1_000_000, 'google/gemini-2.5-flash');
+	it('prices the default model from CURATED_PRICING, not the generic rate', () => {
+		const { promptPrice, completionPrice } = CURATED_PRICING[DEFAULT_MODEL_ID];
+		const cost = estimateCost(1_000_000, 1_000_000, DEFAULT_MODEL_ID);
 		expect(cost).toBeCloseTo(promptPrice + completionPrice, 10);
-		// Regression: the old heuristic table priced Gemini Flash at
-		// input 0.075 / output 0.3 — 4x/8x below the curated 0.3 / 2.5 figures.
-		expect(cost).toBeCloseTo(2.8, 10);
+		expect(cost).toBeCloseTo(0.6, 10);
+		expect(cost).not.toBeCloseTo(0.3 + 1.2, 10);
 	});
 
 	it('agrees with the curated catalogue for every curated model', () => {
@@ -40,7 +40,7 @@ describe('estimateCost', () => {
 	});
 
 	it('scales linearly with token counts', () => {
-		expect(estimateCost(0, 0, 'google/gemini-2.5-flash')).toBe(0);
-		expect(estimateCost(2_000_000, 0, 'google/gemini-2.5-flash')).toBeCloseTo(0.6, 10);
+		expect(estimateCost(0, 0, DEFAULT_MODEL_ID)).toBe(0);
+		expect(estimateCost(2_000_000, 0, DEFAULT_MODEL_ID)).toBeCloseTo(0.2, 10);
 	});
 });

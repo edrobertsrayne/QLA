@@ -110,14 +110,14 @@
 						<Command.Empty>No models match “{search.trim()}”.</Command.Empty>
 						<Command.Item
 							value="Server default"
-							keywords={['OPENROUTER_MODEL', 'Gemini Flash', 'default']}
+							keywords={['OPENROUTER_MODEL', 'GPT-6 Luna', 'default']}
 							data-checked={value === '' && !custom}
 							onSelect={() => choose('')}
 						>
 							<span class="min-w-0 flex-1">
 								<span class="block truncate font-medium">Server default</span>
 								<span class="block truncate text-xs text-muted-foreground">
-									Resolves to OPENROUTER_MODEL, else Gemini Flash
+									Resolves to OPENROUTER_MODEL, else GPT-6 Luna
 								</span>
 							</span>
 						</Command.Item>

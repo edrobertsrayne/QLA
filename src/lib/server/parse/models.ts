@@ -1,7 +1,7 @@
 // Compatible-model catalogue for the Phase 1 Parse model override dropdown.
 //
-// The drop-down offers a small actively curated set (five cheap modern
-// models, all passing the `supportsNativePdf()` regex gate in `pdf.ts`)
+// The drop-down offers a small actively curated set (four current models
+// with native PDF input, all passing the `supportsNativePdf()` regex gate in `pdf.ts`)
 // plus a `Custom…` free-text escape hatch. No pricing is shown — the list
 // is static id + name only, so there is no live catalogue fetch, no cache
 // and no fallback path.
@@ -17,11 +17,10 @@ export interface CompatibleModel {
  * capable. Every entry passes the `supportsNativePdf()` regex gate.
  */
 export const CURATED_MODELS: CompatibleModel[] = [
-	{ id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-	{ id: 'google/gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' },
-	{ id: 'openai/gpt-4o-mini', name: 'GPT-4o mini' },
-	{ id: 'openai/gpt-5-mini', name: 'GPT-5 mini' },
-	{ id: 'anthropic/claude-haiku-4.5', name: 'Claude Haiku 4.5' }
+	{ id: 'openai/gpt-6-luna', name: 'GPT-6 Luna' },
+	{ id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5' },
+	{ id: 'google/gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite' },
+	{ id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash' }
 ];
 
 /**
@@ -33,11 +32,10 @@ export const CURATED_MODELS: CompatibleModel[] = [
  * as `CURATED_MODELS` so the two can never drift apart for a shared model.
  */
 export const CURATED_PRICING: Record<string, { promptPrice: number; completionPrice: number }> = {
-	'google/gemini-2.5-flash': { promptPrice: 0.3, completionPrice: 2.5 },
-	'google/gemini-2.5-flash-lite': { promptPrice: 0.1, completionPrice: 0.4 },
-	'openai/gpt-4o-mini': { promptPrice: 0.15, completionPrice: 0.6 },
-	'openai/gpt-5-mini': { promptPrice: 0.25, completionPrice: 2 },
-	'anthropic/claude-haiku-4.5': { promptPrice: 1, completionPrice: 5 }
+	'openai/gpt-6-luna': { promptPrice: 0.1, completionPrice: 0.5 },
+	'anthropic/claude-haiku-5.5': { promptPrice: 0.1, completionPrice: 0.5 },
+	'google/gemini-3.1-flash-lite': { promptPrice: 0.25, completionPrice: 1.5 },
+	'google/gemini-3.8-flash': { promptPrice: 0.825, completionPrice: 4.12 }
 };
 
 export interface CompatibleModelsResult {

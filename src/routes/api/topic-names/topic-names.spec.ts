@@ -24,6 +24,7 @@ import {
 	setApiKeyForTests,
 	setDefaultModelForTests
 } from '$lib/server/parse/env';
+import { DEFAULT_MODEL_ID } from '$lib/server/parse/pdf';
 
 interface Envelope {
 	names?: Record<string, string>;
@@ -115,10 +116,11 @@ describe('POST /api/topic-names success', () => {
 		expect(calls[0]?.modelId).toBe('custom/override');
 	});
 
-	it('falls back to the topic-names default with neither', async () => {
+	it('falls back to the shared default with neither', async () => {
 		const { json } = await post(body());
 
-		expect(json.model).toBe('openai/gpt-6-luna');
+		expect(json.model).toBe(DEFAULT_MODEL_ID);
+		expect(calls[0]?.modelId).toBe(DEFAULT_MODEL_ID);
 	});
 });
 

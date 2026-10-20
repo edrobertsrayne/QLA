@@ -24,6 +24,7 @@ import {
 	setApiKeyForTests,
 	setDefaultModelForTests
 } from '$lib/server/parse/env';
+import { DEFAULT_MODEL_ID } from '$lib/server/parse/pdf';
 
 interface Envelope {
 	strengths?: string[];
@@ -236,10 +237,11 @@ describe('POST /api/report model resolution', () => {
 		expect(calls[0]?.modelId).toBe('env/model');
 	});
 
-	it('falls back to the report default with neither', async () => {
+	it('falls back to the shared default with neither', async () => {
 		const { json } = await post(body());
 
-		expect(json.model).toBe('openai/gpt-6-luna');
+		expect(json.model).toBe(DEFAULT_MODEL_ID);
+		expect(calls[0]?.modelId).toBe(DEFAULT_MODEL_ID);
 	});
 });
 

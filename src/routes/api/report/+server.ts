@@ -10,7 +10,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
-	REPORT_DEFAULT_MODEL,
 	REPORT_SYSTEM_PROMPT,
 	checkFeedback,
 	reportPayload,
@@ -27,7 +26,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const valid = await readRequest(request, INVALID_INPUT_CODE, 'report', validateReportBody);
 	if (valid instanceof Response) return valid;
 
-	const modelId = resolveModelId(valid.model, REPORT_DEFAULT_MODEL);
+	const modelId = resolveModelId(valid.model);
 	const asked = await askModel(
 		{
 			modelId,
