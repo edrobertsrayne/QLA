@@ -4,6 +4,8 @@
 	(the teacher's edit when there is one). Everything is interpolated as text.
 -->
 <script lang="ts">
+	import { count } from '$lib/prose.js';
+	import { gradeOf } from '$lib/marksheet/grades.js';
 	import { questionBands } from '$lib/marksheet/breakdown.js';
 	import {
 		EMPTY_AREAS_LINE,
@@ -33,6 +35,13 @@
 
 	const student = $derived(document.students.find((candidate) => candidate.id === studentId));
 	const figures = $derived(reportFiguresFor(document, studentId));
+	/** The grade is live from the document, never stored or sent: moving a
+	 * boundary re-renders every page without marking anything out of date. */
+	const grade = $derived(
+		document.paper.boundaries === null || document.paper.boundaries.length === 0
+			? null
+			: gradeOf(figures.total, document.paper.boundaries, document.paper.belowLowestLabel)
+	);
 	const strengths = $derived((report.edit ?? report).strengths);
 	const areas = $derived((report.edit ?? report).areasForImprovement);
 	const displayName = $derived(student ? studentName(student) : '');
@@ -113,11 +122,31 @@
 				{#if document.paper.className}<p class="text-[10pt]">{document.paper.className}</p>{/if}
 				<p class="text-[9pt] text-neutral-700">{document.paper.label ?? ''}</p>
 			</div>
-			<div class="border-2 border-black px-3 py-1.5 text-center">
-				<div class="text-[20pt] leading-tight font-bold tabular-nums">
-					{figures.total}/{figures.available}
+			<div class="flex items-stretch border-2 border-black text-center">
+				<div class="px-3 py-1.5">
+					<div class="text-[20pt] leading-tight font-bold tabular-nums">
+						{figures.total}/{figures.available}
+					</div>
+					<div class="text-[10pt]">{figures.percent}%</div>
 				</div>
-				<div class="text-[10pt]">{figures.percent}%</div>
+				{#if grade}
+					<div
+						class="flex flex-col justify-center bg-black px-4 py-1.5 text-white"
+						data-testid="report-grade"
+					>
+						<div class="text-[9pt]">Grade</div>
+						<div class="text-[22pt] leading-none font-bold">{grade.label}</div>
+					</div>
+					<div
+						class="flex max-w-[32mm] items-center justify-center px-3 py-1.5 text-left text-[9.5pt] leading-tight"
+						data-testid="report-to-next"
+					>
+						{#if grade.toNext === null || grade.nextLabel === null}Top grade{:else}{count(
+								grade.toNext,
+								'more mark'
+							)} for grade {grade.nextLabel}{/if}
+					</div>
+				{/if}
 			</div>
 		</header>
 
