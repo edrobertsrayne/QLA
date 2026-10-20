@@ -49,6 +49,38 @@ export function isBlankRow(row: BoundaryRow): boolean {
 	return row.label.trim() === '' && row.min.trim() === '';
 }
 
+/** A grade with no minimum: one this paper doesn't award. */
+export function isUnused(row: BoundaryRow): boolean {
+	return row.min.trim() === '';
+}
+
+/** The paper's boundaries, or null when it has none (null or empty): the one "has grades" check. */
+export function boundariesOf(document: MarksheetDocument): readonly GradeBoundary[] | null {
+	const boundaries = document.paper.boundaries;
+	return boundaries === null || boundaries.length === 0 ? null : boundaries;
+}
+
+/** The boundary editor's working copy, started from what the paper stores. */
+export function workingCopyOf(document: MarksheetDocument | null): {
+	rows: BoundaryRow[];
+	below: string;
+	scale: string;
+} {
+	const below = document?.paper.belowLowestLabel ?? 'U';
+	const stored = document ? boundariesOf(document) : null;
+	if (!stored) return { rows: [], below, scale: '' };
+	const labels = stored.map((boundary) => boundary.label).join('|');
+	const scale =
+		GRADE_SCALES.find(
+			(candidate) => candidate.labels.length > 0 && candidate.labels.join('|') === labels
+		)?.name ?? 'Custom';
+	return {
+		rows: stored.map((boundary) => ({ label: boundary.label, min: String(boundary.minimum) })),
+		below,
+		scale
+	};
+}
+
 /**
  * Every problem with the rows as typed, top grade first, indexed by the row's
  * place in `rows` so the dialog shows each problem on its own row. A blank row
@@ -64,7 +96,7 @@ export function boundaryIssues(
 	const seen = new Map<string, number>();
 	let previous: number | null = null;
 	rows.forEach((row, index) => {
-		if (isBlankRow(row) || row.min.trim() === '') return;
+		if (isBlankRow(row) || isUnused(row)) return;
 		const label = row.label.trim();
 		if (label === '') {
 			issues.push({ index, field: 'label', message: 'Needs a grade label' });
@@ -107,7 +139,7 @@ export function boundaryIssues(
 
 /** What the teacher typed, with blank and unawarded rows left out. */
 export function keptRows(rows: readonly BoundaryRow[]): BoundaryRow[] {
-	return rows.filter((row) => !isBlankRow(row) && row.min.trim() !== '');
+	return rows.filter((row) => !isBlankRow(row) && !isUnused(row));
 }
 
 /** A teacher's grade, and what it would take to reach the next one up. */
@@ -170,11 +202,9 @@ export function studentGrade(
 		return { kind: 'over-max' };
 	}
 	const total = entries.reduce((sum, entry) => sum + (marks[entry.id] ?? 0), 0);
-	const boundaries = document.paper.boundaries;
+	const boundaries = boundariesOf(document);
 	const grade =
-		boundaries === null || boundaries.length === 0
-			? null
-			: gradeOf(total, boundaries, document.paper.belowLowestLabel);
+		boundaries === null ? null : gradeOf(total, boundaries, document.paper.belowLowestLabel);
 	const { marked, total: of } = progressOf(marks, entries);
 	return marked === of ? { kind: 'complete', total, grade } : { kind: 'partial', total, grade };
 }

@@ -6,6 +6,7 @@
 <script lang="ts">
 	import * as Table from '$lib/components/ui/table';
 	import { facilityDescription, facilityPercent, type RagBand } from '$lib/marksheet/analysis.js';
+	import { boundariesOf } from '$lib/marksheet/grades.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { cn } from '$lib/utils.js';
 	import { FROZEN_PROGRESS, NAME_COLUMN, PROGRESS_PIN } from './grid-layout.js';
@@ -15,7 +16,7 @@
 	const store = marksheetStore();
 	const analysis = $derived(store.analysis);
 	/** Spacer cells under the Total | Grade | To next columns: Total always, the rest with boundaries. */
-	const hasGrades = $derived((store.document?.paper.boundaries?.length ?? 0) > 0);
+	const hasGrades = $derived(store.document ? boundariesOf(store.document) !== null : false);
 	/**
 	 * What a facility figure is tinted with, per band. A mark cell is a fraction
 	 * of a 40&nbsp;px column, so it takes a heavier fill than the analysis view's

@@ -124,10 +124,10 @@ function reportCalls(stub: { mock: { calls: unknown[][] } }): number {
 	return stub.mock.calls.filter(([url]) => String(url) !== '/api/models').length;
 }
 
-/** Fresh flows start at the Grades step: skip it to reach Who gets one. */
+/** Fresh flows start at the Grades step: skip it (or Next, when grades are saved) to reach Who gets one. */
 async function skipGrades(): Promise<void> {
 	await expect.element(page.getByRole('heading', { name: 'Grades' })).toBeInTheDocument();
-	await page.getByRole('button', { name: /^Skip/ }).click();
+	await page.getByRole('button', { name: /^(Skip|Next)/ }).click();
 }
 
 /** One eligible student and one absent: every report call belongs to Ada. */
@@ -1343,7 +1343,7 @@ describe('grades on reports', () => {
 		await page.getByRole('button', { name: 'Next' }).click();
 		await expect.element(page.getByRole('heading', { name: 'Grades' })).toBeInTheDocument();
 
-		await page.getByRole('button', { name: 'GCSE 9–1' }).click();
+		await page.getByRole('radio', { name: 'GCSE 9–1' }).click();
 		// Paper total is 12: the 9-boundary at 10 keeps every minimum under it.
 		await userEvent.fill(page.getByLabelText('Lowest mark for 9'), '10');
 		await page.getByRole('button', { name: 'Save boundaries' }).click();
@@ -1384,7 +1384,7 @@ describe('grades on reports', () => {
 		await page.getByRole('button', { name: 'Next' }).click();
 		await expect.element(page.getByRole('heading', { name: 'Grades' })).toBeInTheDocument();
 
-		await page.getByRole('button', { name: 'Skip: keep saved grades' }).click();
+		await page.getByRole('button', { name: 'Next' }).click();
 		await expect
 			.element(page.getByRole('heading', { name: '7 students get a report' }))
 			.toBeInTheDocument();

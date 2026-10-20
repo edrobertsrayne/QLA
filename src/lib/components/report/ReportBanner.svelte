@@ -6,6 +6,7 @@
 	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
 	import { marksheetStore } from '$lib/marksheet/index.js';
+	import { boundariesOf } from '$lib/marksheet/grades.js';
 	import { isEligible } from '$lib/marksheet/report-eligibility.js';
 	import { count } from '$lib/prose.js';
 	import GradeBoundariesDialog from './GradeBoundariesDialog.svelte';
@@ -17,7 +18,7 @@
 		document ? document.students.filter((s) => isEligible(document, s.id)).length : 0
 	);
 	const total = $derived(document?.students.length ?? 0);
-	const boundaryCount = $derived(document?.paper.boundaries?.length ?? 0);
+	const boundaryCount = $derived(document ? (boundariesOf(document)?.length ?? 0) : 0);
 	let gradesOpen = $state(false);
 </script>
 

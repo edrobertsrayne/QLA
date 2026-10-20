@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
 	import { count } from '$lib/prose.js';
-	import { gradeOf } from '$lib/marksheet/grades.js';
+	import { boundariesOf, gradeOf } from '$lib/marksheet/grades.js';
 	import { questionBands } from '$lib/marksheet/breakdown.js';
 	import {
 		EMPTY_AREAS_LINE,
@@ -47,10 +47,9 @@
 	const figures = $derived(reportFiguresFor(document, studentId));
 	/** The grade is live from the document, never stored or sent: moving a
 	 * boundary re-renders every page without marking anything out of date. */
+	const boundaries = $derived(boundariesOf(document));
 	const grade = $derived(
-		document.paper.boundaries === null || document.paper.boundaries.length === 0
-			? null
-			: gradeOf(figures.total, document.paper.boundaries, document.paper.belowLowestLabel)
+		boundaries ? gradeOf(figures.total, boundaries, document.paper.belowLowestLabel) : null
 	);
 	const strengths = $derived((report.edit ?? report).strengths);
 	const areas = $derived((report.edit ?? report).areasForImprovement);
