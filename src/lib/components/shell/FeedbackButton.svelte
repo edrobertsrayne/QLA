@@ -3,6 +3,7 @@
 	Shown only when the server has a GitHub token configured.
 -->
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import { toast } from 'svelte-sonner';
 	import { failureFrom } from '$lib/api-error.js';
@@ -18,7 +19,7 @@
 	let text = $state('');
 	let phase = $state<'idle' | 'sending'>('idle');
 
-	$effect(() => {
+	onMount(() => {
 		fetch('/api/feedback')
 			.then(async (response) => {
 				if (!response.ok) return;
@@ -88,7 +89,8 @@
 					maxlength={FEEDBACK_MAX_CHARS}
 					placeholder="What did you notice?"
 					onkeydown={(e) => {
-						if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') send();
+						if ((e.ctrlKey || e.metaKey) && e.key === 'Enter')
+							e.currentTarget.form?.requestSubmit();
 					}}
 				/>
 				<Button type="submit" disabled={phase === 'sending' || text.trim() === ''}>
