@@ -52,6 +52,7 @@ import {
 	type StudentName,
 	type StudentSortKey
 } from './students.js';
+import { generationInputFor } from './report-input.js';
 
 export interface MarksheetStoreDeps {
 	storage: DocumentStorage;
@@ -76,6 +77,7 @@ export type Undoable =
 	  }
 	| { kind: 'mark-paste'; before: MarksheetDocument }
 	| { kind: 'report-edit'; studentId: string; before: MarksheetDocument }
+	| { kind: 'report-kept'; studentId: string; before: MarksheetDocument }
 	| { kind: 'grade-boundaries'; action: 'saved' | 'removed'; before: MarksheetDocument };
 
 export interface CreateFromParseInput {
@@ -678,6 +680,28 @@ export class MarksheetStore {
 	 */
 	revertReport(studentId: string): void {
 		this.#setReportEdit(studentId, null);
+	}
+	/**
+	 * Accept the generated prose as still right: the stored input becomes what
+	 * the document builds now, clearing the out-of-date marker with no model
+	 * call. The teacher's edit beside it is kept — the wording on the page
+	 * does not move, only what it is measured against.
+	 */
+	keepReportWording(studentId: string): void {
+		const document = this.document;
+		const report = document?.reports[studentId];
+		if (!document || !report) return;
+		const current = generationInputFor(document, studentId);
+		if (!current) return;
+		const undoable = this.undoable;
+		const before =
+			undoable?.kind === 'report-kept' && undoable.studentId === studentId
+				? undoable.before
+				: copyOf(document);
+		report.input = structuredClone(current);
+		// After the change, since the change itself clears any undo on offer.
+		this.#mutated();
+		this.undoable = { kind: 'report-kept', studentId, before };
 	}
 
 	/**

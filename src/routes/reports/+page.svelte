@@ -13,11 +13,12 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { marksheetStore } from '$lib/marksheet/index.js';
-	import { blockerText, eligibilityRows } from '$lib/marksheet/report-eligibility.js';
+	import { blockerText, eligibilityRows, isEligible } from '$lib/marksheet/report-eligibility.js';
 	import { studentName } from '$lib/marksheet/students.js';
-	import { count } from '$lib/prose.js';
-
+	import { changedInputFields, generationInputFor } from '$lib/marksheet/report-input.js';
+	import { agree, count } from '$lib/prose.js';
 	import { specPointCodes } from '$lib/marksheet/document.js';
 	type Step = 'topics' | 'who' | 'writing' | 'review';
 
@@ -34,6 +35,54 @@
 	const writtenIds = $derived(
 		document ? students.filter((s) => document.reports[s.id]).map((s) => s.id) : []
 	);
+	/** Reports the teacher can see: written and still eligible. Ineligible
+	 * reports are kept with their edits, hidden from Review and never printed.
+	 */
+	const reviewIds = $derived(
+		document
+			? students
+					.filter((s) => document.reports[s.id] && isEligible(document, s.id))
+					.map((s) => s.id)
+			: []
+	);
+	/** What the stored prose no longer matches, per visible report. Grade
+	 * boundaries and the model never count: they never reach the input.
+	 */
+	const outOfDateChanges = (id: string): string[] => {
+		if (!document) return [];
+		const report = document.reports[id];
+		if (!report) return [];
+		const changes = changedInputFields(report.input, generationInputFor(document, id));
+		return changes ?? [];
+	};
+	const outOfDateIds = $derived(reviewIds.filter((id) => outOfDateChanges(id).length > 0));
+	const editedOutOfDateIds = $derived(
+		outOfDateIds.filter((id) => document?.reports[id]?.edit !== null)
+	);
+	let includeEdited = $state(false);
+
+	/** One fresh page: over a teacher's edit only with their say-so. */
+	function rewriteOne(id: string): void {
+		const report = document?.reports[id];
+		if (!report) return;
+		if (report.edit !== null && !window.confirm('This discards your edits')) return;
+		run.retry([id], modelOverride);
+	}
+
+	/** Every out-of-date page, leaving edited ones alone unless opted in. */
+	function rewriteOutOfDate(): void {
+		const ids = outOfDateIds.filter((id) => includeEdited || document?.reports[id]?.edit === null);
+		if (ids.length > 0) run.retry(ids, modelOverride);
+	}
+
+	/** Print all asks first when an out-of-date report would print. */
+	let confirmPrint = $state<{ ids: string[] | null; count: number } | null>(null);
+	function askPrint(ids: string[] | null): void {
+		const targets = ids ?? reviewIds;
+		const count = targets.filter((id) => outOfDateChanges(id).length > 0).length;
+		if (count > 0) confirmPrint = { ids, count };
+		else void print(ids);
+	}
 
 	/**
 	 * Every normalised specification-point code on the paper, in first-seen
@@ -425,43 +474,112 @@
 	{:else if document}
 		<section class="flex items-start gap-6">
 			<aside class="sticky top-4 w-56 shrink-0 space-y-3 self-start">
-				<Button disabled={writtenIds.length === 0} onclick={() => void print(null)}>
-					Print all {writtenIds.length}
+				<Button disabled={reviewIds.length === 0} onclick={() => askPrint(null)}>
+					Print all {reviewIds.length}
 				</Button>
+				{#if confirmPrint}
+					{@const outOfDateCount = confirmPrint.count}
+					<div
+						role="alertdialog"
+						aria-label="Out-of-date reports"
+						class="space-y-2 rounded-md border p-3 text-sm"
+					>
+						<p>
+							{count(outOfDateCount, 'report')}
+							{agree(outOfDateCount, 'is', 'are')} out of date: print anyway / rewrite {outOfDateCount ===
+							1
+								? 'it'
+								: 'them'} first
+						</p>
+						<div class="flex flex-wrap gap-2">
+							<Button
+								size="sm"
+								onclick={() => {
+									const pending = confirmPrint;
+									confirmPrint = null;
+									void print(pending?.ids ?? null);
+								}}
+							>
+								Print anyway
+							</Button>
+							<Button
+								size="sm"
+								variant="outline"
+								onclick={() => {
+									confirmPrint = null;
+									rewriteOutOfDate();
+								}}
+							>
+								Rewrite {outOfDateCount === 1 ? 'it' : 'them'} first
+							</Button>
+						</div>
+					</div>
+				{/if}
+				{#if outOfDateIds.length > 0 && !run.running}
+					{@const skipped = includeEdited ? 0 : editedOutOfDateIds.length}
+					{@const rewritable = outOfDateIds.length - skipped}
+					<Button
+						variant="outline"
+						disabled={rewritable === 0}
+						onclick={rewriteOutOfDate}
+						title={skipped > 0 ? 'Tick the box to include edited reports' : undefined}
+					>
+						Rewrite {rewritable} out of date{skipped > 0 ? ` (skips ${skipped} edited)` : ''}
+					</Button>
+					{#if editedOutOfDateIds.length > 0}
+						<Label class="gap-1.5 text-xs font-normal text-muted-foreground">
+							<Checkbox bind:checked={includeEdited} /> also rewrite {editedOutOfDateIds.length} edited
+							(discards edits)
+						</Label>
+					{/if}
+				{/if}
+				{#if run.running}
+					<p class="text-sm text-muted-foreground">Rewriting…</p>
+				{/if}
 				{#if pendingIds.length > 0 && !run.running}
 					<Button variant="outline" onclick={writeMore}>Write {pendingIds.length} more</Button>
 				{/if}
 				<ul class="space-y-1 text-sm">
 					{#each students as student (student.id)}
+						{@const row = rows.find((candidate) => candidate.studentId === student.id)}
 						<li>
-							{#if document.reports[student.id]}
+							{#if reviewIds.includes(student.id)}
 								<button type="button" class="underline" onclick={() => jumpTo(student.id)}
 									>{studentName(student)}</button
 								>
 							{:else}
 								<span>{studentName(student)}</span>
-								<span class="text-muted-foreground">{statusOf(student.id)}</span>
+								{#if document.reports[student.id] && row && !row.eligible}
+									<span class="text-muted-foreground">
+										Blocked ({row.blockers.map((blocker) => blockerText(blocker)).join(' · ')})
+									</span>
+								{:else}
+									<span class="text-muted-foreground">{statusOf(student.id)}</span>
+								{/if}
 							{/if}
 						</li>
 					{/each}
 				</ul>
 			</aside>
 			<div class="min-w-0 flex-1 space-y-8 overflow-x-auto">
-				{#if writtenIds.length === 0}
+				{#if reviewIds.length === 0}
 					<p>No reports have been written yet.</p>
 				{/if}
-				{#if store.undoable?.kind === 'report-edit'}
+				{#if store.undoable?.kind === 'report-edit' || store.undoable?.kind === 'report-kept'}
 					{@const undone = nameOf(store.undoable.studentId)}
+					{@const kept = store.undoable.kind === 'report-kept'}
 					{@const stillEdited = document.reports[store.undoable.studentId]?.edit !== null}
 					<Alert data-testid="report-edit-undo">
 						<AlertDescription>
-							{stillEdited ? 'Edited' : 'Reverted'}
+							{kept ? 'Kept wording for' : stillEdited ? 'Edited' : 'Reverted'}
 							{undone === '' ? 'a report' : undone}.
 						</AlertDescription>
 						<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
 					</Alert>
 				{/if}
-				{#each writtenIds as id (id)}
+				{#each reviewIds as id (id)}
+					{@const changes = outOfDateChanges(id)}
+					{@const tile = run.tiles[id]}
 					<div data-page-for={id} class="space-y-2">
 						<div class="flex flex-wrap items-center gap-2">
 							<Button variant="outline" size="sm" onclick={() => void print([id])}
@@ -473,7 +591,23 @@
 									>Revert</Button
 								>
 							{/if}
+							{#if changes.length > 0}
+								<p class="text-sm font-medium">Out of date ({changes.join(', ')})</p>
+								<Button variant="outline" size="sm" onclick={() => store.keepReportWording(id)}
+									>Keep wording</Button
+								>
+							{/if}
+							<Button variant="outline" size="sm" onclick={() => rewriteOne(id)}>Rewrite</Button>
+							{#if tile?.kind === 'writing'}
+								<span class="text-sm text-muted-foreground">Rewriting…</span>
+							{/if}
 						</div>
+						{#if tile?.kind === 'failed'}
+							<p role="alert" class="rounded-md border border-destructive p-3 text-sm">
+								{tile.message}
+								<Button size="sm" variant="outline" onclick={() => rewriteOne(id)}>Retry</Button>
+							</p>
+						{/if}
 						<ReportSheet
 							{document}
 							studentId={id}
@@ -489,5 +623,5 @@
 </main>
 
 {#if document}
-	<PrintRoot {document} ids={printing ?? writtenIds} />
+	<PrintRoot {document} ids={printing ?? reviewIds} />
 {/if}

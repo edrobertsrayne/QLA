@@ -40,15 +40,43 @@ export function generationInputFor(
 }
 
 /**
- * Whether a stored generation input still matches what the document builds
- * now: any difference in any field means the report's feedback was written
- * from something else. Grade, marks to next grade and model never mark a
- * report out of date, because they never reach the input.
+ * What a stored generation input no longer matches, in the words the Review
+ * strip shows beside the marker: one phrase per changed thing. Position
+ * matters — a reordered, added or removed question changes what the model
+ * saw, even when every figure is otherwise the same. Null when the student
+ * is blocked now — there is nothing to compare against, and Review hides
+ * the report rather than marking it.
  */
-export function sameGenerationInput(
+export function changedInputFields(
 	stored: ReportGenerationInput,
 	current: ReportGenerationInput | null
-): boolean {
-	if (!current) return false;
-	return JSON.stringify(stored) === JSON.stringify(current);
+): string[] | null {
+	if (!current) return null;
+	const changes: string[] = [];
+	if (stored.paperLabel !== current.paperLabel) changes.push('the paper label');
+	const longest = Math.max(stored.entries.length, current.entries.length);
+	for (let index = 0; index < longest; index += 1) {
+		const was = stored.entries[index];
+		const is = current.entries[index];
+		if (!was || !is) {
+			changes.push(`question ${(was ?? is).label}`);
+			continue;
+		}
+		if (is.label !== was.label) {
+			changes.push(`question ${was.label}`);
+			continue;
+		}
+		if (is.gained !== was.gained) changes.push(`the mark for question ${was.label}`);
+		if (is.available !== was.available) changes.push(`the marks for question ${was.label}`);
+		if (is.summary !== was.summary || is.commandWord !== was.commandWord || is.ao !== was.ao) {
+			changes.push(`question ${was.label}`);
+		}
+		if (
+			is.topics.length !== was.topics.length ||
+			is.topics.some((topic, topicIndex) => topic !== was.topics[topicIndex])
+		) {
+			changes.push('the topic names');
+		}
+	}
+	return [...new Set(changes)];
 }
