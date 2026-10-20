@@ -11,7 +11,7 @@
 // Tests inject behaviour via `setModelTransport`; production uses the live
 // OpenRouter transport by default.
 
-import type { Breakdown, ParseUsage } from './schema';
+import type { ParseUsage } from './schema';
 import { OPENROUTER_MAX_TOKENS, OPENROUTER_TIMEOUT_MS, buildHybridPayload } from './pdf';
 import { getApiKey } from './env';
 import { CURATED_PRICING } from './models';
@@ -92,11 +92,6 @@ export function resetOpenRouterFetch(): void {
 	openRouterFetch = (url, init) => fetch(url, init);
 }
 
-/** Zero usage reported by the stub (no real model is called in the skeleton). */
-export function stubUsage(): ParseUsage {
-	return { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 };
-}
-
 /** Token counts from an OpenRouter `usage` block, with the estimated cost for the model. */
 export function usageFrom(
 	raw: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined,
@@ -112,44 +107,6 @@ export function usageFrom(
 		completionTokens,
 		totalTokens,
 		estCost: estimateCost(promptTokens, completionTokens, modelId)
-	};
-}
-
-/**
- * Deterministic fixture breakdown for the prototype slice.
- * Schema-valid with zero warnings.
- */
-export function stubBreakdown(): Breakdown {
-	return {
-		questions: [
-			{
-				id: '1a',
-				questionNumber: '1',
-				marks: 1,
-				summary: 'Transverse wave oscillation direction',
-				specPoint: '4.6.1.1',
-				commandWord: 'Complete',
-				ao: 'AO1'
-			},
-			{
-				id: '1b',
-				questionNumber: '1',
-				marks: 6,
-				summary: 'Method for infrared investigation task',
-				specPoint: null,
-				commandWord: 'Describe',
-				ao: 'AO3'
-			},
-			{
-				id: '2a',
-				questionNumber: '2',
-				marks: 2,
-				summary: 'Tick box plus give reason',
-				specPoint: null,
-				commandWord: null,
-				ao: 'AO2'
-			}
-		]
 	};
 }
 
@@ -311,10 +268,6 @@ export async function liveTransport(input: ModelInput): Promise<ModelResult> {
 	return { rawJson: extractJsonText(rawContent), usage };
 }
 
-async function defaultStubTransport(): Promise<ModelResult> {
-	return { rawJson: JSON.stringify(stubBreakdown()), usage: stubUsage() };
-}
-
 // Default is the live model call. Tests replace it via `setModelTransport`.
 let transport: ModelTransport = liveTransport;
 
@@ -326,11 +279,6 @@ export function setModelTransport(fn: ModelTransport): void {
 /** Restore the live transport (production default). */
 export function resetModelTransport(): void {
 	transport = liveTransport;
-}
-
-/** Test seam: install the deterministic stub transport. */
-export function setStubTransport(): void {
-	transport = defaultStubTransport;
 }
 
 export function callModel(input: ModelInput): Promise<ModelResult> {

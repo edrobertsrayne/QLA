@@ -31,12 +31,10 @@ import {
 	ModelRetryableError,
 	setModelTransport,
 	resetModelTransport,
-	setStubTransport,
-	stubBreakdown,
-	stubUsage,
 	type ModelInput,
 	type ModelResult
 } from '$lib/server/parse/model';
+import { setStubTransport, stubBreakdown, stubUsage } from '$lib/server/parse/model.spec-helpers';
 import { clearApiKeyForTests, setApiKeyForTests } from '$lib/server/parse/env';
 import { resetDnsLookup, resetSpecFetch, setDnsLookup, setSpecFetch } from '$lib/server/parse/spec';
 
