@@ -14,14 +14,17 @@ import {
 	feedbackTitle,
 	validateFeedbackBody
 } from '$lib/server/feedback';
-import { getFeedbackToken } from '$lib/server/parse/env';
+import { getServerEnv } from '$lib/server/parse/env';
 import { failure, readRequest } from '$lib/server/structured-route';
 
 export const GET: RequestHandler = () =>
-	json({ enabled: getFeedbackToken() !== '' }, { headers: { 'Cache-Control': 'no-store' } });
+	json(
+		{ enabled: getServerEnv('GITHUB_FEEDBACK_TOKEN') !== '' },
+		{ headers: { 'Cache-Control': 'no-store' } }
+	);
 
 export const POST: RequestHandler = async ({ request }) => {
-	const token = getFeedbackToken();
+	const token = getServerEnv('GITHUB_FEEDBACK_TOKEN');
 	if (token === '') {
 		return failure(500, {
 			code: 'MISSING_GITHUB_TOKEN',

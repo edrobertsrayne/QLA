@@ -13,7 +13,7 @@
 
 import type { ParseUsage } from './schema';
 import { OPENROUTER_MAX_TOKENS, OPENROUTER_TIMEOUT_MS, buildHybridPayload } from './pdf';
-import { getApiKey } from './env';
+import { getServerEnv } from './env';
 import { CURATED_PRICING } from './models';
 
 /** One ingested PDF forwarded to the model transport (hybrid dual-input). */
@@ -173,7 +173,7 @@ export function contentToText(content: unknown): string {
  * non-OK becomes `ModelFatalError` (route → 500).
  */
 export async function liveTransport(input: ModelInput): Promise<ModelResult> {
-	const apiKey = getApiKey();
+	const apiKey = getServerEnv('OPENROUTER_API_KEY');
 	if (!apiKey) {
 		throw new ModelFatalError(
 			'Server is missing its OpenRouter API key. The problem is server-side, not with your inputs.'

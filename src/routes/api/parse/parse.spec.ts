@@ -35,7 +35,7 @@ import {
 	type ModelResult
 } from '$lib/server/parse/model';
 import { setStubTransport, stubBreakdown, stubUsage } from '$lib/server/parse/model.spec-helpers';
-import { clearApiKeyForTests, setApiKeyForTests } from '$lib/server/parse/env';
+import { clearEnvForTests, setEnvForTests } from '$lib/server/parse/env';
 import { resetDnsLookup, resetSpecFetch, setDnsLookup, setSpecFetch } from '$lib/server/parse/spec';
 
 const API_KEY = 'test-key';
@@ -148,13 +148,13 @@ function question(overrides: Record<string, unknown> = {}): Record<string, unkno
 
 describe('POST /api/parse v1 prototype (stubbed model)', () => {
 	beforeEach(() => {
-		setApiKeyForTests(API_KEY);
+		setEnvForTests('OPENROUTER_API_KEY', API_KEY);
 		setStubTransport();
 		setDnsLookup(async () => [{ address: '93.184.216.34', family: 4 }]);
 	});
 
 	afterEach(() => {
-		clearApiKeyForTests();
+		clearEnvForTests();
 		resetModelTransport();
 		resetSpecFetch();
 		resetDnsLookup();
@@ -248,7 +248,7 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 			calls += 1;
 			return stubResultWith(stubBreakdown());
 		});
-		setApiKeyForTests('');
+		setEnvForTests('OPENROUTER_API_KEY', '');
 
 		const { status, body } = await post(paperOnlyForm());
 

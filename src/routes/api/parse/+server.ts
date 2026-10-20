@@ -40,7 +40,7 @@ import {
 	SpecUnreadableError,
 	SpecUrlError
 } from '$lib/server/parse/spec';
-import { getApiKey } from '$lib/server/parse/env';
+import { getServerEnv } from '$lib/server/parse/env';
 
 function error(code: string, message: string, extra: Record<string, unknown> = {}): Response {
 	return json({ error: { code, message, ...extra } }, { status: statusFor(code) });
@@ -72,7 +72,7 @@ function isPdf(file: File): boolean {
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-	if (!getApiKey()) {
+	if (!getServerEnv('OPENROUTER_API_KEY')) {
 		return error(
 			'MISSING_API_KEY',
 			'Server is missing its OpenRouter API key. The problem is server-side, not with your inputs.'

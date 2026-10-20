@@ -4,12 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GET, POST } from './+server';
 import { MODEL_RETRYABLE_CODE } from '$lib/server/parse/model';
-import {
-	clearDefaultModelForTests,
-	clearFeedbackTokenForTests,
-	setDefaultModelForTests,
-	setFeedbackTokenForTests
-} from '$lib/server/parse/env';
+import { clearEnvForTests, setEnvForTests } from '$lib/server/parse/env';
 import { DEFAULT_MODEL_ID } from '$lib/server/parse/pdf';
 import { resetFeedbackFetch, setFeedbackFetch } from '$lib/server/feedback';
 import {
@@ -68,25 +63,24 @@ function filedTitle(): string {
 beforeEach(() => {
 	modelCalls = [];
 	githubCalls = [];
-	setDefaultModelForTests('');
-	setFeedbackTokenForTests('t');
+	setEnvForTests('OPENROUTER_MODEL', '');
+	setEnvForTests('GITHUB_FEEDBACK_TOKEN', 't');
 	stubModel('{"title":"x"}');
 	stubGithub(created);
 });
 
 afterEach(() => {
-	clearDefaultModelForTests();
-	clearFeedbackTokenForTests();
+	clearEnvForTests();
 	resetFeedbackFetch();
 	resetStructuredTransport();
 });
 
 describe('GET /api/feedback', () => {
 	it('reports whether a token is configured', async () => {
-		setFeedbackTokenForTests('');
+		setEnvForTests('GITHUB_FEEDBACK_TOKEN', '');
 		const off = await GET({} as Parameters<typeof GET>[0]);
 		expect(await off.json()).toEqual({ enabled: false });
-		setFeedbackTokenForTests('t');
+		setEnvForTests('GITHUB_FEEDBACK_TOKEN', 't');
 		const on = await GET({} as Parameters<typeof GET>[0]);
 		expect(await on.json()).toEqual({ enabled: true });
 	});
@@ -94,7 +88,7 @@ describe('GET /api/feedback', () => {
 
 describe('POST /api/feedback', () => {
 	it('refuses without a token, calling nothing', async () => {
-		setFeedbackTokenForTests('');
+		setEnvForTests('GITHUB_FEEDBACK_TOKEN', '');
 		const { status, json } = await post({ text: 'x', page: '/' });
 		expect(status).toBe(500);
 		expect(json.error?.code).toBe('MISSING_GITHUB_TOKEN');
@@ -135,7 +129,7 @@ describe('POST /api/feedback', () => {
 	});
 
 	it('uses OPENROUTER_MODEL when set', async () => {
-		setDefaultModelForTests('env/model');
+		setEnvForTests('OPENROUTER_MODEL', 'env/model');
 		await post({ text: 'x', page: '/' });
 		expect(modelCalls[0]?.modelId).toBe('env/model');
 	});
