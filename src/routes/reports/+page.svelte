@@ -8,6 +8,7 @@
 	import UndoAlert from '$lib/components/marksheet/UndoAlert.svelte';
 	import ModelSelect from '$lib/components/parse/ModelSelect.svelte';
 	import { ModelList } from '$lib/components/parse/model-list.svelte.js';
+	import ConfirmDialog from '$lib/components/report/ConfirmDialog.svelte';
 	import PrintRoot from '$lib/components/report/PrintRoot.svelte';
 	import ReportSheet from '$lib/components/report/ReportSheet.svelte';
 	import GradeBoundariesForm from '$lib/components/report/GradeBoundariesForm.svelte';
@@ -16,7 +17,6 @@
 	import { ReportRun } from '$lib/components/report/report-run.svelte.js';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import * as Dialog from '$lib/components/ui/dialog';
 	import { Label } from '$lib/components/ui/label';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { marksheetStore } from '$lib/marksheet/index.js';
@@ -96,34 +96,32 @@
 		);
 	};
 
-	/** Every out-of-date page, leaving edited ones alone unless opted in. */
-	function rewriteOutOfDate(): void {
-		const ids = outOfDateIds.filter((id) => includeEdited || document?.reports[id]?.edit === null);
-		if (ids.length > 0) run.retry(ids, modelOverride);
+	/** Pages a print would send that the teacher should know about first. */
+	interface PrintWarning {
+		ids: string[];
+		outOfDate: number;
+		overflow: number;
+	}
+	let pendingPrint = $state<PrintWarning | null>(null);
+
+	/** Out-of-date pages among `ids` that a rewrite may touch: edited ones only when opted in. */
+	const rewritableOf = (ids: string[]): string[] =>
+		ids.filter(
+			(id) =>
+				outOfDateChanges(id).length > 0 && (includeEdited || document?.reports[id]?.edit === null)
+		);
+
+	function rewriteOutOfDate(ids: string[]): void {
+		const targets = rewritableOf(ids);
+		if (targets.length > 0) run.retry(targets, modelOverride);
 	}
 
-	/** Print all asks first when an out-of-date or overflowing report would print. */
-	interface PendingPrint {
-		ids: string[] | null;
-		count: number;
-	}
-	let confirmPrint = $state<PendingPrint | null>(null);
-	let confirmOverflow = $state<PendingPrint | null>(null);
-	function askPrint(ids: string[] | null): void {
-		const targets = ids ?? reviewIds;
-		const outOfDate = targets.filter((id) => outOfDateChanges(id).length > 0).length;
-		if (outOfDate > 0) {
-			confirmPrint = { ids, count: outOfDate };
-			return;
-		}
-		askOverflow(ids, targets);
-	}
-
-	/** A flagged page never prints unannounced, even past the out-of-date check. */
-	function askOverflow(ids: string[] | null, targets: string[]): void {
-		const over = targets.filter((id) => isFlagged(fit.fitOf(id))).length;
-		if (over > 0) confirmOverflow = { ids, count: over };
-		else void print(ids);
+	/** Print asks first when an out-of-date or overflowing page would go to the printer. */
+	function askPrint(ids: string[]): void {
+		const outOfDate = ids.filter((id) => outOfDateChanges(id).length > 0).length;
+		const overflow = ids.filter((id) => isFlagged(fit.fitOf(id))).length;
+		if (outOfDate === 0 && overflow === 0) void print(ids);
+		else pendingPrint = { ids, outOfDate, overflow };
 	}
 
 	/**
@@ -256,10 +254,10 @@
 		run.retry([...run.failed], modelOverride);
 	}
 
-	/** Pages the printer gets: null means every written report. */
+	/** Pages the printer gets; null means not printing, so every visible page shows for measuring. */
 	let printing = $state<string[] | null>(null);
 
-	async function print(ids: string[] | null): Promise<void> {
+	async function print(ids: string[]): Promise<void> {
 		printing = ids;
 		await tick();
 		window.print();
@@ -483,7 +481,7 @@
 	{:else if document}
 		<section class="flex items-start gap-6">
 			<aside class="sticky top-4 w-56 shrink-0 space-y-3 self-start">
-				<Button disabled={reviewIds.length === 0} onclick={() => askPrint(null)}>
+				<Button disabled={reviewIds.length === 0} onclick={() => askPrint(reviewIds)}>
 					Print all {reviewIds.length}
 				</Button>
 				{#if outOfDateIds.length > 0 && !run.running}
@@ -492,7 +490,7 @@
 					<Button
 						variant="outline"
 						disabled={rewritable === 0}
-						onclick={rewriteOutOfDate}
+						onclick={() => rewriteOutOfDate(reviewIds)}
 						title={skipped > 0 ? 'Tick the box to include edited reports' : undefined}
 					>
 						Rewrite {rewritable} out of date{skipped > 0 ? ` (skips ${skipped} edited)` : ''}
@@ -543,7 +541,7 @@
 					{@const pageFit = fit.fitOf(id)}
 					<div data-page-for={id} class="space-y-2">
 						<div class="flex flex-wrap items-center gap-2">
-							<Button variant="outline" size="sm" onclick={() => void print([id])}
+							<Button variant="outline" size="sm" onclick={() => askPrint([id])}
 								>Print this page</Button
 							>
 							{#if document.reports[id].edit !== null}
@@ -591,105 +589,55 @@
 		</section>
 	{/if}
 	{#if confirmRewrite !== null}
-		<Dialog.Root
-			open
-			onOpenChange={(isOpen) => {
-				if (!isOpen) confirmRewrite = null;
-			}}
-		>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>Rewrite this report?</Dialog.Title>
-					<Dialog.Description>This discards your edits.</Dialog.Description>
-				</Dialog.Header>
-				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (confirmRewrite = null)}>Keep my edits</Button>
-					<Button
-						variant="destructive"
-						onclick={() => {
-							const id = confirmRewrite;
-							confirmRewrite = null;
-							if (id) run.retry([id], modelOverride);
-						}}
-					>
-						Discard edits and rewrite
-					</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
+		{@const id = confirmRewrite}
+		<ConfirmDialog
+			title="Rewrite this report?"
+			description="This discards your edits."
+			actions={[
+				{ label: 'Keep my edits', variant: 'outline', onclick: () => {} },
+				{
+					label: 'Discard edits and rewrite',
+					variant: 'destructive',
+					onclick: () => run.retry([id], modelOverride)
+				}
+			]}
+			onclose={() => (confirmRewrite = null)}
+		/>
 	{/if}
-	{#if confirmPrint}
-		{@const outOfDateCount = confirmPrint.count}
-		<Dialog.Root
-			open
-			onOpenChange={(isOpen) => {
-				if (!isOpen) confirmPrint = null;
-			}}
-		>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>Out-of-date reports</Dialog.Title>
-					<Dialog.Description>
-						{count(outOfDateCount, 'report')}
-						{agree(outOfDateCount, 'is', 'are')} out of date: print anyway / rewrite {outOfDateCount ===
-						1
-							? 'it'
-							: 'them'} first
-					</Dialog.Description>
-				</Dialog.Header>
-				<Dialog.Footer>
-					<Button
-						onclick={() => {
-							const pending = confirmPrint;
-							confirmPrint = null;
-							askOverflow(pending?.ids ?? null, pending?.ids ?? reviewIds);
-						}}
-					>
-						Print anyway
-					</Button>
-					<Button
-						variant="outline"
-						onclick={() => {
-							confirmPrint = null;
-							rewriteOutOfDate();
-						}}
-					>
-						Rewrite {outOfDateCount === 1 ? 'it' : 'them'} first
-					</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
-	{/if}
-	{#if confirmOverflow}
-		{@const overCount = confirmOverflow.count}
-		<Dialog.Root
-			open
-			onOpenChange={(isOpen) => {
-				if (!isOpen) confirmOverflow = null;
-			}}
-		>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>Overflowing reports</Dialog.Title>
-					<Dialog.Description>
-						{count(overCount, 'report')}
-						{agree(overCount, 'runs', 'run')} over the page; print cuts the overflow off. Print anyway?
-					</Dialog.Description>
-				</Dialog.Header>
-				<Dialog.Footer>
-					<Button
-						onclick={() => {
-							const pending = confirmOverflow;
-							confirmOverflow = null;
-							void print(pending?.ids ?? null);
-						}}
-					>
-						Print anyway
-					</Button>
-					<Button variant="outline" onclick={() => (confirmOverflow = null)}>Keep editing</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
+	{#if pendingPrint}
+		{@const { ids, outOfDate, overflow } = pendingPrint}
+		<ConfirmDialog
+			title={outOfDate > 0 && overflow > 0
+				? 'Out-of-date and overflowing reports'
+				: outOfDate > 0
+					? 'Out-of-date reports'
+					: 'Overflowing reports'}
+			description={[
+				...(outOfDate > 0
+					? [`${count(outOfDate, 'report')} ${agree(outOfDate, 'is', 'are')} out of date.`]
+					: []),
+				...(overflow > 0
+					? [
+							`${count(overflow, 'report')} ${agree(overflow, 'runs', 'run')} over the page; print cuts the overflow off.`
+						]
+					: []),
+				'Print anyway?'
+			].join(' ')}
+			actions={[
+				{ label: 'Print anyway', onclick: () => void print(ids) },
+				...(rewritableOf(ids).length > 0
+					? [
+							{
+								label: `Rewrite ${outOfDate === 1 ? 'it' : 'them'} first`,
+								variant: 'outline' as const,
+								onclick: () => rewriteOutOfDate(ids)
+							}
+						]
+					: []),
+				{ label: 'Keep editing', variant: 'outline', onclick: () => {} }
+			]}
+			onclose={() => (pendingPrint = null)}
+		/>
 	{/if}
 </main>
 
