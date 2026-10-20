@@ -9,6 +9,7 @@
 	import PrintRoot from '$lib/components/report/PrintRoot.svelte';
 	import ReportSheet from '$lib/components/report/ReportSheet.svelte';
 	import GradeBoundariesForm from '$lib/components/report/GradeBoundariesForm.svelte';
+	import { isFlagged, isShrunk, reportFit } from '$lib/components/report/report-fit.svelte.js';
 	import { ReportRun } from '$lib/components/report/report-run.svelte.js';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
@@ -24,6 +25,7 @@
 	type Step = 'topics' | 'grades' | 'who' | 'writing' | 'review';
 
 	const store = marksheetStore();
+	const fit = reportFit();
 	const document = $derived(store.document);
 	const rows = $derived(document ? eligibilityRows(document) : []);
 	const students = $derived(store.students);
@@ -76,12 +78,27 @@
 		if (ids.length > 0) run.retry(ids, modelOverride);
 	}
 
-	/** Print all asks first when an out-of-date report would print. */
-	let confirmPrint = $state<{ ids: string[] | null; count: number } | null>(null);
+	/** Print all asks first when an out-of-date or overflowing report would print. */
+	interface PendingPrint {
+		ids: string[] | null;
+		count: number;
+	}
+	let confirmPrint = $state<PendingPrint | null>(null);
+	let confirmOverflow = $state<PendingPrint | null>(null);
 	function askPrint(ids: string[] | null): void {
 		const targets = ids ?? reviewIds;
-		const count = targets.filter((id) => outOfDateChanges(id).length > 0).length;
-		if (count > 0) confirmPrint = { ids, count };
+		const stale = targets.filter((id) => outOfDateChanges(id).length > 0).length;
+		if (stale > 0) {
+			confirmPrint = { ids, count: stale };
+			return;
+		}
+		askOverflow(ids, targets);
+	}
+
+	/** A flagged page never prints unannounced, even past the stale check. */
+	function askOverflow(ids: string[] | null, targets: string[]): void {
+		const over = targets.filter((id) => isFlagged(fit.fitOf(id))).length;
+		if (over > 0) confirmOverflow = { ids, count: over };
 		else void print(ids);
 	}
 
@@ -516,7 +533,7 @@
 								onclick={() => {
 									const pending = confirmPrint;
 									confirmPrint = null;
-									void print(pending?.ids ?? null);
+									askOverflow(pending?.ids ?? null, pending?.ids ?? reviewIds);
 								}}
 							>
 								Print anyway
@@ -530,6 +547,34 @@
 								}}
 							>
 								Rewrite {outOfDateCount === 1 ? 'it' : 'them'} first
+							</Button>
+						</div>
+					</div>
+				{/if}
+				{#if confirmOverflow}
+					{@const overCount = confirmOverflow.count}
+					<div
+						role="alertdialog"
+						aria-label="Overflowing reports"
+						class="space-y-2 rounded-md border p-3 text-sm"
+					>
+						<p>
+							{count(overCount, 'report')}
+							{agree(overCount, 'runs', 'run')} over the page; print cuts the overflow off. Print anyway?
+						</p>
+						<div class="flex flex-wrap gap-2">
+							<Button
+								size="sm"
+								onclick={() => {
+									const pending = confirmOverflow;
+									confirmOverflow = null;
+									void print(pending?.ids ?? null);
+								}}
+							>
+								Print anyway
+							</Button>
+							<Button size="sm" variant="outline" onclick={() => (confirmOverflow = null)}>
+								Keep editing
 							</Button>
 						</div>
 					</div>
@@ -599,6 +644,7 @@
 				{#each reviewIds as id (id)}
 					{@const changes = outOfDateChanges(id)}
 					{@const tile = run.tiles[id]}
+					{@const pageFit = fit.fitOf(id)}
 					<div data-page-for={id} class="space-y-2">
 						<div class="flex flex-wrap items-center gap-2">
 							<Button variant="outline" size="sm" onclick={() => void print([id])}
@@ -614,6 +660,15 @@
 								<p class="text-sm font-medium">Out of date ({changes.join(', ')})</p>
 								<Button variant="outline" size="sm" onclick={() => store.keepReportWording(id)}
 									>Keep wording</Button
+								>
+							{/if}
+							{#if isFlagged(pageFit)}
+								<Badge variant="destructive"
+									>Runs {pageFit.overMm} mm over the page; print cuts it off</Badge
+								>
+							{:else if isShrunk(pageFit)}
+								<Badge variant="secondary"
+									>Feedback shrunk to {Math.round(pageFit.scale * 100)}% to fit</Badge
 								>
 							{/if}
 							<Button variant="outline" size="sm" onclick={() => rewriteOne(id)}>Rewrite</Button>
@@ -632,6 +687,7 @@
 							studentId={id}
 							report={document.reports[id]}
 							editable
+							measure={false}
 							onedit={(prose) => store.editReport(id, prose)}
 						/>
 					</div>
