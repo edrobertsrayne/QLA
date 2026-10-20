@@ -73,10 +73,33 @@
 		step = 'review';
 	});
 
-	function write(): void {
+	function startRun(studentIds: string[]): void {
 		if (modelCustom) modelOverride = modelOverride.trim();
 		step = 'writing';
-		run.start(eligibleIds, modelOverride);
+		run.start(studentIds, modelOverride);
+	}
+
+	function write(): void {
+		startRun(eligibleIds);
+	}
+
+	/**
+	 * Students the last run did not cover: eligible now with no report and no
+	 * tile yet. A failure or a Stop leaves tiles behind, so those students are
+	 * retried from the Writing step, not counted here as newly eligible.
+	 */
+	const pendingIds = $derived(
+		eligibleIds.filter((id) => document && !document.reports[id] && !(id in run.tiles))
+	);
+
+	function writeMore(): void {
+		step = 'writing';
+		run.retry(pendingIds, modelOverride);
+	}
+
+	function retryFailed(): void {
+		step = 'writing';
+		run.retry([...run.failed], modelOverride);
 	}
 
 	/** Pages the printer gets: null means every written report. */
@@ -192,8 +215,11 @@
 				<Button variant="outline" onclick={() => run.stop()}>Stop</Button>
 			{:else if run.order.length > 0}
 				<div class="flex gap-2">
+					{#if run.failed.length > 0}
+						<Button variant="outline" onclick={retryFailed}>Retry failed</Button>
+					{/if}
 					{#if run.failed.length > 0 || writtenIds.length > 0}
-						<Button onclick={() => (step = 'review')}>Review and print</Button>
+						<Button onclick={() => (step = 'review')}>Review {writtenIds.length}</Button>
 					{/if}
 					<Button variant="outline" onclick={() => (step = 'who')}>Back to Who gets one</Button>
 				</div>
@@ -205,6 +231,17 @@
 						<div class="font-medium">{nameOf(id)}</div>
 						<div class="text-muted-foreground">{TILE_LABEL[tile?.kind ?? 'queued']}</div>
 						{#if tile?.kind === 'failed'}<div class="text-destructive">{tile.message}</div>{/if}
+						{#if tile?.kind === 'failed'}
+							<Button
+								size="sm"
+								variant="outline"
+								disabled={run.running}
+								onclick={() => {
+									step = 'writing';
+									run.retry([id], modelOverride);
+								}}>Retry</Button
+							>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -215,6 +252,9 @@
 				<Button disabled={writtenIds.length === 0} onclick={() => void print(null)}>
 					Print all {writtenIds.length}
 				</Button>
+				{#if pendingIds.length > 0 && !run.running}
+					<Button variant="outline" onclick={writeMore}>Write {pendingIds.length} more</Button>
+				{/if}
 				<ul class="space-y-1 text-sm">
 					{#each students as student (student.id)}
 						<li>

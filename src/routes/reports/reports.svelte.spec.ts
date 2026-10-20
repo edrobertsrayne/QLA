@@ -2,8 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { goto } from '$app/navigation';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import { confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import {
+	confirmed,
+	entry,
+	readSeeded,
+	seed,
+	student
+} from '$lib/marksheet/fixtures.spec-helpers.js';
 import { generationInputFor } from '$lib/marksheet/report-input.js';
+import { marksheetStore } from '$lib/marksheet/index.js';
 import { openPage } from '../spec-helpers.js';
 import MarksheetPage from '../marksheet/+page.svelte';
 import ReportsPage from './+page.svelte';
@@ -52,20 +59,65 @@ function plain(over: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	});
 }
 
-function stubFetch(canned: (n: number) => Response = () => ok()) {
+type Canned = (n: number, init?: { signal?: AbortSignal | null }) => Response | Promise<Response>;
+
+function stubFetch(canned: Canned = () => ok()) {
 	let inFlight = 0;
 	let peak = 0;
 	let n = 0;
-	const stub = vi.fn(async (url: string | URL | Request) => {
-		if (String(url) === '/api/models') return Response.json({ models: [] });
-		inFlight += 1;
-		peak = Math.max(peak, inFlight);
-		await new Promise((resolve) => setTimeout(resolve, 20));
-		inFlight -= 1;
-		return canned(n++);
-	});
+	const stub = vi.fn(
+		async (url: string | URL | Request, init?: { signal?: AbortSignal | null }) => {
+			if (String(url) === '/api/models') return Response.json({ models: [] });
+			inFlight += 1;
+			peak = Math.max(peak, inFlight);
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			inFlight -= 1;
+			if (init?.signal?.aborted) throw new DOMException('The run was stopped.', 'AbortError');
+			return canned(n++, init);
+		}
+	);
 	vi.stubGlobal('fetch', stub);
 	return { stub, peak: () => peak };
+}
+
+/** The report calls only: everything but the model-list lookup the page makes on arrival. */
+function reportCalls(stub: { mock: { calls: unknown[][] } }): number {
+	return stub.mock.calls.filter(([url]) => String(url) !== '/api/models').length;
+}
+
+/** One eligible student and one absent: every report call belongs to Ada. */
+function solo(): MarksheetDocument {
+	const fitting = plain();
+	return {
+		...fitting,
+		students: [student('ada', 'Ada', 'Lovelace'), student('cy', 'Cy', 'Absent', true)],
+		marks: { ada: fitting.marks['ada'] }
+	};
+}
+
+function retryable(message = 'The model provider is busy.'): Response {
+	return Response.json(
+		{ error: { code: 'MODEL_RETRYABLE', message, retryable: true } },
+		{ status: 502 }
+	);
+}
+
+function hasButton(name: string): boolean {
+	return [...document.querySelectorAll('button')].some(
+		(button) => button.textContent?.trim() === name
+	);
+}
+
+function readyTiles(): number {
+	return [...document.querySelectorAll('[data-tile-for]')].filter((tile) =>
+		tile.textContent?.includes('Ready')
+	).length;
+}
+
+function failedTiles(): Element[] {
+	return [...document.querySelectorAll('[data-tile-for]')].filter(
+		(tile) => tile.querySelector('.text-muted-foreground')?.textContent === 'Failed'
+	);
 }
 
 function ok(strength = 'Careful working'): Response {
@@ -198,5 +250,167 @@ describe('reports flow', () => {
 				n.getAttribute('data-report-id')
 			)
 		).toEqual(['bo']);
+	});
+
+	it('retries a retryable failure, waiting out retryAfter, and ends Ready on Review', async () => {
+		seed(solo());
+		let firstAt = 0;
+		let secondAt = 0;
+		const { stub } = stubFetch((n) => {
+			if (n === 0) {
+				firstAt = Date.now();
+				return Response.json(
+					{ error: { code: 'MODEL_RETRYABLE', message: 'Busy', retryable: true, retryAfter: 1 } },
+					{ status: 502 }
+				);
+			}
+			secondAt = Date.now();
+			return ok();
+		});
+		openPage(ReportsPage);
+
+		await page.getByRole('button', { name: 'Write 1 report' }).click();
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		expect(reportCalls(stub)).toBe(2);
+		expect(secondAt - firstAt).toBeGreaterThanOrEqual(900);
+	});
+
+	it('keeps the other failed tile when a per-tile Retry succeeds', async () => {
+		seed(plain());
+		// The first five students go through; the last two dequeued burn all three tries.
+		const { stub } = stubFetch((n) => (n >= 5 && n < 11 ? retryable() : ok()));
+		openPage(ReportsPage);
+
+		await page.getByRole('button', { name: 'Write 7 reports' }).click();
+
+		await vi.waitFor(() => expect(reportCalls(stub)).toBe(11), { timeout: 15000 });
+		await vi.waitFor(() => expect(failedTiles()).toHaveLength(2), { timeout: 5000 });
+		await vi.waitFor(() => expect(hasButton('Retry failed')).toBe(true), { timeout: 5000 });
+
+		// Retrying one keeps the other's failure on screen, and holds Review back.
+		await page.getByRole('button', { name: 'Retry', exact: true }).first().click();
+
+		await vi.waitFor(() => expect(reportCalls(stub)).toBe(12), { timeout: 5000 });
+		await vi.waitFor(() => expect(failedTiles()).toHaveLength(1), { timeout: 5000 });
+		await expect.element(page.getByRole('button', { name: 'Review 6' })).toBeInTheDocument();
+		expect(hasButton('Print all 6')).toBe(false);
+	});
+
+	it('fails a non-retryable answer at once, stays for Retry failed, then advances on success', async () => {
+		seed(solo());
+		const { stub } = stubFetch((n) =>
+			n === 0
+				? Response.json(
+						{
+							error: {
+								code: 'INVALID_REPORT_INPUT',
+								message: 'Bad entry',
+								retryable: false,
+								field: 'entries[0].gained'
+							}
+						},
+						{ status: 400 }
+					)
+				: ok()
+		);
+		openPage(ReportsPage);
+
+		await page.getByRole('button', { name: 'Write 1 report' }).click();
+
+		await vi.waitFor(
+			() => expect(page.getByText('Failed', { exact: true }).query()).not.toBeNull(),
+			{
+				timeout: 5000
+			}
+		);
+		await vi.waitFor(() => expect(hasButton('Retry failed')).toBe(true), { timeout: 5000 });
+		await expect.element(page.getByRole('button', { name: 'Review 0' })).toBeInTheDocument();
+		await new Promise((resolve) => setTimeout(resolve, 1200));
+		expect(reportCalls(stub)).toBe(1);
+
+		await page.getByRole('button', { name: 'Retry failed' }).click();
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		expect(reportCalls(stub)).toBe(2);
+	});
+
+	it('stops the whole run on a 401 with one banner and no further requests', async () => {
+		seed(plain());
+		const { stub } = stubFetch(() =>
+			Response.json({ error: { code: 'MODEL_AUTH', message: 'Bad key' } }, { status: 500 })
+		);
+		openPage(ReportsPage);
+
+		await page.getByRole('button', { name: 'Write 7 reports' }).click();
+
+		await expect.element(page.getByRole('alert')).toHaveTextContent('Bad key');
+		expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1);
+		await vi.waitFor(() => expect(reportCalls(stub)).toBe(5), { timeout: 5000 });
+		await new Promise((resolve) => setTimeout(resolve, 400));
+		expect(reportCalls(stub)).toBe(5);
+		await expect.element(page.getByText('Queued').first()).toBeInTheDocument();
+	});
+
+	it('keeps finished reports across Stop, and they persist', async () => {
+		seed(plain());
+		stubFetch((n, init) => {
+			if (n < 2) return ok();
+			return new Promise((resolve, reject) => {
+				const timer = setTimeout(() => resolve(ok()), 3000);
+				init?.signal?.addEventListener(
+					'abort',
+					() => {
+						clearTimeout(timer);
+						reject(new DOMException('The run was stopped.', 'AbortError'));
+					},
+					{ once: true }
+				);
+			});
+		});
+		openPage(ReportsPage);
+
+		await page.getByRole('button', { name: 'Write 7 reports' }).click();
+
+		await vi.waitFor(() => expect(readyTiles()).toBe(2), { timeout: 5000 });
+		await page.getByRole('button', { name: 'Stop' }).click();
+		await vi.waitFor(() => expect(hasButton('Stop')).toBe(false), { timeout: 5000 });
+
+		expect(readyTiles()).toBe(2);
+		await expect.element(page.getByRole('heading', { name: 'Wrote 2 of 7' })).toBeInTheDocument();
+		await vi.waitFor(() => expect(Object.keys(readSeeded().reports)).toHaveLength(2), {
+			timeout: 5000
+		});
+	});
+
+	it('offers Write N more once a further student is marked, and writes only them', async () => {
+		const doc = plain();
+		for (const id of ['ada', 'bo', 'fay', 'gus', 'hal', 'ivy', 'jo']) {
+			const input = generationInputFor(doc, id);
+			if (!input) throw new Error(`no input for ${id}`);
+			doc.reports[id] = {
+				strengths: ['Careful working'],
+				areasForImprovement: [],
+				edit: null,
+				input,
+				model: 'test/model',
+				generatedAt: '2026-01-01T10:00:00.000Z'
+			};
+		}
+		seed(doc);
+		const { stub } = stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 7' })).toBeInTheDocument();
+		expect(hasButton('Write 1 more')).toBe(false);
+
+		// Di was unmarked; finishing her marking makes her newly eligible.
+		marksheetStore().setMark('di', 'entry-2', 2);
+		await vi.waitFor(() => expect(hasButton('Write 1 more')).toBe(true), { timeout: 5000 });
+
+		await page.getByRole('button', { name: 'Write 1 more' }).click();
+
+		await expect.element(page.getByRole('button', { name: 'Print all 8' })).toBeInTheDocument();
+		expect(reportCalls(stub)).toBe(1);
 	});
 });
