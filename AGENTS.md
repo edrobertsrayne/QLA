@@ -45,3 +45,13 @@ Before writing or reviewing code, read `CODING_STANDARDS.md`: the judgement-call
 ## Commits
 
 Use [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): description`. Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `build`, `ci`. Lowercase, imperative description (`add`, not `added`). Mark breaking changes with `!` or a `BREAKING CHANGE:` footer.
+
+## Models
+
+Never assume anything about an LLM: its id, generation, price or capabilities. Before you name, add or change a model (the default, the curated list, or a plan), check the live OpenRouter listing:
+
+`curl -s https://openrouter.ai/api/v1/models | jq -r '.data[] | select(.id|test("<name>")) | "\(.id)\t\(.pricing.prompt)\t\(.pricing.completion)\t\(.supported_parameters|join(","))"'`
+
+There is one default model: `DEFAULT_MODEL_ID` in `src/lib/server/parse/pdf.ts`. Every model call resolves its id with `resolveModelId(override?)` (per-run override, else `OPENROUTER_MODEL`, else `DEFAULT_MODEL_ID`). Never add a per-route model constant. When the default changes, keep it first in `CURATED_MODELS` and priced in `CURATED_PRICING` (`src/lib/server/parse/models.ts`).
+
+Pick the latest generation the listing shows, and pin its exact id rather than a `~…-latest` alias. A model called through the structured transport (`src/lib/server/openrouter.ts`) must list `structured_outputs` and `response_format`; the default must also accept native PDF input (`supportsNativePdf`).
