@@ -23,6 +23,7 @@
 	import { agree, count } from '$lib/prose.js';
 	import { MAX_LABEL_LENGTH } from '$lib/marksheet/report-limits.js';
 	import { specPointCodes, topicCodesOf } from '$lib/marksheet/document.js';
+	import { boundariesOf } from '$lib/marksheet/grades.js';
 	type Step = 'topics' | 'grades' | 'who' | 'writing' | 'review';
 
 	const store = marksheetStore();
@@ -407,11 +408,13 @@
 			</p>
 			<GradeBoundariesForm onDone={() => (step = 'who')} />
 			<div class="flex flex-wrap gap-2">
-				<Button variant="outline" onclick={() => (step = 'who')}>
-					{document?.paper.boundaries
-						? 'Skip: keep saved grades'
-						: 'Skip: no grades on these reports'}
-				</Button>
+				{#if document && boundariesOf(document)}
+					<Button onclick={() => (step = 'who')}>Next</Button>
+				{:else}
+					<Button variant="outline" onclick={() => (step = 'who')}>
+						Skip: no grades on these reports
+					</Button>
+				{/if}
 			</div>
 		</section>
 	{:else if step === 'who'}

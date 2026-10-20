@@ -19,7 +19,7 @@
 		type BreakdownEntry,
 		type StoredStudent
 	} from '$lib/marksheet/document.js';
-	import { studentGrade, toNextText } from '$lib/marksheet/grades.js';
+	import { boundariesOf, studentGrade, toNextText } from '$lib/marksheet/grades.js';
 	import { resolveCell, step, type GridCell } from '$lib/marksheet/grid-cursor.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { clipboardGrid } from '$lib/marksheet/paste.js';
@@ -49,7 +49,7 @@
 	const students = $derived(store.students);
 	const marks = $derived(store.document?.marks ?? {});
 	/** Grade columns beside the marks: total always, grade and to-next only with boundaries. */
-	const hasGrades = $derived((store.document?.paper.boundaries?.length ?? 0) > 0);
+	const hasGrades = $derived(store.document ? boundariesOf(store.document) !== null : false);
 	const graded = $derived.by(() => {
 		const document = store.document;
 		if (!document) return new Map<string, ReturnType<typeof studentGrade>>();

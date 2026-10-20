@@ -98,7 +98,7 @@ describe('grade boundaries', () => {
 		openPage(MarksheetPage);
 
 		await page.getByRole('button', { name: 'Set grade boundaries' }).click();
-		await page.getByRole('button', { name: 'A level A*–E' }).click();
+		await page.getByRole('radio', { name: 'A level A*–E' }).click();
 
 		await userEvent.fill(page.getByLabelText('Lowest mark for A*'), '8');
 		await userEvent.fill(page.getByLabelText('Lowest mark for A', { exact: true }), '7');
@@ -133,7 +133,7 @@ describe('grade boundaries', () => {
 		openPage(MarksheetPage);
 
 		await page.getByRole('button', { name: 'Set grade boundaries' }).click();
-		await page.getByRole('button', { name: 'A level A*–E' }).click();
+		await page.getByRole('radio', { name: 'A level A*–E' }).click();
 
 		await userEvent.fill(page.getByLabelText('Lowest mark for A*'), '11');
 		await userEvent.fill(page.getByLabelText('Lowest mark for A', { exact: true }), '11');
@@ -195,7 +195,7 @@ describe('grade boundaries', () => {
 		openPage(MarksheetPage);
 
 		await page.getByRole('button', { name: 'Set grade boundaries' }).click();
-		await page.getByRole('button', { name: 'Custom' }).click();
+		await page.getByRole('radio', { name: 'Custom' }).click();
 
 		await userEvent.fill(page.getByLabelText('Grade 1', { exact: true }), 'A');
 		await userEvent.fill(page.getByLabelText('Lowest mark for A', { exact: true }), '8.5');
@@ -227,17 +227,17 @@ describe('grade boundaries', () => {
 		openPage(MarksheetPage);
 
 		await page.getByRole('button', { name: 'Set grade boundaries' }).click();
-		await page.getByRole('button', { name: 'Custom' }).click();
+		await page.getByRole('radio', { name: 'Custom' }).click();
 
 		await userEvent.fill(page.getByLabelText('Grade 1', { exact: true }), 'A');
 		await userEvent.fill(page.getByLabelText('Lowest mark for A', { exact: true }), '8');
 
-		await page.getByRole('button', { name: 'A level A*–E' }).click();
+		await page.getByRole('radio', { name: 'A level A*–E' }).click();
 		await expect
 			.element(page.getByLabelText('Lowest mark for A', { exact: true }))
 			.toHaveValue('8');
 
-		await page.getByRole('button', { name: 'Custom' }).click();
+		await page.getByRole('radio', { name: 'Custom' }).click();
 		await expect
 			.element(page.getByLabelText('Lowest mark for A', { exact: true }))
 			.toHaveValue('8');
@@ -318,7 +318,7 @@ describe('grade boundaries', () => {
 		openPage(MarksheetPage);
 
 		await page.getByRole('button', { name: 'Set grade boundaries' }).click();
-		await page.getByRole('button', { name: 'A level A*–E' }).click();
+		await page.getByRole('radio', { name: 'A level A*–E' }).click();
 		await userEvent.fill(page.getByLabelText('Lowest mark for A*'), '8');
 		await page.getByRole('button', { name: 'Save boundaries' }).click();
 
