@@ -18,7 +18,9 @@ function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocumen
 			label: '10X Ph1',
 			className: '10C1',
 			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW.toISOString()
+			parsedAt: NOW.toISOString(),
+			boundaries: null,
+			belowLowestLabel: 'U'
 		},
 		breakdown: {
 			entries: [
@@ -38,6 +40,8 @@ function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocumen
 		},
 		students: [{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false }],
 		marks: { 'student-1': { 'entry-1': 3 } },
+		topicNames: {},
+		reports: {},
 		...overrides
 	};
 }

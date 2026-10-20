@@ -62,6 +62,60 @@ describe('boot gate', () => {
 		expect(store.route()).toBe('/marksheet');
 	});
 
+	it('opens a v2 document with its boundaries, topic names and reports intact', () => {
+		const report = {
+			strengths: ['You explain processes clearly.'],
+			areasForImprovement: [] as string[],
+			edit: null,
+			input: { paperLabel: '10X Ph1', entries: [] as never[] },
+			model: 'openai/gpt-6-luna',
+			generatedAt: NOW.toISOString()
+		};
+		const document = parsed({
+			breakdownConfirmedAt: NOW.toISOString(),
+			paper: {
+				...parsed().paper,
+				boundaries: [{ label: 'A', minimum: 52 }],
+				belowLowestLabel: 'U'
+			},
+			students: [student('student-1', 'Ada', 'Lovelace')],
+			topicNames: { '3.2.1.4': 'Rates of reaction' },
+			reports: { 'student-1': report }
+		});
+		const store = storeWith(fakeStorage({ [STORAGE_KEY]: JSON.stringify(document) }));
+
+		store.load();
+
+		expect(store.document).toEqual(document);
+		expect(store.route()).toBe('/marksheet');
+	});
+
+	it('drops orphaned reports and topic names on boot', () => {
+		const report = {
+			strengths: ['You explain processes clearly.'],
+			areasForImprovement: [] as string[],
+			edit: null,
+			input: { paperLabel: '10X Ph1', entries: [] as never[] },
+			model: 'openai/gpt-6-luna',
+			generatedAt: NOW.toISOString()
+		};
+		const storage = fakeStorage({
+			[STORAGE_KEY]: JSON.stringify(
+				parsed({
+					students: [student('student-1', 'Ada', 'Lovelace')],
+					topicNames: { '9.9.9': 'Gone' },
+					reports: { 'student-1': report, 'student-gone': report }
+				})
+			)
+		});
+		const store = storeWith(storage);
+
+		store.load();
+
+		expect(store.document?.reports).toEqual({ 'student-1': report });
+		expect(store.document?.topicNames).toEqual({});
+	});
+
 	// Kept whole, under its own key: a version this app cannot read is still the
 	// teacher's only copy of their marks.
 	it.each([
@@ -85,6 +139,24 @@ describe('boot gate', () => {
 		expect(storage.getItem(STORAGE_KEY)).toBe(raw);
 		expect(store.document).toBeNull();
 		expect(store.route()).toBe('/');
+	});
+
+	it('treats a v1 document as unreadable, like any other version', () => {
+		const raw = JSON.stringify({
+			...parsed({ breakdownConfirmedAt: NOW.toISOString() }),
+			schemaVersion: 1
+		});
+		const storage = fakeStorage({ [STORAGE_KEY]: raw });
+		const store = storeWith(storage);
+
+		store.load();
+
+		expect(store.document).toBeNull();
+		expect(store.unreadable).toEqual({
+			preservedKey: `${CORRUPT_KEY_PREFIX}${NOW.toISOString()}`,
+			raw
+		});
+		expect(storage.getItem(STORAGE_KEY)).toBe(raw);
 	});
 
 	it('treats unparseable JSON as unreadable too', () => {
@@ -213,10 +285,14 @@ describe('createFromParse', () => {
 			label: 'paper',
 			className: null,
 			sourceFilenames: ['paper.pdf', 'markscheme.pdf'],
-			parsedAt: NOW.toISOString()
+			parsedAt: NOW.toISOString(),
+			boundaries: null,
+			belowLowestLabel: 'U'
 		});
 		expect(written.students).toEqual([]);
 		expect(written.marks).toEqual({});
+		expect(written.topicNames).toEqual({});
+		expect(written.reports).toEqual({});
 
 		const entries = written.breakdown.entries;
 		expect(entries.map((entry) => entry.label)).toEqual(['1a', '2bii']);
@@ -643,7 +719,14 @@ describe('restoring a backup', () => {
 	it('brings a marksheet back, marks and all, from the file it handed out', () => {
 		const { store } = openStore({
 			breakdownConfirmedAt: NOW.toISOString(),
-			paper: { label: 'Ph1', className: '10C1', sourceFilenames: ['paper.pdf'], parsedAt: 'x' },
+			paper: {
+				label: 'Ph1',
+				className: '10C1',
+				sourceFilenames: ['paper.pdf'],
+				parsedAt: 'x',
+				boundaries: null,
+				belowLowestLabel: 'U'
+			},
 			students: [student('student-1', 'Ada', 'Lovelace')],
 			marks: { 'student-1': { 'entry-1': 3 } }
 		});
@@ -664,6 +747,76 @@ describe('restoring a backup', () => {
 		expect(JSON.stringify(fresh.document)).toBe(file?.text);
 		// A restore is a document the teacher now holds; storage keeps it at once.
 		expect(stored(storage).marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+	});
+
+	it('brings boundaries, topic names and reports back from the file it handed out, byte for byte', () => {
+		const report = {
+			strengths: ['You explain processes clearly.'],
+			areasForImprovement: ['Practise multi-step calculations weekly.'],
+			edit: {
+				strengths: ['You explain processes clearly, Ada.'],
+				areasForImprovement: ['Practise multi-step calculations weekly.']
+			},
+			input: {
+				paperLabel: 'Ph1',
+				entries: [
+					{
+						label: '2bii',
+						summary: 'Describe the rate change',
+						commandWord: 'Describe',
+						ao: 'AO2' as const,
+						topics: ['Rates of reaction'],
+						gained: 3,
+						available: 4
+					}
+				]
+			},
+			model: 'openai/gpt-6-luna',
+			generatedAt: NOW.toISOString()
+		};
+		const { store } = openStore({
+			breakdownConfirmedAt: NOW.toISOString(),
+			paper: {
+				label: 'Ph1',
+				className: '10C1',
+				sourceFilenames: ['paper.pdf'],
+				parsedAt: 'x',
+				boundaries: [{ label: 'A', minimum: 52 }],
+				belowLowestLabel: 'U'
+			},
+			students: [student('student-1', 'Ada', 'Lovelace')],
+			marks: { 'student-1': { 'entry-1': 3 } },
+			topicNames: { '3.2.1.4': 'Rates of reaction' },
+			reports: { 'student-1': report }
+		});
+		const file = store.takeBackup();
+
+		const fresh = storeWith(fakeStorage());
+
+		expect(fresh.restoreBackup(readable(JSON.parse(file?.text ?? '')))).toBe(true);
+		expect(JSON.stringify(fresh.document)).toBe(file?.text);
+	});
+
+	it('keeps the report of a student who is present but ineligible', () => {
+		const report = {
+			strengths: ['You explain processes clearly.'],
+			areasForImprovement: [] as string[],
+			edit: null,
+			input: { paperLabel: '10X Ph1', entries: [] as never[] },
+			model: 'openai/gpt-6-luna',
+			generatedAt: NOW.toISOString()
+		};
+		const store = storeWith(fakeStorage());
+		const absent = readable(
+			parsed({
+				students: [student('student-1', 'Ada', 'Lovelace', true)],
+				reports: { 'student-1': report }
+			})
+		);
+
+		store.restoreBackup(absent);
+
+		expect(store.document?.reports).toEqual({ 'student-1': report });
 	});
 
 	it('lands the restored document on the surface its state allows', () => {
@@ -691,6 +844,31 @@ describe('restoring a backup', () => {
 		store.restoreBackup(orphaned);
 
 		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+	});
+
+	it('drops reports for removed students and names for orphaned codes on the way in', () => {
+		const store = storeWith(fakeStorage());
+		const report = {
+			strengths: ['You explain processes clearly.'],
+			areasForImprovement: [] as string[],
+			edit: null,
+			input: { paperLabel: '10X Ph1', entries: [] as never[] },
+			model: 'openai/gpt-6-luna',
+			generatedAt: NOW.toISOString()
+		};
+		const orphaned = readable(
+			parsed({
+				breakdownConfirmedAt: NOW.toISOString(),
+				students: [student('student-1', 'Ada', 'Lovelace')],
+				topicNames: { '9.9.9': 'Gone' },
+				reports: { 'student-1': report, 'student-gone': report }
+			})
+		);
+
+		store.restoreBackup(orphaned);
+
+		expect(store.document?.reports).toEqual({ 'student-1': report });
+		expect(store.document?.topicNames).toEqual({});
 	});
 
 	it('refuses to replace a document the browser already holds', () => {

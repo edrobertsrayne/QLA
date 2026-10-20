@@ -17,7 +17,10 @@ export const STORAGE_KEY = 'qla:marksheet:v1';
 export const CORRUPT_KEY_PREFIX = 'qla:marksheet:corrupt:';
 
 /** Only version we know how to read. Anything else is treated as unreadable. */
-export const DOCUMENT_SCHEMA_VERSION = 1;
+export const DOCUMENT_SCHEMA_VERSION = 2;
+
+/** The label for a total below every grade boundary, when the paper has grades. */
+export const DEFAULT_BELOW_LOWEST_LABEL = 'U';
 
 /**
  * The editable values of one entry, as the parse produced them and as the
@@ -66,6 +69,19 @@ export interface StoredPaper {
 	className: string | null;
 	sourceFilenames: string[];
 	parsedAt: string;
+	/**
+	 * Grade boundaries, top grade first, or null when the paper shows marks
+	 * only. A blank row is never stored: it reads as "not used".
+	 */
+	boundaries: GradeBoundary[] | null;
+	/** The label for a total below every boundary. */
+	belowLowestLabel: string;
+}
+
+/** The minimum total mark on this paper for a grade, in raw marks. */
+export interface GradeBoundary {
+	label: string;
+	minimum: number;
 }
 
 export interface StoredStudent {
@@ -79,6 +95,41 @@ export interface StoredStudent {
 export interface StoredBreakdown {
 	entries: BreakdownEntry[];
 	warnings: StoredWarning[];
+}
+
+/** One breakdown entry's figures as a report was written from them. */
+export interface ReportEntryInput {
+	label: string;
+	summary: string;
+	commandWord: string | null;
+	ao: AssessmentObjective | null;
+	topics: string[];
+	gained: number;
+	available: number;
+}
+
+/** The generation input a report's prose was written from, verbatim. */
+export interface ReportGenerationInput {
+	paperLabel: string;
+	entries: ReportEntryInput[];
+}
+
+/** Generated feedback prose: up to 3 strengths beside up to 2 areas for improvement. */
+export interface ReportProse {
+	strengths: string[];
+	areasForImprovement: string[];
+}
+
+/**
+ * One student's report: the generated prose, the teacher's edit beside it
+ * (null when unedited), the verbatim generation input, the model used
+ * (display only) and the generation time.
+ */
+export interface StoredReport extends ReportProse {
+	edit: ReportProse | null;
+	input: ReportGenerationInput;
+	model: string;
+	generatedAt: string;
 }
 
 export interface MarksheetDocument {
@@ -95,6 +146,10 @@ export interface MarksheetDocument {
 	students: StoredStudent[];
 	/** Sparse: `marks[studentId][entryId]`, absent key = unmarked. */
 	marks: Record<string, Record<string, number>>;
+	/** Student-readable name per normalised specification-point code. */
+	topicNames: Record<string, string>;
+	/** One report per student, keyed by student id. */
+	reports: Record<string, StoredReport>;
 }
 
 function isStringOrNull(value: unknown): value is string | null {
@@ -205,6 +260,106 @@ function parseMarks(value: unknown): Record<string, Record<string, number>> | nu
 	}
 	return marks;
 }
+function parseGradeBoundary(value: unknown): GradeBoundary | null {
+	if (!isRecord(value)) return null;
+	const { label, minimum } = value;
+	if (typeof label !== 'string' || label === '') return null;
+	if (typeof minimum !== 'number' || !Number.isFinite(minimum)) return null;
+	return { label, minimum };
+}
+
+/**
+ * Grade boundaries when present, null when the paper shows marks only.
+ * `undefined` means invalid: callers reject the document.
+ */
+function parseBoundaries(value: unknown): GradeBoundary[] | null | undefined {
+	if (value === null || value === undefined) return null;
+	if (!Array.isArray(value)) return undefined;
+	const boundaries = parseAll(value, parseGradeBoundary);
+	return boundaries ?? undefined;
+}
+
+function parseTopicNames(value: unknown): Record<string, string> | null {
+	if (!isRecord(value)) return null;
+	const topicNames: Record<string, string> = {};
+	for (const [code, name] of Object.entries(value)) {
+		if (typeof name !== 'string') return null;
+		topicNames[code] = name;
+	}
+	return topicNames;
+}
+
+function isAssessmentObjectiveOrNull(value: unknown): value is AssessmentObjective | null {
+	return value === null || isAssessmentObjective(value);
+}
+
+function parseReportEntry(value: unknown): ReportEntryInput | null {
+	if (!isRecord(value)) return null;
+	const { label, summary, commandWord, ao, topics, gained, available } = value;
+	if (typeof label !== 'string' || typeof summary !== 'string') return null;
+	if (!isStringOrNull(commandWord) || !isAssessmentObjectiveOrNull(ao)) return null;
+	const parsedTopics = parseStringArray(topics);
+	if (!parsedTopics) return null;
+	if (typeof gained !== 'number' || !Number.isFinite(gained)) return null;
+	if (typeof available !== 'number' || !Number.isFinite(available)) return null;
+	return { label, summary, commandWord, ao, topics: parsedTopics, gained, available };
+}
+
+function parseReportInput(value: unknown): ReportGenerationInput | null {
+	if (!isRecord(value)) return null;
+	const { paperLabel, entries } = value;
+	if (typeof paperLabel !== 'string') return null;
+	if (!Array.isArray(entries)) return null;
+	const parsed = parseAll(entries, parseReportEntry);
+	if (!parsed) return null;
+	return { paperLabel, entries: parsed };
+}
+
+function parseStringArray(value: unknown): string[] | null {
+	if (!Array.isArray(value)) return null;
+	if (!value.every((item) => typeof item === 'string')) return null;
+	return [...value];
+}
+
+function parseReportProse(value: unknown): ReportProse | null {
+	if (!isRecord(value)) return null;
+	const strengths = parseStringArray(value['strengths']);
+	const areasForImprovement = parseStringArray(value['areasForImprovement']);
+	if (!strengths || !areasForImprovement) return null;
+	return { strengths, areasForImprovement };
+}
+
+/**
+ * The teacher's edit beside the generated prose: null when unedited.
+ * `undefined` means invalid: callers reject the document.
+ */
+function parseReportEdit(value: unknown): ReportProse | null | undefined {
+	if (value === null || value === undefined) return null;
+	return parseReportProse(value) ?? undefined;
+}
+
+function parseReport(value: unknown): StoredReport | null {
+	if (!isRecord(value)) return null;
+	const prose = parseReportProse(value);
+	const edit = parseReportEdit(value['edit']);
+	const input = parseReportInput(value['input']);
+	const { model, generatedAt } = value;
+	if (!prose || edit === undefined) return null;
+	if (!input) return null;
+	if (typeof model !== 'string' || typeof generatedAt !== 'string') return null;
+	return { ...prose, edit, input, model, generatedAt };
+}
+
+function parseReports(value: unknown): Record<string, StoredReport> | null {
+	if (!isRecord(value)) return null;
+	const reports: Record<string, StoredReport> = {};
+	for (const [studentId, report] of Object.entries(value)) {
+		const parsed = parseReport(report);
+		if (!parsed) return null;
+		reports[studentId] = parsed;
+	}
+	return reports;
+}
 
 /**
  * The one "is this a valid document" check, shared by boot-time load and
@@ -230,6 +385,19 @@ function parseDocumentValue(value: unknown): MarksheetDocument | null {
 		return null;
 	}
 	if (typeof parsedAt !== 'string') return null;
+	const boundaries = parseBoundaries(paper['boundaries']);
+	if (boundaries === undefined) return null;
+	const rawBelowLowest = paper['belowLowestLabel'];
+	// Absent in a document written before the field existed: the default. An
+	// empty label is unreadable rather than silently corrected, so a stored
+	// document always reads back unchanged.
+	if (
+		rawBelowLowest !== undefined &&
+		(typeof rawBelowLowest !== 'string' || rawBelowLowest === '')
+	) {
+		return null;
+	}
+	const belowLowestLabel = rawBelowLowest ?? DEFAULT_BELOW_LOWEST_LABEL;
 
 	const breakdown = value['breakdown'];
 	if (!isRecord(breakdown)) return null;
@@ -248,16 +416,31 @@ function parseDocumentValue(value: unknown): MarksheetDocument | null {
 	const marks = parseMarks(value['marks']);
 	if (!marks) return null;
 
+	const topicNames = parseTopicNames(value['topicNames'] ?? {});
+	if (!topicNames) return null;
+
+	const reports = parseReports(value['reports'] ?? {});
+	if (!reports) return null;
+
 	return {
 		schemaVersion: DOCUMENT_SCHEMA_VERSION,
 		createdAt,
 		updatedAt,
 		breakdownConfirmedAt,
 		lastExportedAt,
-		paper: { label, className, sourceFilenames: [...sourceFilenames], parsedAt },
+		paper: {
+			label,
+			className,
+			sourceFilenames: [...sourceFilenames],
+			parsedAt,
+			boundaries,
+			belowLowestLabel
+		},
 		breakdown: { entries, warnings },
 		students,
-		marks
+		marks,
+		topicNames,
+		reports
 	};
 }
 
@@ -290,6 +473,61 @@ export function dropUnreachableMarks(document: MarksheetDocument): MarksheetDocu
 		marks[studentId] = kept;
 	}
 	return { ...document, marks };
+}
+
+/**
+ * Drop reports for students who no longer exist, like unreachable marks.
+ * Reports for students who are present but ineligible are kept: fixing the
+ * student brings the report back.
+ */
+export function dropUnreachableReports(document: MarksheetDocument): MarksheetDocument['reports'] {
+	const studentIds = new Set(document.students.map((student) => student.id));
+	const reports: MarksheetDocument['reports'] = {};
+	for (const [studentId, report] of Object.entries(document.reports)) {
+		if (studentIds.has(studentId)) reports[studentId] = report;
+	}
+	return reports;
+}
+
+/**
+ * One entry's specification-point codes, normalised by trimming and splitting
+ * on commas and slashes only (ADR-0002): no other canonicalising.
+ */
+export function specPointCodes(specPoint: string | null): string[] {
+	if (specPoint === null) return [];
+	return specPoint
+		.split(/[,/]/)
+		.map((code) => code.trim())
+		.filter((code) => code !== '');
+}
+
+/** Drop topic names whose code appears on no entry, even inside a comma or slash list. */
+export function dropOrphanedTopicNames(
+	document: MarksheetDocument
+): MarksheetDocument['topicNames'] {
+	const live = new Set<string>();
+	for (const entry of document.breakdown.entries) {
+		for (const code of specPointCodes(entry.specPoint)) live.add(code);
+	}
+	const topicNames: MarksheetDocument['topicNames'] = {};
+	for (const [code, name] of Object.entries(document.topicNames)) {
+		if (live.has(code)) topicNames[code] = name;
+	}
+	return topicNames;
+}
+
+/**
+ * Everything load and restore throw away: unreachable marks, reports for
+ * removed students, and names for codes no entry carries. Reports for
+ * ineligible students stay: fixing the student brings them back.
+ */
+export function dropUnreachable(document: MarksheetDocument): MarksheetDocument {
+	const dropped = dropUnreachableMarks(document);
+	return {
+		...dropped,
+		reports: dropUnreachableReports(dropped),
+		topicNames: dropOrphanedTopicNames(dropped)
+	};
 }
 
 /** What the breakdown adds up to: the marks a marksheet's columns carry. */

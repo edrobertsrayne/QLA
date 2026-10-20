@@ -51,11 +51,15 @@ export function confirmed(overrides: Partial<MarksheetDocument> = {}): Marksheet
 			label: '10X Ph1',
 			className: null,
 			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW
+			parsedAt: NOW,
+			boundaries: null,
+			belowLowestLabel: 'U'
 		},
 		breakdown: { entries: [entry('entry-1', '2bii', '2')], warnings: [] },
 		students: [],
 		marks: {},
+		topicNames: {},
+		reports: {},
 		...overrides
 	};
 }

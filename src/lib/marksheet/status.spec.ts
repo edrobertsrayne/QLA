@@ -17,11 +17,15 @@ function marksheet(lastExportedAt: string | null): MarksheetDocument {
 			label: 'Ph1',
 			className: null,
 			sourceFilenames: ['paper.pdf'],
-			parsedAt: NOW.toISOString()
+			parsedAt: NOW.toISOString(),
+			boundaries: null,
+			belowLowestLabel: 'U'
 		},
 		breakdown: { entries: [], warnings: [] },
 		students: [],
-		marks: {}
+		marks: {},
+		topicNames: {},
+		reports: {}
 	};
 }
 

@@ -19,8 +19,9 @@ import {
 	type PasteResult
 } from './paste.js';
 import {
+	DEFAULT_BELOW_LOWEST_LABEL,
 	DOCUMENT_SCHEMA_VERSION,
-	dropUnreachableMarks,
+	dropUnreachable,
 	type EntryValues,
 	labelFromFilename,
 	localId,
@@ -147,7 +148,7 @@ export class MarksheetStore {
 	load(): void {
 		if (this.document) return;
 		const read = this.#persistence.read();
-		this.#adopt(read.kind === 'ready' ? dropUnreachableMarks(read.document) : null);
+		this.#adopt(read.kind === 'ready' ? dropUnreachable(read.document) : null);
 		if (read.kind === 'corrupt') this.unreadable = read.unreadable;
 	}
 
@@ -220,11 +221,15 @@ export class MarksheetStore {
 				label: labelFromFilename(input.filenames[0]),
 				className: null,
 				sourceFilenames: [...input.filenames],
-				parsedAt: at.toISOString()
+				parsedAt: at.toISOString(),
+				boundaries: null,
+				belowLowestLabel: DEFAULT_BELOW_LOWEST_LABEL
 			},
 			breakdown: { entries, warnings },
 			students: [],
-			marks: {}
+			marks: {},
+			topicNames: {},
+			reports: {}
 		};
 		this.#adopt(document);
 		this.runUsage = input.usage;
@@ -626,7 +631,7 @@ export class MarksheetStore {
 	 */
 	restoreBackup(document: MarksheetDocument): boolean {
 		if (this.document) return false;
-		this.#adopt(dropUnreachableMarks(document));
+		this.#adopt(dropUnreachable(document));
 		this.#persistence.writeNow();
 		return true;
 	}
