@@ -38,6 +38,10 @@ Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `
 
 Single-context layout: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+## Coding standards
+
+Before writing or reviewing code, read `CODING_STANDARDS.md`: the judgement-call rules ESLint can't check. Code review checks every diff against it.
+
 ## Commits
 
 Use [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): description`. Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `build`, `ci`. Lowercase, imperative description (`add`, not `added`). Mark breaking changes with `!` or a `BREAKING CHANGE:` footer.
