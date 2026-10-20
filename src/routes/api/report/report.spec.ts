@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { POST } from './+server';
 import { isRecord } from '$lib/parse/is-breakdown.js';
-import { REPORT_MAX_BODY_BYTES } from '$lib/server/report';
+import { STRUCTURED_MAX_BODY_BYTES } from '$lib/server/structured-route';
 import {
 	resetStructuredFetch,
 	resetStructuredTransport,
@@ -124,7 +124,17 @@ describe('POST /api/report success', () => {
 	});
 
 	it('accepts a fenced JSON answer', async () => {
-		stubModel(null, '```json\n' + JSON.stringify(GOOD_OUTPUT) + '\n```');
+		resetStructuredTransport();
+		setStructuredFetch(async () =>
+			Response.json({
+				choices: [
+					{
+						message: { content: '```json\n' + JSON.stringify(GOOD_OUTPUT) + '\n```' },
+						finish_reason: 'stop'
+					}
+				]
+			})
+		);
 
 		expect((await post(body())).status).toBe(200);
 	});
@@ -333,7 +343,7 @@ describe('POST /api/report input validation (no model spend)', () => {
 
 	it('rejects bodies over 256 KB with 413', async () => {
 		const { status, json } = await post(
-			JSON.stringify({ paperLabel: 'x'.repeat(REPORT_MAX_BODY_BYTES) })
+			JSON.stringify({ paperLabel: 'x'.repeat(STRUCTURED_MAX_BODY_BYTES) })
 		);
 
 		expect(status).toBe(413);

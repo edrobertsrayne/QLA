@@ -10,48 +10,29 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
-	TOPIC_NAMES_MAX_BODY_BYTES,
 	TOPIC_NAMES_SYSTEM_PROMPT,
 	topicNamesSchema,
 	usableTopicNames,
 	validateTopicNamesBody
 } from '$lib/server/topic-names';
 import { REPORT_DEFAULT_MODEL } from '$lib/server/report';
-import { StructuredModelError, callStructuredModel } from '$lib/server/openrouter';
-import { extractJsonText } from '$lib/server/parse/model';
 import { resolveModelId } from '$lib/server/parse/pdf';
-import { invalidInput, invalidOutput, modelErrorResponse } from '$lib/server/structured-route';
+import { askModel, readRequest } from '$lib/server/structured-route';
 
 const INVALID_INPUT_CODE = 'INVALID_TOPIC_NAMES_INPUT';
 
 export const POST: RequestHandler = async ({ request }) => {
-	const text = await request.text();
-	if (new TextEncoder().encode(text).byteLength > TOPIC_NAMES_MAX_BODY_BYTES) {
-		return invalidInput(INVALID_INPUT_CODE, 413, 'The topic-name request is too large.');
-	}
-
-	let body: unknown;
-	try {
-		body = JSON.parse(text);
-	} catch {
-		return invalidInput(INVALID_INPUT_CODE, 400, 'The topic-name request is not valid JSON.');
-	}
-
-	const { request: valid, problems } = validateTopicNamesBody(body);
-	if (!valid) {
-		return invalidInput(
-			INVALID_INPUT_CODE,
-			400,
-			problems[0]?.message ?? 'The topic-name request is invalid.',
-			problems[0]?.field ?? ''
-		);
-	}
+	const valid = await readRequest(
+		request,
+		INVALID_INPUT_CODE,
+		'topic-name',
+		validateTopicNamesBody
+	);
+	if (valid instanceof Response) return valid;
 
 	const modelId = resolveModelId(valid.model, REPORT_DEFAULT_MODEL);
-
-	let result;
-	try {
-		result = await callStructuredModel({
+	const asked = await askModel(
+		{
 			modelId,
 			systemPrompt: TOPIC_NAMES_SYSTEM_PROMPT,
 			data: {
@@ -61,21 +42,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			schemaName: 'topic_names',
 			schema: topicNamesSchema(),
 			caller: { referer: 'https://qla.local/topic-names', title: 'QLA Phase 3 Topic names' }
-		});
-	} catch (error) {
-		if (error instanceof StructuredModelError) return modelErrorResponse(error);
-		throw error;
-	}
+		},
+		'The model answer was not usable.'
+	);
+	if (asked instanceof Response) return asked;
 
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(extractJsonText(result.content));
-	} catch {
-		return invalidOutput('The model answer was not usable.', [
-			{ id: 'shape', message: 'The model answer was not valid JSON.' }
-		]);
-	}
-
-	const names = usableTopicNames(valid, parsed);
-	return json({ names, model: modelId, usage: result.usage });
+	return json({ names: usableTopicNames(valid, asked.answer), model: modelId, usage: asked.usage });
 };

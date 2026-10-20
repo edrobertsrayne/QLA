@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { POST } from './+server';
 import { isRecord } from '$lib/parse/is-breakdown.js';
-import { TOPIC_NAMES_MAX_BODY_BYTES } from '$lib/server/topic-names';
+import { STRUCTURED_MAX_BODY_BYTES } from '$lib/server/structured-route';
 import {
 	resetStructuredFetch,
 	resetStructuredTransport,
@@ -291,7 +291,7 @@ describe('POST /api/topic-names input validation (no model spend)', () => {
 
 	it('rejects bodies over 256 KB with 413', async () => {
 		const { status, json } = await post(
-			JSON.stringify({ paperLabel: 'x'.repeat(TOPIC_NAMES_MAX_BODY_BYTES) })
+			JSON.stringify({ paperLabel: 'x'.repeat(STRUCTURED_MAX_BODY_BYTES) })
 		);
 
 		expect(status).toBe(413);

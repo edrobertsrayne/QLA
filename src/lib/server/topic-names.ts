@@ -1,14 +1,18 @@
 // Shared shape for `POST /api/topic-names`: the prompt, strict schema,
 // request validation and local name checks. Pure: no I/O, no model calls.
 //
-// Mirrors `report.ts` deliberately rather than abstracting over it: two
+
 // call sites is not a shared validation framework, and the two routes answer
 // with different codes and fields.
 
-import { MAX_LABEL_LENGTH, MAX_SUMMARY_LENGTH } from '$lib/marksheet/report-limits.js';
-
-/** Bodies over this size are refused before parsing. */
-export const TOPIC_NAMES_MAX_BODY_BYTES = 256 * 1024;
+import {
+	MAX_CODES,
+	MAX_LABEL_LENGTH,
+	MAX_SUMMARIES_PER_CODE,
+	MAX_SUMMARY_LENGTH
+} from '$lib/marksheet/report-limits.js';
+import { hasContactHook } from './report.js';
+import { fail, readList, readRecord, readString, rejectUnknownKeys } from './request-fields.js';
 
 /** One code needing a name: the normalised code and the summaries carrying it. */
 export interface TopicNameRequest {
@@ -21,12 +25,6 @@ export interface ValidTopicNameRequest {
 	model?: string;
 	paperLabel: string;
 	codes: TopicNameRequest[];
-}
-
-/** A validation failure: the `field` path the 400 names. */
-export interface TopicNameInputProblem {
-	field: string;
-	message: string;
 }
 
 /** The style the model writes: short student-readable topic names. */
@@ -59,119 +57,62 @@ export function topicNamesSchema(): Record<string, unknown> {
 }
 
 const KNOWN_KEYS = new Set(['model', 'paperLabel', 'codes']);
+const ENTRY_KEYS = new Set(['code', 'summaries']);
 
 /**
- * Validate a parsed request body before any model spend. Returns the problems
- * (empty when valid) rather than throwing, so the route answers them all at once.
+ * Validate a parsed request body before any model spend; the first rule
+ * broken throws an `InputError` naming its `field`.
  */
-export function validateTopicNamesBody(body: unknown): {
-	request: ValidTopicNameRequest | null;
-	problems: TopicNameInputProblem[];
-} {
-	const problems: TopicNameInputProblem[] = [];
-	if (body === null || typeof body !== 'object' || Array.isArray(body))
-		return { request: null, problems: [{ field: '', message: 'Not an object.' }] };
-	for (const key of Object.keys(body)) {
-		if (!KNOWN_KEYS.has(key)) problems.push({ field: key, message: 'Unknown key.' });
-	}
-	const record = body as Record<string, unknown>;
+export function validateTopicNamesBody(body: unknown): ValidTopicNameRequest {
+	const record = readRecord(body, '', 'Not an object.');
+	rejectUnknownKeys(record, KNOWN_KEYS, '');
 
-	let model: string | undefined;
-	if (record['model'] !== undefined) {
-		if (typeof record['model'] !== 'string' || record['model'].trim() === '') {
-			problems.push({ field: 'model', message: 'Must be a non-blank string.' });
-		} else model = record['model'];
-	}
+	const model =
+		record['model'] === undefined
+			? undefined
+			: readString(record['model'], 'model', { nonBlank: 'Must be a non-blank string.' });
+	const paperLabel = readString(record['paperLabel'], 'paperLabel', { max: MAX_LABEL_LENGTH });
+	const rawCodes = readList(record['codes'], 'codes', {
+		min: 1,
+		max: MAX_CODES,
+		notList: `Must be a list of 1–${MAX_CODES} codes.`,
+		size: `Must hold 1–${MAX_CODES} codes.`
+	});
 
-	let paperLabel = '';
-	if (typeof record['paperLabel'] !== 'string') {
-		problems.push({ field: 'paperLabel', message: 'Must be a string.' });
-	} else if (record['paperLabel'].length > MAX_LABEL_LENGTH) {
-		problems.push({
-			field: 'paperLabel',
-			message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
+	const seen = new Set<string>();
+	const codes = rawCodes.map((value, index): TopicNameRequest => {
+		const field = `codes[${index}]`;
+		const entry = readRecord(value, field);
+		rejectUnknownKeys(entry, ENTRY_KEYS, field);
+		const code = readString(entry['code'], `${field}.code`, {
+			nonBlank: 'Must be a non-blank code.',
+			max: MAX_LABEL_LENGTH
 		});
-	} else {
-		paperLabel = record['paperLabel'];
-	}
+		if (seen.has(code)) fail(`${field}.code`, 'Must be unique.');
+		seen.add(code);
+		const summaries = readList(entry['summaries'], `${field}.summaries`, {
+			min: 1,
+			max: MAX_SUMMARIES_PER_CODE,
+			notList: 'Must be a list of summaries.',
+			size: `Must hold 1–${MAX_SUMMARIES_PER_CODE} summaries.`
+		}).map((summary, summaryIndex) =>
+			readString(summary, `${field}.summaries[${summaryIndex}]`, { max: MAX_SUMMARY_LENGTH })
+		);
+		return { code, summaries };
+	});
 
-	const codes: TopicNameRequest[] = [];
-	const rawCodes = record['codes'];
-	if (!Array.isArray(rawCodes)) {
-		problems.push({ field: 'codes', message: 'Must be a list of 1–200 codes.' });
-	} else if (rawCodes.length < 1 || rawCodes.length > 200) {
-		problems.push({ field: 'codes', message: 'Must hold 1–200 codes.' });
-	} else {
-		const seen = new Set<string>();
-		rawCodes.forEach((raw, index) => {
-			const field = `codes[${index}]`;
-			if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-				problems.push({ field, message: 'Must be an object.' });
-				return;
-			}
-			const entry = raw as Record<string, unknown>;
-			for (const key of Object.keys(entry)) {
-				if (key !== 'code' && key !== 'summaries')
-					problems.push({ field: `${field}.${key}`, message: 'Unknown key.' });
-			}
-			let code = '';
-			if (typeof entry['code'] !== 'string' || entry['code'].trim() === '') {
-				problems.push({ field: `${field}.code`, message: 'Must be a non-blank code.' });
-			} else if (entry['code'].length > MAX_LABEL_LENGTH) {
-				problems.push({
-					field: `${field}.code`,
-					message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
-				});
-			} else {
-				code = entry['code'];
-				if (seen.has(code)) problems.push({ field: `${field}.code`, message: 'Must be unique.' });
-				seen.add(code);
-			}
-			let summaries: string[] = [];
-			if (!Array.isArray(entry['summaries'])) {
-				problems.push({ field: `${field}.summaries`, message: 'Must be a list of summaries.' });
-			} else if (entry['summaries'].length < 1 || entry['summaries'].length > 200) {
-				problems.push({ field: `${field}.summaries`, message: 'Must hold 1–200 summaries.' });
-			} else {
-				let ok = true;
-				for (const [summaryIndex, summary] of entry['summaries'].entries()) {
-					if (typeof summary !== 'string') {
-						problems.push({
-							field: `${field}.summaries[${summaryIndex}]`,
-							message: 'Must be a string.'
-						});
-						ok = false;
-					} else if (summary.length > MAX_SUMMARY_LENGTH) {
-						problems.push({
-							field: `${field}.summaries[${summaryIndex}]`,
-							message: `Must be at most ${MAX_SUMMARY_LENGTH} characters.`
-						});
-						ok = false;
-					}
-				}
-				if (ok) summaries = entry['summaries'] as string[];
-			}
-			const entryProblems = problems.filter((problem) => problem.field.startsWith(field));
-			if (entryProblems.length === 0) {
-				codes.push({ code, summaries });
-			}
-		});
-	}
-
-	if (problems.length > 0) return { request: null, problems };
-	return { request: { ...(model === undefined ? {} : { model }), paperLabel, codes }, problems };
+	return { ...(model === undefined ? {} : { model }), paperLabel, codes };
 }
 
 /**
  * Whether a proposed name may reach a printed page: non-blank, at most
  * `MAX_LABEL_LENGTH` characters, with no link or email address (`no-contact`).
  */
-export function topicNameIsUsable(name: unknown): boolean {
+function topicNameIsUsable(name: unknown): boolean {
 	if (typeof name !== 'string') return false;
 	const trimmed = name.trim();
 	if (trimmed === '' || name.length > MAX_LABEL_LENGTH) return false;
-	if (trimmed.includes('://') || trimmed.includes('www.') || trimmed.includes('@')) return false;
-	return true;
+	return !hasContactHook(trimmed);
 }
 
 /**

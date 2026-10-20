@@ -8,14 +8,24 @@
 import { assessmentObjectiveOf } from '$lib/parse/assessment-objectives.js';
 import { isRecord } from '$lib/parse/is-breakdown.js';
 import { facilityBand } from '$lib/marksheet/analysis.js';
-import { MAX_LABEL_LENGTH, MAX_SUMMARY_LENGTH } from '$lib/marksheet/report-limits.js';
+import {
+	MAX_ENTRIES,
+	MAX_LABEL_LENGTH,
+	MAX_SUMMARY_LENGTH,
+	MAX_TOPICS_PER_ENTRY
+} from '$lib/marksheet/report-limits.js';
 import { rollupByTopic, type TopicTotals } from '$lib/marksheet/report-rollup.js';
+import {
+	fail,
+	readList,
+	readNullableString,
+	readRecord,
+	readString,
+	rejectUnknownKeys
+} from './request-fields.js';
 
 /** Model resolves override → env → this default. Not checked against the curated list. */
 export const REPORT_DEFAULT_MODEL = 'openai/gpt-6-luna';
-
-/** Bodies over this size are refused before parsing. */
-export const REPORT_MAX_BODY_BYTES = 256 * 1024;
 
 /** One entry as the request carries it. */
 export interface ReportRequestEntry {
@@ -95,12 +105,6 @@ export function reportSchema(labels: string[]): Record<string, unknown> {
 	};
 }
 
-/** A validation failure: the `field` path the 400 names. */
-export interface InputProblem {
-	field: string;
-	message: string;
-}
-
 const KNOWN_KEYS = new Set(['model', 'paperLabel', 'entries']);
 const ENTRY_KEYS = new Set([
 	'label',
@@ -111,174 +115,70 @@ const ENTRY_KEYS = new Set([
 	'gained',
 	'available'
 ]);
+
 /**
  * Validate a parsed request body before any model spend. Every rule in the
- * spec, each with the `field` path the 400 names. Returns the problems (empty
- * when valid) rather than throwing, so the route answers them all at once.
+ * spec; the first one broken throws an `InputError` naming its `field`.
  */
-export function validateReportBody(body: unknown): {
-	request: ValidReportRequest | null;
-	problems: InputProblem[];
-} {
-	const problems: InputProblem[] = [];
-	if (!isRecord(body))
-		return { request: null, problems: [{ field: '', message: 'Not an object.' }] };
-	for (const key of Object.keys(body)) {
-		if (!KNOWN_KEYS.has(key)) problems.push({ field: key, message: 'Unknown key.' });
-	}
+export function validateReportBody(body: unknown): ValidReportRequest {
+	const record = readRecord(body, '', 'Not an object.');
+	rejectUnknownKeys(record, KNOWN_KEYS, '');
 
-	let model: string | undefined;
-	if (body['model'] !== undefined) {
-		if (typeof body['model'] !== 'string' || body['model'].trim() === '') {
-			problems.push({ field: 'model', message: 'Must be a non-blank string.' });
-		} else model = body['model'];
-	}
+	const model =
+		record['model'] === undefined
+			? undefined
+			: readString(record['model'], 'model', { nonBlank: 'Must be a non-blank string.' });
+	const paperLabel = readString(record['paperLabel'], 'paperLabel', { max: MAX_LABEL_LENGTH });
+	const rawEntries = readList(record['entries'], 'entries', {
+		min: 1,
+		max: MAX_ENTRIES,
+		notList: `Must be a list of 1–${MAX_ENTRIES} entries.`,
+		size: `Must hold 1–${MAX_ENTRIES} entries.`
+	});
 
-	let paperLabel = '';
-	if (typeof body['paperLabel'] !== 'string') {
-		problems.push({ field: 'paperLabel', message: 'Must be a string.' });
-	} else if (body['paperLabel'].length > MAX_LABEL_LENGTH) {
-		problems.push({
-			field: 'paperLabel',
-			message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
+	const seen = new Set<string>();
+	const entries = rawEntries.map((value, index): ReportRequestEntry => {
+		const field = `entries[${index}]`;
+		const raw = readRecord(value, field);
+		rejectUnknownKeys(raw, ENTRY_KEYS, field);
+		const label = readString(raw['label'], `${field}.label`, {
+			nonBlank: 'Must be a non-blank label.',
+			max: MAX_LABEL_LENGTH
 		});
-	} else {
-		paperLabel = body['paperLabel'];
-	}
+		if (seen.has(label)) fail(`${field}.label`, 'Must be unique.');
+		seen.add(label);
+		const summary = readString(raw['summary'], `${field}.summary`, { max: MAX_SUMMARY_LENGTH });
+		const commandWord = readNullableString(
+			raw['commandWord'],
+			`${field}.commandWord`,
+			MAX_LABEL_LENGTH
+		);
+		const ao = raw['ao'];
+		if (ao !== null && (typeof ao !== 'string' || assessmentObjectiveOf(ao) === null))
+			fail(`${field}.ao`, 'Must be an assessment objective or null.');
+		const topics = readList(raw['topics'], `${field}.topics`, {
+			min: 0,
+			max: MAX_TOPICS_PER_ENTRY,
+			notList: 'Must be a list of topic names.',
+			size: `Must hold at most ${MAX_TOPICS_PER_ENTRY} topics.`
+		}).map((topic, topicIndex) =>
+			readString(topic, `${field}.topics[${topicIndex}]`, {
+				nonBlank: 'Must be a non-blank topic name.',
+				max: MAX_LABEL_LENGTH
+			})
+		);
+		const available = raw['available'];
+		if (typeof available !== 'number' || !Number.isFinite(available) || available <= 0)
+			fail(`${field}.available`, 'Must be a positive number of marks.');
+		const gained = raw['gained'];
+		if (typeof gained !== 'number' || !Number.isFinite(gained))
+			fail(`${field}.gained`, 'Must be a number.');
+		if (gained < 0 || gained > available)
+			fail(`${field}.gained`, 'Must be within 0 to the available marks.');
+		return { label, summary, commandWord, ao, topics, gained, available };
+	});
 
-	const entries: ReportRequestEntry[] = [];
-	const rawEntries = body['entries'];
-	if (!Array.isArray(rawEntries)) {
-		problems.push({ field: 'entries', message: 'Must be a list of 1–200 entries.' });
-	} else if (rawEntries.length < 1 || rawEntries.length > 200) {
-		problems.push({ field: 'entries', message: 'Must hold 1–200 entries.' });
-	} else {
-		const seen = new Set<string>();
-		rawEntries.forEach((raw, index) => {
-			const field = `entries[${index}]`;
-			if (!isRecord(raw)) {
-				problems.push({ field, message: 'Must be an object.' });
-				return;
-			}
-			for (const key of Object.keys(raw)) {
-				if (!ENTRY_KEYS.has(key))
-					problems.push({ field: `${field}.${key}`, message: 'Unknown key.' });
-			}
-			let label = '';
-			if (typeof raw['label'] !== 'string' || raw['label'].trim() === '') {
-				problems.push({ field: `${field}.label`, message: 'Must be a non-blank label.' });
-			} else if (raw['label'].length > MAX_LABEL_LENGTH) {
-				problems.push({
-					field: `${field}.label`,
-					message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
-				});
-			} else {
-				label = raw['label'];
-				if (seen.has(label)) problems.push({ field: `${field}.label`, message: 'Must be unique.' });
-				seen.add(label);
-			}
-			let summary = '';
-			if (typeof raw['summary'] !== 'string') {
-				problems.push({ field: `${field}.summary`, message: 'Must be a string.' });
-			} else if (raw['summary'].length > MAX_SUMMARY_LENGTH) {
-				problems.push({
-					field: `${field}.summary`,
-					message: `Must be at most ${MAX_SUMMARY_LENGTH} characters.`
-				});
-			} else {
-				summary = raw['summary'];
-			}
-			let commandWord: string | null = null;
-			if (raw['commandWord'] === undefined || raw['commandWord'] === null) {
-				if (raw['commandWord'] === undefined)
-					problems.push({ field: `${field}.commandWord`, message: 'Must be a string or null.' });
-			} else if (typeof raw['commandWord'] !== 'string') {
-				problems.push({ field: `${field}.commandWord`, message: 'Must be a string or null.' });
-			} else if (raw['commandWord'].length > MAX_LABEL_LENGTH) {
-				problems.push({
-					field: `${field}.commandWord`,
-					message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
-				});
-			} else {
-				commandWord = raw['commandWord'];
-			}
-			let ao: string | null = null;
-			if (raw['ao'] === undefined || raw['ao'] === null) {
-				if (raw['ao'] === undefined)
-					problems.push({
-						field: `${field}.ao`,
-						message: 'Must be an assessment objective or null.'
-					});
-			} else if (typeof raw['ao'] !== 'string' || assessmentObjectiveOf(raw['ao']) === null) {
-				problems.push({
-					field: `${field}.ao`,
-					message: 'Must be an assessment objective or null.'
-				});
-			} else {
-				ao = raw['ao'];
-			}
-			let topics: string[] = [];
-			if (!Array.isArray(raw['topics'])) {
-				problems.push({ field: `${field}.topics`, message: 'Must be a list of topic names.' });
-			} else if (raw['topics'].length > 10) {
-				problems.push({ field: `${field}.topics`, message: 'Must hold at most 10 topics.' });
-			} else {
-				let ok = true;
-				for (const [topicIndex, topic] of raw['topics'].entries()) {
-					if (typeof topic !== 'string' || topic.trim() === '') {
-						problems.push({
-							field: `${field}.topics[${topicIndex}]`,
-							message: 'Must be a non-blank topic name.'
-						});
-						ok = false;
-					} else if (topic.length > MAX_LABEL_LENGTH) {
-						problems.push({
-							field: `${field}.topics[${topicIndex}]`,
-							message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
-						});
-						ok = false;
-					}
-				}
-				if (ok) topics = raw['topics'] as string[];
-			}
-			let available = 0;
-			let availableOk = false;
-			if (
-				typeof raw['available'] !== 'number' ||
-				!Number.isFinite(raw['available']) ||
-				raw['available'] <= 0
-			) {
-				problems.push({
-					field: `${field}.available`,
-					message: 'Must be a positive number of marks.'
-				});
-			} else {
-				available = raw['available'];
-				availableOk = true;
-			}
-			let gained = 0;
-			let gainedOk = false;
-			if (typeof raw['gained'] !== 'number' || !Number.isFinite(raw['gained'])) {
-				problems.push({ field: `${field}.gained`, message: 'Must be a number.' });
-			} else {
-				gained = raw['gained'];
-				gainedOk = true;
-			}
-			if (availableOk && gainedOk && (gained < 0 || gained > available)) {
-				problems.push({
-					field: `${field}.gained`,
-					message: 'Must be within 0 to the available marks.'
-				});
-			}
-			const entryProblems = problems.filter((problem) => problem.field.startsWith(field));
-			if (entryProblems.length === 0) {
-				entries.push({ label, summary, commandWord, ao, topics, gained, available });
-			}
-		});
-	}
-
-	if (problems.length > 0) return { request: null, problems };
-	return { request: { ...(model === undefined ? {} : { model }), paperLabel, entries }, problems };
+	return { ...(model === undefined ? {} : { model }), paperLabel, entries };
 }
 
 /** The fenced user payload: paper label, every entry and the topic roll-up. No identifiers. */
@@ -308,10 +208,15 @@ function isTheme(value: unknown): value is Theme {
 	);
 }
 
+/** Links and email addresses: never shown to a student. */
+export function hasContactHook(text: string): boolean {
+	return text.includes('://') || text.includes('www.') || text.includes('@');
+}
+
 /** Whether prose reaches a student: no digits, no contact hooks. */
-export function proseIsClean(text: string): { id: string; message: string } | null {
-	if (/\S*\d\S*/.test(text)) return { id: 'no-figures', message: 'Must not contain digits.' };
-	if (text.includes('://') || text.includes('www.') || text.includes('@'))
+function proseFailure(text: string): { id: string; message: string } | null {
+	if (/\d/.test(text)) return { id: 'no-figures', message: 'Must not contain digits.' };
+	if (hasContactHook(text))
 		return { id: 'no-contact', message: 'Must not contain links or email addresses.' };
 	return null;
 }
@@ -381,7 +286,7 @@ export function checkFeedback(
 					inArea.add(label);
 				}
 			}
-			const dirty = proseIsClean(theme.text);
+			const dirty = proseFailure(theme.text);
 			if (dirty) failures.push({ id: dirty.id, message: `${ref} ${dirty.message}` });
 		});
 	};
