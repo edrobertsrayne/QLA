@@ -11,5 +11,9 @@ export function load({ url }: { url: URL }): void {
 	const store = marksheetStore();
 	store.load();
 	const route = store.route();
-	if (url.pathname !== route) redirect(307, route);
+	if (url.pathname === route) return;
+	// The report flow is part of the marksheet surface: a confirmed breakdown
+	// may write and review reports without losing the marksheet underneath.
+	if (url.pathname === '/reports' && route === '/marksheet') return;
+	redirect(307, route);
 }

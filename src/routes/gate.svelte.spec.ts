@@ -48,6 +48,15 @@ describe('boot gate', () => {
 		expect(redirectFrom('/breakdown')).toMatchObject({ status: 307, location: '/marksheet' });
 	});
 
+	it('keeps the report flow on a confirmed breakdown', () => {
+		seed(parsed({ breakdownConfirmedAt: NOW }));
+		expect(redirectFrom('/reports')).toBeNull();
+
+		marksheetStore().wipe();
+		seed(parsed({ breakdownConfirmedAt: null }));
+		expect(redirectFrom('/reports')).toMatchObject({ status: 307, location: '/breakdown' });
+	});
+
 	it('sends nothing stored on any route to upload', () => {
 		expect(redirectFrom('/breakdown')).toMatchObject({ status: 307, location: '/' });
 		expect(redirectFrom('/marksheet')).toMatchObject({ status: 307, location: '/' });
