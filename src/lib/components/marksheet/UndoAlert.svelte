@@ -7,7 +7,7 @@
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
 	import { marksheetStore } from '$lib/marksheet/index.js';
-	import type { Undoable } from '$lib/marksheet/store.svelte.js';
+	import type { Undoable } from '$lib/marksheet/undo-notice.js';
 	import { undoNotice } from '$lib/marksheet/undo-notice.js';
 
 	let {

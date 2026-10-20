@@ -20,23 +20,22 @@ import {
 } from './paste.js';
 import {
 	DEFAULT_BELOW_LOWEST_LABEL,
+	copyOfDocument,
 	DOCUMENT_SCHEMA_VERSION,
 	dropUnreachable,
-	type EntryValues,
 	labelFromFilename,
 	localId,
 	marksOnEntry,
 	marksOverMax,
 	putMark,
-	removeMark
-} from './document.js';
-import type {
-	BreakdownEntry,
-	MarksheetDocument,
-	ReportGenerationInput,
-	ReportProse,
-	StoredStudent,
-	StoredWarning
+	removeMark,
+	type BreakdownEntry,
+	type EntryValues,
+	type MarksheetDocument,
+	type ReportGenerationInput,
+	type ReportProse,
+	type StoredStudent,
+	type StoredWarning
 } from './document.js';
 import {
 	AUTOSAVE_DEBOUNCE_MS,
@@ -54,6 +53,7 @@ import {
 } from './students.js';
 import { keepWording, setReportEdit, writeReport } from './report-commands.js';
 import { clearBoundaries, setBoundaries } from './grades.js';
+import type { Undoable, UndoableChange } from './undo-notice.js';
 
 export interface MarksheetStoreDeps {
 	storage: DocumentStorage;
@@ -64,41 +64,12 @@ export interface MarksheetStoreDeps {
 /** The surface the stored state allows. */
 export type BootRoute = '/' | '/breakdown' | '/marksheet';
 
-/**
- * The one change undo would take back, held in memory for the session. The next
- * change clears it, so a second click can never take back two things. Each kind
- * carries the whole document as it was before the change.
- */
-export type UndoableChange =
-	| {
-			kind: 'entry-removal' | 'student-removal';
-			/** What the notice calls what went. */
-			name: string;
-	  }
-	| { kind: 'mark-paste' }
-	| { kind: 'report-edit'; studentId: string }
-	| { kind: 'report-kept'; studentId: string }
-	| { kind: 'grade-boundaries'; action: 'saved' | 'removed' };
-
-/** An undoable change with the whole document as it was before it. */
-export type Undoable = UndoableChange & { before: MarksheetDocument };
-
 export interface CreateFromParseInput {
 	breakdown: Breakdown;
 	warnings: ParseWarning[];
 	/** Shown for this session; never stored. */
 	usage: ParseUsage;
 	filenames: string[];
-}
-
-/**
- * The document as it is now, in a copy no later change reaches. A document is
- * plain JSON by construction (it is stored as such), so this holds under a
- * reactive proxy and in plain code alike; `$state.snapshot` does not copy in
- * the server build the specs run in.
- */
-function copyOf(document: MarksheetDocument): MarksheetDocument {
-	return JSON.parse(JSON.stringify(document)) as MarksheetDocument;
 }
 
 /** A field the teacher has cleared means "none", not an empty string. */
@@ -638,12 +609,8 @@ export class MarksheetStore {
 		model: string
 	): void {
 		const document = this.document;
-		if (
-			document &&
-			writeReport(document, studentId, prose, input, model, this.#now().toISOString())
-		) {
-			this.#mutated();
-		}
+		const at = this.#now().toISOString();
+		if (document && writeReport(document, studentId, prose, input, model, at)) this.#mutated();
 	}
 
 	/**
@@ -800,7 +767,7 @@ export class MarksheetStore {
 		const document = this.document;
 		if (!document) return false;
 		const running = this.undoable;
-		const snapshot = copyOf(document);
+		const snapshot = copyOfDocument(document);
 		const offered = change(document);
 		if (offered === null) return false;
 		const continues =
