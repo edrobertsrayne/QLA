@@ -3,11 +3,13 @@
 // stored document — no I/O, no reactive state — shared by the browser (live
 // figures on the page) and the server (the roll-up the model receives).
 //
-// Entries with no specification point count only toward their assessment
-// objective. One entry carrying several codes counts toward each.
+// The topic roll-up is shared through `report-rollup.ts`. Topics are grouped
+// by name, so codes that share a name share a row. Entries with no
+// specification point count only toward their assessment objective.
 
 import { facilityBand, type RagBand } from './analysis.js';
-import { specPointCodes, totalMarks, type MarksheetDocument } from './document.js';
+import { totalMarks, type MarksheetDocument } from './document.js';
+import { rollupByTopic, topicNamesFor } from './report-rollup.js';
 
 /** One roll-up row: marks summed over the entries carrying the key. */
 export interface RollupRow {
@@ -55,14 +57,16 @@ function addTo(
 	map.set(key, row);
 }
 
+function rowOf(key: string, name: string, gained: number, available: number): RollupRow {
+	const share = available === 0 ? 0 : gained / available;
+	return { key, name, gained, available, share, band: facilityBand(share) };
+}
+
 function toRows(
 	map: Map<string, { gained: number; available: number }>,
 	name: (key: string) => string
 ): RollupRow[] {
-	return [...map].map(([key, value]) => {
-		const share = value.available === 0 ? 0 : value.gained / value.available;
-		return { key, name: name(key), ...value, share, band: facilityBand(share) };
-	});
+	return [...map].map(([key, value]) => rowOf(key, name(key), value.gained, value.available));
 }
 
 /** Every figure on one student's report, from the document as it stands. */
@@ -72,7 +76,7 @@ export function reportFiguresFor(
 ): StudentReportFigures {
 	const marks = document.marks[studentId] ?? {};
 	const entries = document.breakdown.entries;
-	const topics = new Map<string, { gained: number; available: number }>();
+	const topicEntries: { topics: string[]; gained: number; available: number }[] = [];
 	const aos = new Map<string, { gained: number; available: number }>();
 	const entryFigures: ReportEntryFigures[] = [];
 	let total = 0;
@@ -81,7 +85,7 @@ export function reportFiguresFor(
 		const gained = marks[entry.id] ?? 0;
 		const available = entry.marks ?? 0;
 		total += gained;
-		for (const code of specPointCodes(entry.specPoint)) addTo(topics, code, gained, available);
+		topicEntries.push({ topics: topicNamesFor(document, entry.specPoint), gained, available });
 		if (entry.ao) addTo(aos, entry.ao, gained, available);
 		const share = available === 0 ? 0 : gained / available;
 		entryFigures.push({
@@ -98,7 +102,9 @@ export function reportFiguresFor(
 		total,
 		available,
 		percent: available === 0 ? 0 : Math.round((total / available) * 100),
-		topics: toRows(topics, (code) => document.topicNames[code]?.trim() || code),
+		topics: rollupByTopic(topicEntries).map((row) =>
+			rowOf(row.name, row.name, row.gained, row.available)
+		),
 		aos: toRows(aos, (ao) => ao),
 		entries: entryFigures
 	};

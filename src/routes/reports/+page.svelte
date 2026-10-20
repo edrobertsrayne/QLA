@@ -22,7 +22,7 @@
 	import { changedInputFields, generationInputFor } from '$lib/marksheet/report-input.js';
 	import { agree, count } from '$lib/prose.js';
 	import { MAX_LABEL_LENGTH } from '$lib/marksheet/report-limits.js';
-	import { specPointCodes } from '$lib/marksheet/document.js';
+	import { specPointCodes, topicCodesOf } from '$lib/marksheet/document.js';
 	type Step = 'topics' | 'grades' | 'who' | 'writing' | 'review';
 
 	const store = marksheetStore();
@@ -108,16 +108,7 @@
 	 * order. A paper with none skips the Topic names step and makes no
 	 * proposal call.
 	 */
-	const topicCodes = $derived.by(() => {
-		if (!document) return [];
-		const seen: string[] = [];
-		for (const entry of document.breakdown.entries) {
-			for (const code of specPointCodes(entry.specPoint)) {
-				if (!seen.includes(code)) seen.push(code);
-			}
-		}
-		return seen;
-	});
+	const topicCodes = $derived(document ? topicCodesOf(document) : []);
 
 	// The step the teacher lands on: reports written means Review, otherwise
 	// the first step of the flow (Topic names when the paper has codes).

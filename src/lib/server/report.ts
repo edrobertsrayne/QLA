@@ -9,6 +9,7 @@ import { assessmentObjectiveOf } from '$lib/parse/assessment-objectives.js';
 import { isRecord } from '$lib/parse/is-breakdown.js';
 import { facilityBand } from '$lib/marksheet/analysis.js';
 import { MAX_LABEL_LENGTH, MAX_SUMMARY_LENGTH } from '$lib/marksheet/report-limits.js';
+import { rollupByTopic, type TopicTotals } from '$lib/marksheet/report-rollup.js';
 
 /** Model resolves override → env → this default. Not checked against the curated list. */
 export const REPORT_DEFAULT_MODEL = 'openai/gpt-6-luna';
@@ -280,37 +281,16 @@ export function validateReportBody(body: unknown): {
 	return { request: { ...(model === undefined ? {} : { model }), paperLabel, entries }, problems };
 }
 
-/** One topic roll-up row the model receives, calculated locally. */
-export interface TopicRollup {
-	name: string;
-	gained: number;
-	available: number;
-}
-
-/** The topic roll-up for a validated request: entries with no topic count nowhere. */
-export function topicRollup(entries: readonly ReportRequestEntry[]): TopicRollup[] {
-	const totals = new Map<string, { gained: number; available: number }>();
-	for (const entry of entries) {
-		for (const topic of entry.topics) {
-			const row = totals.get(topic) ?? { gained: 0, available: 0 };
-			row.gained += entry.gained;
-			row.available += entry.available;
-			totals.set(topic, row);
-		}
-	}
-	return [...totals].map(([name, value]) => ({ name, ...value }));
-}
-
 /** The fenced user payload: paper label, every entry and the topic roll-up. No identifiers. */
 export function reportPayload(request: ValidReportRequest): {
 	paper: string;
 	questions: ReportRequestEntry[];
-	topics: TopicRollup[];
+	topics: TopicTotals[];
 } {
 	return {
 		paper: request.paperLabel,
 		questions: request.entries,
-		topics: topicRollup(request.entries)
+		topics: rollupByTopic(request.entries)
 	};
 }
 
