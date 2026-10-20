@@ -14,7 +14,7 @@ import {
 	MAX_SUMMARY_LENGTH,
 	MAX_TOPICS_PER_ENTRY
 } from '$lib/marksheet/report-limits.js';
-import { rollupByTopic, type TopicTotals } from '$lib/marksheet/report-rollup.js';
+import { rollupBy, type RollupTotals } from '$lib/marksheet/report-rollup.js';
 import {
 	fail,
 	readList,
@@ -185,12 +185,12 @@ export function validateReportBody(body: unknown): ValidReportRequest {
 export function reportPayload(request: ValidReportRequest): {
 	paper: string;
 	questions: ReportRequestEntry[];
-	topics: TopicTotals[];
+	topics: RollupTotals[];
 } {
 	return {
 		paper: request.paperLabel,
 		questions: request.entries,
-		topics: rollupByTopic(request.entries)
+		topics: rollupBy(request.entries, (entry) => entry.topics)
 	};
 }
 

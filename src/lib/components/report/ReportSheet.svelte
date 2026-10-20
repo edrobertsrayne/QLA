@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
 	import { count } from '$lib/prose.js';
-	import { boundariesOf, gradeOf } from '$lib/marksheet/grades.js';
+	import { paperGrade } from '$lib/marksheet/grades.js';
 	import { questionBands } from '$lib/marksheet/breakdown.js';
 	import {
 		droppedNoMarks,
@@ -48,10 +48,7 @@
 	const figures = $derived(reportFiguresFor(document, studentId));
 	/** The grade is live from the document, never stored or sent: moving a
 	 * boundary re-renders every page without marking anything out of date. */
-	const boundaries = $derived(boundariesOf(document));
-	const grade = $derived(
-		boundaries ? gradeOf(figures.total, boundaries, document.paper.belowLowestLabel) : null
-	);
+	const grade = $derived(paperGrade(document, figures.total));
 	const strengths = $derived((report.edit ?? report).strengths);
 	const areas = $derived((report.edit ?? report).areasForImprovement);
 	const displayName = $derived(student ? studentName(student) : '');
@@ -191,10 +188,12 @@
 						class="flex max-w-[32mm] items-center justify-center px-3 py-1.5 text-left text-[9.5pt] leading-tight"
 						data-testid="report-to-next"
 					>
-						{#if grade.toNext === null || grade.nextLabel === null}Top grade{:else}{count(
-								grade.toNext,
-								'more mark'
-							)} for grade {grade.nextLabel}{/if}
+						{#if grade.next === null}
+							Top grade
+						{:else}
+							{@const next = grade.next}
+							{count(next.marks, 'more mark')} for grade {next.label}
+						{/if}
 					</div>
 				{/if}
 			</div>

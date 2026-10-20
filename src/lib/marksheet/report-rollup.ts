@@ -1,11 +1,11 @@
-// The one topic roll-up: shared by the browser (live figures on the page, the
+// The one roll-up (by topic name, by assessment objective): shared by the browser (live figures on the page, the
 // request body) and the server (what the model receives), so both always
 // agree on what a topic row means.
 
 import { specPointCodes, type MarksheetDocument } from './document.js';
 
-/** Marks gained and available across the entries carrying one topic name. */
-export interface TopicTotals {
+/** Marks gained and available across the entries carrying one name. */
+export interface RollupTotals {
 	name: string;
 	gained: number;
 	available: number;
@@ -17,15 +17,16 @@ export function topicNamesFor(document: MarksheetDocument, specPoint: string | n
 }
 
 /**
- * Marks per topic name. An entry counts once toward each distinct name it
- * carries; entries with none count nowhere. Rows keep first-seen order.
+ * Marks per name. An entry counts once toward each distinct name `namesOf`
+ * gives it; none counts nowhere. Rows keep first-seen order.
  */
-export function rollupByTopic(
-	entries: readonly { topics: readonly string[]; gained: number; available: number }[]
-): TopicTotals[] {
-	const totals = new Map<string, TopicTotals>();
+export function rollupBy<T extends { gained: number; available: number }>(
+	entries: readonly T[],
+	namesOf: (entry: T) => readonly string[]
+): RollupTotals[] {
+	const totals = new Map<string, RollupTotals>();
 	for (const entry of entries) {
-		for (const name of new Set(entry.topics)) {
+		for (const name of new Set(namesOf(entry))) {
 			const row = totals.get(name) ?? { name, gained: 0, available: 0 };
 			row.gained += entry.gained;
 			row.available += entry.available;

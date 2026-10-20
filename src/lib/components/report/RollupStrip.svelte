@@ -13,7 +13,7 @@
 <div>
 	<h3 class="mb-0.5 border-b border-black font-bold">{title}</h3>
 	<div class="grid gap-x-5" style:grid-template-columns="repeat({columns}, minmax(0, 1fr))">
-		{#each rows as row (row.key)}
+		{#each rows as row (row.name)}
 			<div class="flex items-start gap-1.5 py-px">
 				<span class="min-w-0 flex-1">{row.name}</span>
 				<span class="tabular-nums">{row.gained}/{row.available}</span>

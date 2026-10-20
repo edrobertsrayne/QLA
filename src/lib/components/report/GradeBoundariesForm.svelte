@@ -12,14 +12,15 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Table from '$lib/components/ui/table';
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
-	import { totalMarks, type GradeBoundary } from '$lib/marksheet/document.js';
+	import { studentTotal, totalMarks } from '$lib/marksheet/document.js';
 	import {
+		belowLabelOf,
+		boundariesFrom,
 		boundariesOf,
 		boundaryIssues,
 		gradeOf,
 		GRADE_SCALES,
 		isUnused,
-		keptRows,
 		workingCopyOf,
 		type BoundaryIssue,
 		type BoundaryRow
@@ -54,8 +55,8 @@
 		rows = labels.map((label) => ({ label, min: previous(label) }));
 	}
 
-	/** The rows Save would store: blank and unawarded rows left out. */
-	const kept = $derived(keptRows(rows));
+	/** The boundaries Save would store: blank and unawarded rows left out. */
+	const draft = $derived(boundariesFrom(rows));
 	const issues = $derived.by(() => boundaryIssues(rows, below, paperTotal));
 	const issueFor = $derived.by(() => {
 		const byIndex: BoundaryIssue[][] = rows.map(() => []);
@@ -64,17 +65,11 @@
 	});
 	/** How many students with a final total each draft grade would catch, once the draft is valid. */
 	const counts = $derived.by(() => {
-		if (!document || issues.length > 0 || kept.length === 0) return null;
-		const keptList: GradeBoundary[] = kept.map((row) => ({
-			label: row.label.trim(),
-			minimum: Number(row.min.trim())
-		}));
+		if (!document || issues.length > 0 || draft.length === 0) return null;
 		const tally: Record<string, number> = {};
 		for (const student of document.students) {
 			if (!isEligible(document, student.id)) continue;
-			const marks = document.marks[student.id] ?? {};
-			const total = document.breakdown.entries.reduce((sum, entry) => sum + marks[entry.id], 0);
-			const grade = gradeOf(total, keptList, below);
+			const grade = gradeOf(studentTotal(document, student.id), draft, belowLabelOf(below));
 			tally[grade.label] = (tally[grade.label] ?? 0) + 1;
 		}
 		return tally;
@@ -82,17 +77,14 @@
 	const footer = $derived(
 		issues.length > 0
 			? `${issues.length} ${issues.length === 1 ? 'problem' : 'problems'} to fix`
-			: kept.length === 0
+			: draft.length === 0
 				? 'No grades: reports show marks only'
-				: `${kept.length} ${kept.length === 1 ? 'grade' : 'grades'}`
+				: `${draft.length} ${draft.length === 1 ? 'grade' : 'grades'}`
 	);
 
 	function save(): void {
 		if (issues.length > 0) return;
-		store.saveBoundaries(
-			kept.map((row) => ({ label: row.label.trim(), minimum: Number(row.min.trim()) })),
-			below
-		);
+		store.saveBoundaries(draft, below);
 		onDone?.();
 	}
 
@@ -191,7 +183,7 @@
 					</Table.Cell>
 					<Table.Cell class="py-0.5 text-xs">below the rest</Table.Cell>
 					<Table.Cell class="py-0.5 text-xs tabular-nums">
-						{counts ? (counts[below.trim() === '' ? 'U' : below.trim()] ?? 0) : ''}
+						{counts ? (counts[belowLabelOf(below)] ?? 0) : ''}
 					</Table.Cell>
 					<Table.Cell></Table.Cell>
 				</Table.Row>
