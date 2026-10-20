@@ -354,6 +354,34 @@ describe('out-of-date reports', () => {
 		await shown.unmount();
 	});
 
+	it('warns before printing one out-of-date page', async () => {
+		seed(twoWritten());
+		stubFetch();
+		const shown = openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
+		marksheetStore().setMark('ada', 'entry-1', 4);
+		await expect.element(page.getByText('Out of date').first()).toBeInTheDocument();
+
+		const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+		await page.getByRole('button', { name: 'Print this page' }).first().click();
+		const dialog = page.getByRole('dialog', { name: 'Out-of-date reports' });
+		await expect.element(dialog).toBeInTheDocument();
+		await vi.waitFor(() =>
+			expect(dialog.element().textContent).toMatch(/1 report\s+is out of date/)
+		);
+		expect(print).not.toHaveBeenCalled();
+
+		await dialog.getByRole('button', { name: 'Print anyway' }).click();
+		await vi.waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+		const printed = [
+			...document.querySelectorAll('[data-testid="print-root"] [data-report-id]')
+		].map((sheet) => sheet.getAttribute('data-report-id'));
+		expect(printed).toEqual(['ada']);
+		print.mockRestore();
+		await shown.unmount();
+	});
+
 	it('bulk rewrite skips edited reports unless opted in', async () => {
 		const doc = twoWritten();
 		doc.reports['ada'].edit = {
