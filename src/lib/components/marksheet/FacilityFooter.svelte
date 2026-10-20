@@ -14,7 +14,8 @@
 
 	const store = marksheetStore();
 	const analysis = $derived(store.analysis);
-
+	/** Spacer cells under the Total | Grade | To next columns: Total always, the rest with boundaries. */
+	const hasGrades = $derived((store.document?.paper.boundaries?.length ?? 0) > 0);
 	/**
 	 * What a facility figure is tinted with, per band. A mark cell is a fraction
 	 * of a 40&nbsp;px column, so it takes a heavier fill than the analysis view's
@@ -62,6 +63,7 @@
 				</button>
 			</Table.Cell>
 		{/each}
+		<Table.Cell class="border-l-2" colspan={hasGrades ? 3 : 1} />
 	</Table.Row>
 	<Table.Row class="hover:bg-transparent">
 		<Table.Cell class={cn(NAME_COLUMN, 'px-1.5 text-[11px] text-muted-foreground')}>
@@ -77,5 +79,6 @@
 				{row.coverage.partMarked ? `${row.coverage.marked}/${row.coverage.of}` : ''}
 			</Table.Cell>
 		{/each}
+		<Table.Cell class="border-l-2" colspan={hasGrades ? 3 : 1} />
 	</Table.Row>
 </Table.Footer>
