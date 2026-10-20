@@ -25,7 +25,8 @@ const STOPPING_STATUS: Record<RunStoppingCode, number> = {
 	MODEL_REJECTED: 502
 };
 
-function failure(status: number, error: Record<string, unknown>): Response {
+/** The API error envelope: `{ error }` at `status`. */
+export function failure(status: number, error: Record<string, unknown>): Response {
 	return json({ error }, { status });
 }
 

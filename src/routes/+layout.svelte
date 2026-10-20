@@ -3,6 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import AppNav from '$lib/components/shell/AppNav.svelte';
 	import StatusBar from '$lib/components/shell/StatusBar.svelte';
+	import FeedbackButton from '$lib/components/shell/FeedbackButton.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import { ModeWatcher } from 'mode-watcher';
 
@@ -19,6 +20,7 @@
 	{@render children()}
 </div>
 <StatusBar />
+<FeedbackButton />
 <!-- Toasts rise above the status bar rather than sitting under it, on a narrow
 	window as much as a wide one. -->
 <Toaster
