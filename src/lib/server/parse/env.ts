@@ -3,72 +3,40 @@
 // SvelteKit loads `.env` into `$env/*`, not into `process.env` under
 // `vite dev`. Reading `process.env` directly therefore misses the local
 // `.env` and trips the `MISSING_API_KEY` fatal even when the key is set.
-// Always read through these accessors: `$env/dynamic/private` first (dev
+// Always read through `getServerEnv`: `$env/dynamic/private` first (dev
 // `.env` + prod runtime), `process.env` as a fallback (adapter-node,
 // `vite preview`, external test harnesses).
 //
-// Tests control the value via the `*ForTests` seams (same pattern as
+// Tests pin values with `setEnvForTests` / `clearEnvForTests` (same pattern as
 // `setModelTransport` / `setSpecFetchTransport`) so contract tests stay
 // isolated from the developer's real `.env`.
 
 import { env } from '$env/dynamic/private';
 
-let apiKeyTestOverride: string | undefined;
-let defaultModelTestOverride: string | undefined;
-let feedbackTokenTestOverride: string | undefined;
+/**
+ * The server env values the app reads. Each is trimmed, and `''` means unset:
+ * no OpenRouter key is fatal, no `OPENROUTER_MODEL` falls back to
+ * `DEFAULT_MODEL_ID`, no feedback token disables the feedback button.
+ */
+export type ServerEnvName = 'OPENROUTER_API_KEY' | 'OPENROUTER_MODEL' | 'GITHUB_FEEDBACK_TOKEN';
 
-function readServerEnv(
-	name: 'OPENROUTER_API_KEY' | 'OPENROUTER_MODEL' | 'GITHUB_FEEDBACK_TOKEN'
-): string {
+let testOverrides: Partial<Record<ServerEnvName, string>> = {};
+
+/** Trimmed value of `name`, or `''` when unset. */
+export function getServerEnv(name: ServerEnvName): string {
+	const pinned = testOverrides[name];
+	if (pinned !== undefined) return pinned.trim();
 	const fromDynamic = env[name]?.trim();
 	if (fromDynamic) return fromDynamic;
 	return process.env[name]?.trim() ?? '';
 }
 
-/** Trimmed server OpenRouter key, or `''` when missing. Callers treat `''` as missing. */
-export function getApiKey(): string {
-	if (apiKeyTestOverride !== undefined) return apiKeyTestOverride.trim();
-	return readServerEnv('OPENROUTER_API_KEY');
+/** Test seam: pin `name` (use `''` to simulate unset). */
+export function setEnvForTests(name: ServerEnvName, value: string): void {
+	testOverrides[name] = value;
 }
 
-/** Trimmed `OPENROUTER_MODEL` default, or `''` when unset. Callers fall back to `DEFAULT_MODEL_ID`. */
-export function getEnvDefaultModel(): string {
-	if (defaultModelTestOverride !== undefined) return defaultModelTestOverride.trim();
-	return readServerEnv('OPENROUTER_MODEL');
-}
-
-/** Trimmed GitHub feedback token, or `''` when missing (feedback disabled). */
-export function getFeedbackToken(): string {
-	if (feedbackTokenTestOverride !== undefined) return feedbackTokenTestOverride.trim();
-	return readServerEnv('GITHUB_FEEDBACK_TOKEN');
-}
-
-/** Test seam: pin the feedback token (use `''` to simulate missing). */
-export function setFeedbackTokenForTests(token: string): void {
-	feedbackTokenTestOverride = token;
-}
-
-/** Test seam: release the pinned feedback token. */
-export function clearFeedbackTokenForTests(): void {
-	feedbackTokenTestOverride = undefined;
-}
-
-/** Test seam: pin the API key (use `''` to simulate a missing key). */
-export function setApiKeyForTests(key: string): void {
-	apiKeyTestOverride = key;
-}
-
-/** Test seam: release the pinned API key back to the real environment. */
-export function clearApiKeyForTests(): void {
-	apiKeyTestOverride = undefined;
-}
-
-/** Test seam: pin the `OPENROUTER_MODEL` default. */
-export function setDefaultModelForTests(model: string): void {
-	defaultModelTestOverride = model;
-}
-
-/** Test seam: release the pinned model default back to the real environment. */
-export function clearDefaultModelForTests(): void {
-	defaultModelTestOverride = undefined;
+/** Test seam: release every pinned value back to the real environment. */
+export function clearEnvForTests(): void {
+	testOverrides = {};
 }

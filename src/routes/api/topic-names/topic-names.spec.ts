@@ -18,12 +18,7 @@ import {
 	type StructuredModelInput,
 	type StructuredModelResult
 } from '$lib/server/openrouter';
-import {
-	clearApiKeyForTests,
-	clearDefaultModelForTests,
-	setApiKeyForTests,
-	setDefaultModelForTests
-} from '$lib/server/parse/env';
+import { clearEnvForTests, setEnvForTests } from '$lib/server/parse/env';
 import { DEFAULT_MODEL_ID } from '$lib/server/parse/pdf';
 
 interface Envelope {
@@ -81,14 +76,13 @@ async function post(payload: string | Body): Promise<{ status: number; json: Env
 
 beforeEach(() => {
 	calls = [];
-	setApiKeyForTests('test-key');
-	setDefaultModelForTests('');
+	setEnvForTests('OPENROUTER_API_KEY', 'test-key');
+	setEnvForTests('OPENROUTER_MODEL', '');
 	stubModel(GOOD_OUTPUT);
 });
 
 afterEach(() => {
-	clearApiKeyForTests();
-	clearDefaultModelForTests();
+	clearEnvForTests();
 	resetStructuredTransport();
 	resetStructuredFetch();
 });
@@ -108,7 +102,7 @@ describe('POST /api/topic-names success', () => {
 	});
 
 	it('resolves the model override over the env default', async () => {
-		setDefaultModelForTests('env/model');
+		setEnvForTests('OPENROUTER_MODEL', 'env/model');
 
 		const { json } = await post(body({ model: 'custom/override' }));
 
@@ -352,7 +346,7 @@ describe('POST /api/topic-names upstream failures', () => {
 
 	it('reports a missing server key as a non-retryable 500 without calling upstream', async () => {
 		upstream(200);
-		setApiKeyForTests('');
+		setEnvForTests('OPENROUTER_API_KEY', '');
 
 		const { status, json } = await post(body());
 

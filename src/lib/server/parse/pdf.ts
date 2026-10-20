@@ -16,7 +16,7 @@
 import { extractText } from 'unpdf';
 import { fenceDocuments } from '../fence';
 import type { ParseWarning } from './schema';
-import { getEnvDefaultModel } from './env';
+import { getServerEnv } from './env';
 
 /** Default model for every OpenRouter call when no per-run override or OPENROUTER_MODEL is given. */
 export const DEFAULT_MODEL_ID = 'openai/gpt-6-luna';
@@ -33,7 +33,7 @@ export const DIAGRAM_UNVERIFIED_CODE = 'DIAGRAM_UNVERIFIED';
 /** Resolve the effective model id: trimmed override, else OPENROUTER_MODEL, else DEFAULT_MODEL_ID. */
 export function resolveModelId(modelOverride?: string): string {
 	const trimmed = modelOverride?.trim();
-	return trimmed || getEnvDefaultModel() || DEFAULT_MODEL_ID;
+	return trimmed || getServerEnv('OPENROUTER_MODEL') || DEFAULT_MODEL_ID;
 }
 
 /**

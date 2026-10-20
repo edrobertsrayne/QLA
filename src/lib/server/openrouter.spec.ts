@@ -19,7 +19,7 @@ import {
 	StructuredModelError,
 	type StructuredModelInput
 } from './openrouter';
-import { clearApiKeyForTests, setApiKeyForTests } from './parse/env';
+import { clearEnvForTests, setEnvForTests } from './parse/env';
 import { estimateCost } from './parse/model';
 
 const PROSE_SENTINEL = 'PROSE-SENTINEL-mango-tango-42';
@@ -97,7 +97,7 @@ describe('live structured transport', () => {
 		nextResponse = () => {
 			throw new Error('no mocked response set');
 		};
-		setApiKeyForTests('test-key');
+		setEnvForTests('OPENROUTER_API_KEY', 'test-key');
 		resetStructuredTransport();
 		setStructuredFetch(async (url, init) => {
 			fetchCalls.push({ url, init });
@@ -106,7 +106,7 @@ describe('live structured transport', () => {
 	});
 
 	afterEach(() => {
-		clearApiKeyForTests();
+		clearEnvForTests();
 		resetStructuredTransport();
 		resetStructuredFetch();
 	});
@@ -206,7 +206,7 @@ describe('live structured transport', () => {
 	});
 
 	it('a missing API key fails without any request', async () => {
-		setApiKeyForTests('');
+		setEnvForTests('OPENROUTER_API_KEY', '');
 
 		const error = await callError(structuredInput());
 

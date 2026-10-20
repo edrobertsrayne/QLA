@@ -12,7 +12,7 @@
 // pattern as parse's `setModelTransport`) or, one level down, via
 // `setStructuredFetch`; production uses the live OpenRouter call.
 
-import { getApiKey } from './parse/env';
+import { getServerEnv } from './parse/env';
 import {
 	contentToText,
 	extractJsonText,
@@ -195,7 +195,7 @@ function statusError(status: number, bodyText: string, response: Response): Stru
 export async function liveStructuredTransport(
 	input: StructuredModelInput
 ): Promise<StructuredModelResult> {
-	const apiKey = getApiKey();
+	const apiKey = getServerEnv('OPENROUTER_API_KEY');
 	if (!apiKey) {
 		throw new StructuredModelError('Server is missing its OpenRouter API key.', {
 			code: MISSING_API_KEY_CODE,
