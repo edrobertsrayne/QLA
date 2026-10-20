@@ -299,6 +299,20 @@ export class MarksheetStore {
 			entry.specPoint = trimOrNull(specPoint);
 		});
 	}
+	/**
+	 * Name one normalised specification-point code. A blank name clears it, so
+	 * an unwanted proposal is one keystroke from gone. Names for codes no entry
+	 * carries are dropped on load, so a retyped code loses its stale name.
+	 * Topic names are not breakdown edits: naming works on a confirmed sheet.
+	 */
+	setTopicName(code: string, name: string): void {
+		const document = this.document;
+		if (!document) return;
+		const trimmed = name.trim();
+		if (trimmed === '') delete document.topicNames[code];
+		else document.topicNames[code] = trimmed;
+		this.#mutated();
+	}
 
 	/** Set the command word. An empty field means none. */
 	setEntryCommandWord(entryId: string, commandWord: string | null): void {

@@ -58,6 +58,44 @@ function plain(over: Partial<MarksheetDocument> = {}): MarksheetDocument {
 		...over
 	});
 }
+/**
+ * Synthetic H556 variant of the 13OA class: the same marks with hand-assigned
+ * 5.1.x / 5.2.x specification points — one comma-list entry counting toward
+ * two codes, one slash-list entry, and entries with none (AO only).
+ */
+function h556(): MarksheetDocument {
+	const doc = plain();
+	doc.breakdown.entries = [
+		entry('entry-1', '1', '1', {
+			marks: 4,
+			summary: 'Define the kinetic model',
+			specPoint: '5.1.1, 5.1.2',
+			commandWord: null,
+			ao: 'AO1'
+		}),
+		entry('entry-2', '2a', '2', {
+			marks: 6,
+			summary: 'Explain gas pressure',
+			specPoint: '5.1.2/5.2.1',
+			commandWord: null,
+			ao: 'AO2'
+		}),
+		entry('entry-3', '2b', '2', {
+			marks: 2,
+			summary: 'Show working clearly',
+			specPoint: null,
+			commandWord: null,
+			ao: 'AO3'
+		})
+	];
+	for (const marks of Object.values(doc.marks)) {
+		marks['entry-3'] = 2;
+	}
+	doc.marks['di'] = { 'entry-1': 1, 'entry-3': 1 };
+	doc.marks['ed'] = { 'entry-1': 9, 'entry-2': 1, 'entry-3': 0 };
+	doc.topicNames = {};
+	return doc;
+}
 
 type Canned = (n: number, init?: { signal?: AbortSignal | null }) => Response | Promise<Response>;
 
@@ -127,6 +165,15 @@ function ok(strength = 'Careful working'): Response {
 		model: 'test/model',
 		usage: {}
 	});
+}
+function topicNames(names: Record<string, string> = {}): Response {
+	const entries = {
+		'5.1.1': 'Kinetic theory of gases',
+		'5.1.2': 'Gas pressure and temperature',
+		'5.2.1': 'Internal energy stores',
+		...names
+	};
+	return Response.json({ names: entries, model: 'test/model', usage: {} });
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -412,5 +459,131 @@ describe('reports flow', () => {
 
 		await expect.element(page.getByRole('button', { name: 'Print all 8' })).toBeInTheDocument();
 		expect(reportCalls(stub)).toBe(1);
+	});
+});
+
+describe('topic names step', () => {
+	it('auto-proposes on arrival, never overwrites a typed name, and gates Next on blanks', async () => {
+		seed(h556());
+		const { stub } = stubFetch(() => topicNames());
+		openPage(ReportsPage);
+
+		// Auto-proposal on arrival fills every code.
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		const nameFor = (code: string): HTMLInputElement | null =>
+			document.querySelector(`#topic-${CSS.escape(code)}`);
+		await vi.waitFor(() => expect(nameFor('5.1.1')?.value).toBe('Kinetic theory of gases'), {
+			timeout: 5000
+		});
+		expect(nameFor('5.2.1')?.value).toBe('Internal energy stores');
+		expect(stub.mock.calls.filter(([url]) => String(url) === '/api/topic-names')).toHaveLength(1);
+
+		// A typed name is never overwritten: blank 5.1.2 so only it is missing, and
+		// the proposal fills just that gap.
+		await page.getByLabelText('Name for 5.1.2').clear();
+		await page.getByRole('button', { name: 'Propose missing names' }).click();
+		await vi.waitFor(() => expect(nameFor('5.1.2')?.value).toBe('Gas pressure and temperature'), {
+			timeout: 5000
+		});
+		expect(nameFor('5.1.1')?.value).toBe('Kinetic theory of gases');
+
+		// Next stays blocked by a blank name.
+		await page.getByLabelText('Name for 5.1.1').clear();
+		expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+		await page.getByLabelText('Name for 5.1.1').fill('Kinetic theory of gases');
+		await page.getByRole('button', { name: 'Next' }).click();
+		await expect
+			.element(page.getByRole('heading', { name: '7 students get a report' }))
+			.toBeInTheDocument();
+	});
+
+	it('counts a comma-list entry toward both codes and shows the By topic strip', async () => {
+		const doc = h556();
+		doc.topicNames = {
+			'5.1.1': 'Kinetic theory of gases',
+			'5.1.2': 'Gas pressure and temperature',
+			'5.2.1': 'Internal energy stores'
+		};
+		seed(doc);
+		stubFetch(() => ok());
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		await page.getByRole('button', { name: 'Next' }).click();
+		await page.getByRole('button', { name: 'Write 7 reports' }).click();
+
+		await vi.waitFor(() => expect(document.querySelectorAll('.report-sheet').length).toBe(14), {
+			timeout: 15000
+		});
+		const sheet = document.querySelector('main [data-report-id="ada"]');
+		expect(sheet?.textContent).toContain('By topic');
+		// Entry 1 (4 marks, Ada gained 3) carries "5.1.1, 5.1.2": both codes gain
+		// its marks, so 5.1.1 shows 3/4 while 5.1.2 adds entry-2 (Ada 2/6) for 5/10.
+		const stripOf = (title: string): string => {
+			const headings = [...(sheet?.querySelectorAll('h3') ?? [])];
+			return headings.find((h) => h.textContent === title)?.parentElement?.textContent ?? '';
+		};
+		const topics = stripOf('By topic');
+		expect(topics).toMatch(/Kinetic theory of gases\s*3\/4/);
+		expect(topics).toMatch(/Gas pressure and temperature\s*5\/10/);
+		// Entry 3 carries no code: its 2/2 counts toward AO3's By skill strip but
+		// toward no topic row.
+		expect(topics).not.toContain('2/2');
+		expect(stripOf('By skill')).toMatch(/AO3\s*2\/2/);
+	});
+
+	it('lets a failed proposal retry while hand typing still works', async () => {
+		seed(h556());
+		stubFetch(() =>
+			Response.json(
+				{ error: { code: 'MODEL_RETRYABLE', message: 'Busy', retryable: true } },
+				{ status: 502 }
+			)
+		);
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('alert')).toBeInTheDocument();
+		// Hand typing still works while the proposal fails.
+		await page.getByLabelText('Name for 5.1.1').fill('Typed by hand');
+		marksheetStore().flush();
+		expect(readSeeded().topicNames['5.1.1']).toBe('Typed by hand');
+		await page.getByRole('button', { name: 'Retry' }).click();
+		await expect.element(page.getByRole('alert')).toBeInTheDocument();
+	});
+
+	it('skips the step and makes no proposal call when no entry carries a code', async () => {
+		seed(plain());
+		const { stub } = stubFetch();
+		openPage(ReportsPage);
+
+		await expect
+			.element(page.getByRole('heading', { name: '7 students get a report' }))
+			.toBeInTheDocument();
+		expect(page.getByRole('heading', { name: 'Topic names' }).query()).toBeNull();
+		expect(stub.mock.calls.filter(([url]) => String(url) === '/api/topic-names')).toHaveLength(0);
+	});
+
+	it('persists names across a reload', async () => {
+		seed(h556());
+		stubFetch(() => topicNames({ '5.1.1': 'First proposal' }));
+		const first = openPage(ReportsPage);
+
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		const nameFor = (code: string): HTMLInputElement | null =>
+			first.container.querySelector(`#topic-${CSS.escape(code)}`);
+		await vi.waitFor(() => expect(nameFor('5.1.1')?.value).toBe('First proposal'), {
+			timeout: 5000
+		});
+		await page.getByLabelText('Name for 5.1.2').fill('Hand typed');
+		marksheetStore().flush();
+		expect(readSeeded().topicNames['5.1.2']).toBe('Hand typed');
+
+		first.unmount();
+		const second = openPage(ReportsPage);
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		const again = (code: string): HTMLInputElement | null =>
+			second.container.querySelector(`#topic-${CSS.escape(code)}`);
+		expect(again('5.1.1')?.value).toBe('First proposal');
+		expect(again('5.1.2')?.value).toBe('Hand typed');
 	});
 });
