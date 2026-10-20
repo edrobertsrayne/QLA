@@ -8,6 +8,7 @@ import {
 	student
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
+import { generationInputFor } from '$lib/marksheet/report-input.js';
 import { openPage } from '../spec-helpers.js';
 import { rowNames, markCell, studentIdAt, focusedCell } from './marksheet.spec-helpers.js';
 import MarksheetPage from './+page.svelte';
@@ -168,6 +169,32 @@ describe('marksheet page', () => {
 
 		expect(rowNames(screen)).toEqual(['Ada Lovelace', 'Grace Hopper']);
 		expect(marksheetStore().document?.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+	});
+
+	it('drops the report of a removed student at once, so the banner count is right', async () => {
+		const doc = confirmed({
+			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
+			marks: { 'student-1': { 'entry-1': 3 }, 'student-2': { 'entry-1': 2 } }
+		});
+		const input = generationInputFor(doc, 'student-1');
+		if (!input) throw new Error('no generation input');
+		const report = {
+			strengths: ['Careful working'],
+			areasForImprovement: ['Check units'],
+			edit: null,
+			input,
+			model: 'test/model',
+			generatedAt: '2026-01-01T10:00:00.000Z'
+		};
+		doc.reports = { 'student-1': report, 'student-2': { ...report } };
+		seed(doc);
+		openPage(MarksheetPage);
+
+		await expect.element(page.getByText('2 reports written for this paper')).toBeInTheDocument();
+		await page.getByRole('button', { name: 'Remove Ada Lovelace' }).click();
+
+		await expect.element(page.getByText('1 report written for this paper')).toBeInTheDocument();
+		expect(Object.keys(marksheetStore().document?.reports ?? {})).toEqual(['student-2']);
 	});
 
 	it('flags a student absent without losing their marks', async () => {

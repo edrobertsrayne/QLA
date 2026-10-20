@@ -162,6 +162,15 @@ describe('POST /api/report model payload', () => {
 		]);
 	});
 
+	it('counts an entry once toward a topic name it carries twice', async () => {
+		await post(body({ entries: [entry('1', 2, 3, { topics: ['A', 'A'] })] }));
+
+		const data = calls[0]?.data;
+		expect(isRecord(data) ? data['topics'] : undefined).toEqual([
+			{ name: 'A', gained: 2, available: 3 }
+		]);
+	});
+
 	it('sends no topic roll-up rows when no entry has a topic', async () => {
 		await post(body({ entries: [entry('1', 1, 2), entry('2', 2, 2)] }));
 

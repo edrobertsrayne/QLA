@@ -1389,3 +1389,173 @@ describe('grades on reports', () => {
 		expect(marksheetStore().document?.paper.boundaries).toEqual([{ label: 'B', minimum: 5 }]);
 	});
 });
+
+describe('review fixes', () => {
+	/** A stored report for each id, written from the document as it stands. */
+	function writeFor(
+		doc: MarksheetDocument,
+		ids: string[],
+		prose?: Partial<{ strengths: string[]; areasForImprovement: string[] }>
+	): void {
+		doc.reports = {};
+		for (const id of ids) {
+			const input = generationInputFor(doc, id);
+			if (!input) throw new Error(`no input for ${id}`);
+			doc.reports[id] = {
+				strengths: prose?.strengths ?? ['Careful working'],
+				areasForImprovement: prose?.areasForImprovement ?? ['Check units'],
+				edit: null,
+				input,
+				model: 'test/model',
+				generatedAt: '2026-01-01T10:00:00.000Z'
+			};
+		}
+	}
+
+	const posted = (stub: { mock: { calls: unknown[][] } }) =>
+		stub.mock.calls
+			.filter(([url]) => String(url) === '/api/report')
+			.map(([, init]) => JSON.parse((init as { body: string }).body));
+
+	it('Who gets one writes only students without a report and keeps edits', async () => {
+		const doc = plain();
+		// Ada's marks are the only ones that gain 4 on the first entry.
+		doc.marks['ada'] = { 'entry-1': 4, 'entry-2': 6 };
+		writeFor(doc, ['ada']);
+		doc.reports['ada'].edit = { strengths: ['Teacher wording'], areasForImprovement: ['Mine'] };
+		seed(doc);
+		const { stub } = stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		await page.getByRole('button', { name: /Who gets one/ }).click();
+		await expect
+			.element(page.getByRole('heading', { name: '7 students get a report' }))
+			.toBeInTheDocument();
+		await page.getByRole('button', { name: 'Write 6 reports' }).click();
+
+		await expect.element(page.getByRole('button', { name: 'Print all 7' })).toBeInTheDocument();
+		const bodies = posted(stub);
+		expect(bodies).toHaveLength(6);
+		for (const body of bodies) expect(body.entries[0].gained).not.toBe(4);
+		expect(marksheetStore().document?.reports['ada'].edit).not.toBeNull();
+	});
+
+	it('Who gets one offers nothing to write once every eligible student has a report', async () => {
+		const doc = plain();
+		writeFor(doc, ['ada', 'bo', 'fay', 'gus', 'hal', 'ivy', 'jo']);
+		seed(doc);
+		stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 7' })).toBeInTheDocument();
+		await page.getByRole('button', { name: /Who gets one/ }).click();
+
+		await expect.element(page.getByRole('button', { name: 'Write 0 reports' })).toBeDisabled();
+		await expect.element(page.getByText(/Every student here has a report/)).toBeInTheDocument();
+	});
+
+	it('blocks writing and printing when a topic loses its name after reports exist', async () => {
+		const doc = h556();
+		doc.topicNames = {
+			'5.1.1': 'Kinetic theory of gases',
+			'5.1.2': 'Gas pressure and temperature',
+			'5.2.1': 'Internal energy stores'
+		};
+		writeFor(doc, ['ada']);
+		delete doc.topicNames['5.2.1'];
+		seed(doc);
+		stubFetch(() => topicNames());
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Name topics' })).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeDisabled();
+		await expect.element(page.getByRole('button', { name: 'Print this page' })).toBeDisabled();
+		await expect.element(page.getByRole('button', { name: 'Rewrite', exact: true })).toBeDisabled();
+
+		await page.getByRole('button', { name: 'Name topics' }).click();
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+	});
+
+	it('gives codes that share a name one row, counting each entry once', async () => {
+		const doc = h556();
+		doc.topicNames = {
+			'5.1.1': 'Kinetic model',
+			'5.1.2': 'Kinetic model',
+			'5.2.1': 'Internal energy stores'
+		};
+		seed(doc);
+		const { stub } = stubFetch();
+		openPage(ReportsPage);
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		await page.getByRole('button', { name: 'Next' }).click();
+		await skipGrades();
+		await page.getByRole('button', { name: 'Write 7 reports' }).click();
+		await expect.element(page.getByRole('button', { name: 'Print all 7' })).toBeInTheDocument();
+
+		const sheet = document.querySelector('main [data-report-id="ada"]');
+		const strip = [...(sheet?.querySelectorAll('h3') ?? [])].find(
+			(heading) => heading.textContent === 'By topic'
+		)?.parentElement;
+		const rows = [...(strip?.querySelectorAll('.flex.items-start') ?? [])].map((row) =>
+			row.textContent?.replace(/\s+/g, ' ').trim()
+		);
+		// Ada: entry-1 (3/4) counts once toward the shared name, plus entry-2 (2/6).
+		const shared = rows.filter((row) => row?.startsWith('Kinetic model'));
+		expect(shared).toHaveLength(1);
+		expect(shared[0]).toMatch(/^Kinetic model 5\/10\b/);
+		expect(posted(stub)[0].entries[0].topics).toEqual(['Kinetic model', 'Kinetic model']);
+	});
+
+	function ownWritten(
+		doc: MarksheetDocument,
+		prose: Parameters<typeof writeFor>[2]
+	): MarksheetDocument {
+		const only = {
+			...doc,
+			students: [doc.students[0]],
+			marks: { [doc.students[0].id]: doc.marks[doc.students[0].id] }
+		};
+		writeFor(only, [only.students[0].id], prose);
+		return only;
+	}
+
+	it('flags an emptied areas section for a student who dropped marks, and prints it blank', async () => {
+		seed(ownWritten(plain(), { areasForImprovement: ['Check units'] }));
+		stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		await page.getByLabelText('Area for improvement 1 for Ada Lovelace').fill('');
+		await userEvent.keyboard('{Tab}');
+
+		await expect.element(page.getByText('Areas for improvement is empty')).toBeInTheDocument();
+		const printed = document.querySelector('[data-testid="print-root"]')?.textContent ?? '';
+		expect(printed).not.toContain('You dropped no marks');
+	});
+
+	it('prints the no-areas line for a student who gained every mark', async () => {
+		const doc = plain();
+		doc.marks['ada'] = { 'entry-1': 4, 'entry-2': 6 };
+		seed(ownWritten(doc, { areasForImprovement: [] }));
+		stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		expect(document.querySelector('[data-testid="print-root"]')?.textContent).toContain(
+			'You dropped no marks'
+		);
+		expect(page.getByText('Areas for improvement is empty').query()).toBeNull();
+	});
+
+	it('edits each feedback item inside the printed list markup', async () => {
+		seed(ownWritten(plain(), { strengths: ['First strength', 'Second strength'] }));
+		stubFetch();
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		const sheet = document.querySelector('main [data-report-id="ada"]');
+		expect(sheet?.querySelectorAll('ul > li > textarea')).toHaveLength(2);
+		expect(sheet?.querySelectorAll('ol > li > textarea')).toHaveLength(1);
+	});
+});
