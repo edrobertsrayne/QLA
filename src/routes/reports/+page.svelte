@@ -1,139 +1,40 @@
 <!--
-	Reports: who gets one, the writing, and the pages to review and print.
+	Reports: topic names, grades, who gets one, the writing, and the pages to
+	review and print. The page owns the step, the run and the printer; each
+	step is a component over the roster.
 -->
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount, tick } from 'svelte';
-	import UndoAlert from '$lib/components/marksheet/UndoAlert.svelte';
-	import ModelSelect from '$lib/components/parse/ModelSelect.svelte';
 	import { ModelList } from '$lib/components/parse/model-list.svelte.js';
-	import ConfirmDialog from '$lib/components/report/ConfirmDialog.svelte';
-	import PrintRoot from '$lib/components/report/PrintRoot.svelte';
-	import ReportSheet from '$lib/components/report/ReportSheet.svelte';
 	import GradeBoundariesForm from '$lib/components/report/GradeBoundariesForm.svelte';
-	import { isFlagged, reportFit } from '$lib/components/report/report-fit.svelte.js';
-	import { proposeTopicNames } from '$lib/components/report/topic-name-proposal.js';
+	import PrintRoot from '$lib/components/report/PrintRoot.svelte';
+	import ReviewStep from '$lib/components/report/ReviewStep.svelte';
+	import TopicNamesStep from '$lib/components/report/TopicNamesStep.svelte';
+	import WhoStep from '$lib/components/report/WhoStep.svelte';
+	import WritingStep from '$lib/components/report/WritingStep.svelte';
+	import { reportRoster, rowsOf } from '$lib/components/report/report-roster.js';
 	import { ReportRun } from '$lib/components/report/report-run.svelte.js';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Label } from '$lib/components/ui/label';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { marksheetStore } from '$lib/marksheet/index.js';
-	import { blockerText, eligibilityRows, isEligible } from '$lib/marksheet/report-eligibility.js';
-	import { studentName } from '$lib/marksheet/students.js';
-	import { changedInputFields, generationInputFor } from '$lib/marksheet/report-input.js';
-	import { agree, count } from '$lib/prose.js';
-	import { MAX_LABEL_LENGTH } from '$lib/marksheet/report-limits.js';
 	import { topicCodesOf } from '$lib/marksheet/document.js';
 	import { boundariesOf } from '$lib/marksheet/grades.js';
+	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { topicNameGaps } from '$lib/marksheet/report-rollup.js';
-	import { droppedNoMarks, reportFiguresFor } from '$lib/marksheet/report-figures.js';
+
 	type Step = 'topics' | 'grades' | 'who' | 'writing' | 'review';
 
 	const store = marksheetStore();
-	const fit = reportFit();
 	const document = $derived(store.document);
-	const rows = $derived(document ? eligibilityRows(document) : []);
-	const students = $derived(store.students);
-	const nameOf = (id: string) => {
-		const student = students.find((candidate) => candidate.id === id);
-		return student ? studentName(student) : '';
-	};
-	const eligibleIds = $derived(rows.filter((row) => row.eligible).map((row) => row.studentId));
-	const blocked = $derived(rows.filter((row) => !row.eligible));
-	const writtenIds = $derived(
-		document ? students.filter((s) => document.reports[s.id]).map((s) => s.id) : []
+	const gaps = $derived(
+		document ? topicNameGaps(document) : { missing: [], overLong: [], blocked: false }
 	);
-	/** Reports the teacher can see: written and still eligible. Ineligible
-	 * reports are kept with their edits, hidden from Review and never printed.
-	 */
-	const reviewIds = $derived(
-		document
-			? students
-					.filter((s) => document.reports[s.id] && isEligible(document, s.id))
-					.map((s) => s.id)
-			: []
-	);
-	/** What the stored prose no longer matches, per visible report. Grade
-	 * boundaries and the model never count: they never reach the input.
-	 */
-	const outOfDateChanges = (id: string): string[] => {
-		if (!document) return [];
-		const report = document.reports[id];
-		if (!report) return [];
-		const changes = changedInputFields(report.input, generationInputFor(document, id));
-		return changes ?? [];
-	};
-	const outOfDateIds = $derived(reviewIds.filter((id) => outOfDateChanges(id).length > 0));
-	const editedOutOfDateIds = $derived(
-		outOfDateIds.filter((id) => document?.reports[id]?.edit !== null)
-	);
-	let includeEdited = $state(false);
 
-	/** The report awaiting the teacher's say-so before their edits are discarded. */
-	let confirmRewrite = $state<string | null>(null);
-
-	/** One fresh page: over a teacher's edit only with their say-so. */
-	function rewriteOne(id: string): void {
-		const report = document?.reports[id];
-		if (!report) return;
-		if (report.edit !== null) {
-			confirmRewrite = id;
-			return;
-		}
-		run.retry([id], modelOverride);
-	}
-
-	/** An emptied areas section that claims nothing: flagged because print leaves it blank. */
-	const areasEmptied = (id: string): boolean => {
-		const report = document?.reports[id];
-		return (
-			!!document &&
-			!!report &&
-			(report.edit ?? report).areasForImprovement.length === 0 &&
-			!droppedNoMarks(reportFiguresFor(document, id))
-		);
-	};
-
-	/** Pages a print would send that the teacher should know about first. */
-	interface PrintWarning {
-		ids: string[];
-		outOfDate: number;
-		overflow: number;
-	}
-	let pendingPrint = $state<PrintWarning | null>(null);
-
-	/** Out-of-date pages among `ids` that a rewrite may touch: edited ones only when opted in. */
-	const rewritableOf = (ids: string[]): string[] =>
-		ids.filter(
-			(id) =>
-				outOfDateChanges(id).length > 0 && (includeEdited || document?.reports[id]?.edit === null)
-		);
-
-	function rewriteOutOfDate(ids: string[]): void {
-		const targets = rewritableOf(ids);
-		if (targets.length > 0) run.retry(targets, modelOverride);
-	}
-
-	/** Print asks first when an out-of-date or overflowing page would go to the printer. */
-	function askPrint(ids: string[]): void {
-		const outOfDate = ids.filter((id) => outOfDateChanges(id).length > 0).length;
-		const overflow = ids.filter((id) => isFlagged(fit.fitOf(id))).length;
-		if (outOfDate === 0 && overflow === 0) void print(ids);
-		else pendingPrint = { ids, outOfDate, overflow };
-	}
-
-	/**
-	 * Every normalised specification-point code on the paper, in first-seen
-	 * order. A paper with none skips the Topic names step and makes no
-	 * proposal call.
-	 */
-	const topicCodes = $derived(document ? topicCodesOf(document) : []);
-
-	// The step the teacher lands on: reports written means Review, otherwise
-	// the first step of the flow (Topic names when the paper has codes). The
-	// layout load has already read the document before this page renders.
+	// The step the teacher lands on: a paper with a missing or over-long topic
+	// name starts at Topic names, which locks every later step until it is
+	// fixed; otherwise reports written means Review, otherwise the first step
+	// of the flow. The layout load has already read the document before this
+	// page renders.
 	const landing = store.document;
 	let step = $state<Step>(
 		!landing
@@ -148,110 +49,41 @@
 	);
 
 	// The paper has topic codes only when some entry carries a specification point.
-	const STEPS: { id: Step; label: string }[] = $derived(
-		topicCodes.length > 0
-			? [
-					{ id: 'topics', label: 'Topic names' },
-					{ id: 'grades', label: 'Grades' },
-					{ id: 'who', label: 'Who gets one' },
-					{ id: 'writing', label: 'Writing' },
-					{ id: 'review', label: 'Review and print' }
-				]
-			: [
-					{ id: 'grades', label: 'Grades' },
-					{ id: 'who', label: 'Who gets one' },
-					{ id: 'writing', label: 'Writing' },
-					{ id: 'review', label: 'Review and print' }
-				]
-	);
+	const hasTopics = $derived(document ? topicCodesOf(document).length > 0 : false);
+	const STEPS: { id: Step; label: string }[] = $derived([
+		...(hasTopics ? [{ id: 'topics' as const, label: 'Topic names' }] : []),
+		{ id: 'grades', label: 'Grades' },
+		{ id: 'who', label: 'Who gets one' },
+		{ id: 'writing', label: 'Writing' },
+		{ id: 'review', label: 'Review and print' }
+	]);
 
 	let modelOverride = $state('');
 	let modelCustom = $state(false);
 	const models = new ModelList();
-
-	onMount(() => {
-		void models.load();
-		if (step === 'topics' && gaps.missing.length > 0) void proposeMissing();
-	});
-	const gaps = $derived(
-		document ? topicNameGaps(document) : { missing: [], overLong: [], blocked: false }
-	);
-
-	let proposing = $state(false);
-	let proposeError = $state<string | null>(null);
-
-	/**
-	 * Ask the model to name the codes still missing one. Typed names are never
-	 * overwritten, and unusable answers (blank, over-long, contact) are dropped
-	 * by the server, leaving the gap for the teacher.
-	 */
-	async function proposeMissing(): Promise<void> {
-		if (!document || proposing) return;
-		const missing = [...gaps.missing];
-		if (missing.length === 0) return;
-		proposing = true;
-		proposeError = null;
-		try {
-			const names = await proposeTopicNames(document, missing, modelOverride);
-			for (const code of missing) {
-				const name = names[code];
-				if (name !== undefined && store.document) {
-					const current = store.document.topicNames[code] ?? '';
-					if (current.trim() === '') store.setTopicName(code, name);
-				}
-			}
-		} catch (error) {
-			proposeError = error instanceof Error ? error.message : 'Proposal failed.';
-		} finally {
-			proposing = false;
-		}
-	}
-
-	/**
-	 * Every move between steps goes through here: arriving at Topic names with
-	 * a gap proposes names once — not on every new gap, so blanking a name to
-	 * retype it never fires a model call.
-	 */
-	function goTo(next: Step): void {
-		const arriving = next === 'topics' && step !== 'topics';
-		step = next;
-		if (arriving && gaps.missing.length > 0) void proposeMissing();
-	}
+	onMount(() => void models.load());
 
 	const run = new ReportRun(store, () => {
 		step = 'review';
 	});
 
-	function startRun(studentIds: string[]): void {
+	const roster = $derived(document ? reportRoster(document, run.tiles) : []);
+	/** Reports the teacher can see: written and still eligible. */
+	const reviewIds = $derived(rowsOf(roster, 'review').map((row) => row.studentId));
+
+	function writeNew(ids: string[]): void {
 		if (modelCustom) modelOverride = modelOverride.trim();
-		goTo('writing');
-		run.start(studentIds, modelOverride);
+		step = 'writing';
+		run.start(ids, modelOverride);
 	}
 
-	/** Eligible students with no report: Who gets one never writes over a stored one. */
-	const unwrittenIds = $derived(eligibleIds.filter((id) => document && !document.reports[id]));
-
-	function write(): void {
-		startRun(unwrittenIds);
+	function writeAgain(ids: string[]): void {
+		step = 'writing';
+		run.retry(ids, modelOverride);
 	}
 
-	/**
-	 * Students the last run did not cover: eligible now with no report and no
-	 * tile yet. A failure or a Stop leaves tiles behind, so those students are
-	 * retried from the Writing step, not counted here as newly eligible.
-	 */
-	const pendingIds = $derived(
-		eligibleIds.filter((id) => document && !document.reports[id] && !(id in run.tiles))
-	);
-
-	function writeMore(): void {
-		goTo('writing');
-		run.retry(pendingIds, modelOverride);
-	}
-
-	function retryFailed(): void {
-		goTo('writing');
-		run.retry([...run.failed], modelOverride);
+	function rewriteHere(ids: string[]): void {
+		if (ids.length > 0) run.retry(ids, modelOverride);
 	}
 
 	/** Pages the printer gets; null means not printing, so every visible page shows for measuring. */
@@ -268,22 +100,6 @@
 		window.addEventListener('afterprint', reset);
 		return () => window.removeEventListener('afterprint', reset);
 	});
-
-	function statusOf(studentId: string): string {
-		const row = rows.find((candidate) => candidate.studentId === studentId);
-		if (row && !row.eligible) {
-			return row.blockers.some((blocker) => blocker.kind === 'absent') ? 'Absent' : 'Blocked';
-		}
-		return run.tiles[studentId]?.kind === 'failed' ? 'Failed' : 'Not written';
-	}
-
-	function jumpTo(studentId: string): void {
-		globalThis.document
-			.querySelector(`[data-page-for="${CSS.escape(studentId)}"]`)
-			?.scrollIntoView({ block: 'start' });
-	}
-
-	const TILE_LABEL = { queued: 'Queued', writing: 'Writing', ready: 'Ready', failed: 'Failed' };
 </script>
 
 <svelte:head>
@@ -305,7 +121,7 @@
 							aria-current={step === item.id ? 'step' : undefined}
 							disabled={item.id !== 'topics' && gaps.blocked}
 							title={item.id !== 'topics' && gaps.blocked ? 'Name every topic first' : undefined}
-							onclick={() => goTo(item.id)}>{index + 1}. {item.label}</Button
+							onclick={() => (step = item.id)}>{index + 1}. {item.label}</Button
 						>
 					</li>
 				{/each}
@@ -313,61 +129,10 @@
 		</nav>
 	</div>
 
-	{#if step === 'topics'}
-		<section class="space-y-4">
-			<h1 class="text-xl font-semibold">Topic names</h1>
-			<p class="max-w-prose text-sm text-muted-foreground">
-				Reports show a student-readable name for every specification point on the paper, never a
-				bare code. Names stay with their code; retyping a code drops its name.
-			</p>
-			{#if proposeError}
-				<p role="alert" class="rounded-md border border-destructive p-3 text-sm">
-					{proposeError}
-					<Button
-						variant="outline"
-						size="sm"
-						class="ml-2"
-						disabled={proposing}
-						onclick={() => void proposeMissing()}>Retry</Button
-					>
-				</p>
-			{/if}
-			<ul class="max-w-xl space-y-2">
-				{#each topicCodes as code (code)}
-					<li class="flex items-center gap-3">
-						<span class="w-24 shrink-0 font-mono text-sm">{code}</span>
-						<Label class="sr-only" for={`topic-${code}`}>Name for {code}</Label>
-						<input
-							id={`topic-${code}`}
-							class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-							value={document?.topicNames[code] ?? ''}
-							maxlength={MAX_LABEL_LENGTH}
-							placeholder={proposing ? 'Proposing…' : 'Name this topic'}
-							oninput={(event) => store.setTopicName(code, event.currentTarget.value)}
-						/>
-					</li>
-				{/each}
-			</ul>
-			<div class="flex flex-wrap gap-2">
-				<Button
-					variant="outline"
-					disabled={proposing || gaps.missing.length === 0}
-					onclick={() => void proposeMissing()}
-				>
-					{proposing ? 'Proposing…' : 'Propose missing names'}
-				</Button>
-				<Button disabled={gaps.blocked} onclick={() => goTo('grades')}>Next</Button>
-			</div>
-			{#if gaps.blocked}
-				<p class="text-sm text-muted-foreground">
-					{#if gaps.overLong.length > 0}
-						Keep every name to {MAX_LABEL_LENGTH} characters: longer names fail the report run.
-					{:else}
-						Name every topic before continuing: reports never show a bare code.
-					{/if}
-				</p>
-			{/if}
-		</section>
+	{#if !document}
+		<!-- No document: the layout redirects away. -->
+	{:else if step === 'topics'}
+		<TopicNamesStep {document} {modelOverride} onnext={() => (step = 'grades')} />
 	{:else if step === 'grades'}
 		<section class="max-w-xl space-y-4">
 			<h1 class="text-xl font-semibold">Grades</h1>
@@ -375,268 +140,42 @@
 				Reports show a grade when the paper has boundaries. Set them now, or skip and reports show
 				marks only.
 			</p>
-			<GradeBoundariesForm onDone={() => goTo('who')} />
+			<GradeBoundariesForm onDone={() => (step = 'who')} />
 			<div class="flex flex-wrap gap-2">
-				{#if document && boundariesOf(document)}
-					<Button onclick={() => goTo('who')}>Next</Button>
+				{#if boundariesOf(document)}
+					<Button onclick={() => (step = 'who')}>Next</Button>
 				{:else}
-					<Button variant="outline" onclick={() => goTo('who')}>
+					<Button variant="outline" onclick={() => (step = 'who')}>
 						Skip: no grades on these reports
 					</Button>
 				{/if}
 			</div>
 		</section>
 	{:else if step === 'who'}
-		<section class="space-y-4">
-			<h1 class="text-xl font-semibold">{count(eligibleIds.length, 'student')} get a report</h1>
-			{#if blocked.length > 0}
-				<div class="space-y-2 rounded-md border p-3">
-					<h2 class="font-medium">Not getting one yet</h2>
-					<ul class="space-y-1 text-sm">
-						{#each blocked as row (row.studentId)}
-							<li>
-								<span class="font-medium">{nameOf(row.studentId)}</span>
-								<span class="text-muted-foreground"
-									>{row.blockers.map((blocker) => blockerText(blocker)).join(' · ')}</span
-								>
-							</li>
-						{/each}
-					</ul>
-					<a class="text-sm underline" href={resolve('/marksheet')}
-						>Back to the marksheet to fix these</a
-					>
-				</div>
-			{/if}
-			<div class="max-w-sm space-y-2">
-				<Label>Model override (optional)</Label>
-				<ModelSelect
-					bind:value={modelOverride}
-					bind:custom={modelCustom}
-					models={models.options}
-					loading={models.loading}
-					loadError={models.error}
-					onretry={() => void models.load()}
-				/>
-			</div>
-			<Button disabled={unwrittenIds.length === 0 || run.running} onclick={write}>
-				Write {count(unwrittenIds.length, 'report')}
-			</Button>
-			{#if eligibleIds.length > 0 && unwrittenIds.length === 0}
-				<p class="text-sm text-muted-foreground">
-					Every student here has a report. Rewrite them from Review and print.
-				</p>
-			{/if}
-		</section>
-	{:else if step === 'writing'}
-		<section class="space-y-4">
-			{#if run.order.length === 0}
-				<h1 class="text-xl font-semibold">Nothing is being written</h1>
-			{:else}
-				<h1 class="text-xl font-semibold">
-					{run.running
-						? `Writing ${run.done} of ${run.order.length}…`
-						: `Wrote ${run.done} of ${run.order.length}`}
-				</h1>
-			{/if}
-			{#if run.phase.kind === 'halted'}
-				<p role="alert" class="rounded-md border border-destructive p-3 text-sm">
-					{run.phase.message}
-				</p>
-			{/if}
-			{#if run.running}
-				<Button variant="outline" onclick={() => run.stop()}>Stop</Button>
-			{:else if run.order.length > 0}
-				<div class="flex gap-2">
-					{#if run.failed.length > 0}
-						<Button variant="outline" onclick={retryFailed}>Retry failed</Button>
-					{/if}
-					{#if run.failed.length > 0 || writtenIds.length > 0}
-						<Button onclick={() => goTo('review')}>Review {writtenIds.length}</Button>
-					{/if}
-					<Button variant="outline" onclick={() => goTo('who')}>Back to Who gets one</Button>
-				</div>
-			{/if}
-			<ul class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-				{#each run.order as id (id)}
-					{@const tile = run.tiles[id]}
-					<li class="rounded-md border p-3 text-sm" data-tile-for={id}>
-						<div class="font-medium">{nameOf(id)}</div>
-						<div class="text-muted-foreground">{TILE_LABEL[tile?.kind ?? 'queued']}</div>
-						{#if tile?.kind === 'failed'}<div class="text-destructive">{tile.message}</div>{/if}
-						{#if tile?.kind === 'failed'}
-							<Button
-								size="sm"
-								variant="outline"
-								disabled={run.running}
-								onclick={() => {
-									goTo('writing');
-									run.retry([id], modelOverride);
-								}}>Retry</Button
-							>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-		</section>
-	{:else if document}
-		<section class="flex items-start gap-6">
-			<aside class="sticky top-4 w-56 shrink-0 space-y-3 self-start">
-				<Button disabled={reviewIds.length === 0} onclick={() => askPrint(reviewIds)}>
-					Print all {reviewIds.length}
-				</Button>
-				{#if outOfDateIds.length > 0 && !run.running}
-					{@const skipped = includeEdited ? 0 : editedOutOfDateIds.length}
-					{@const rewritable = outOfDateIds.length - skipped}
-					<Button
-						variant="outline"
-						disabled={rewritable === 0}
-						onclick={() => rewriteOutOfDate(reviewIds)}
-						title={skipped > 0 ? 'Tick the box to include edited reports' : undefined}
-					>
-						Rewrite {rewritable} out of date{skipped > 0 ? ` (skips ${skipped} edited)` : ''}
-					</Button>
-					{#if editedOutOfDateIds.length > 0}
-						<Label class="gap-1.5 text-xs font-normal text-muted-foreground">
-							<Checkbox bind:checked={includeEdited} /> also rewrite {editedOutOfDateIds.length} edited
-							(discards edits)
-						</Label>
-					{/if}
-				{/if}
-				{#if run.running}
-					<p class="text-sm text-muted-foreground">Rewriting…</p>
-				{/if}
-				{#if pendingIds.length > 0 && !run.running}
-					<Button variant="outline" onclick={writeMore}>Write {pendingIds.length} more</Button>
-				{/if}
-				<ul class="space-y-1 text-sm">
-					{#each students as student (student.id)}
-						{@const row = rows.find((candidate) => candidate.studentId === student.id)}
-						<li>
-							{#if reviewIds.includes(student.id)}
-								<button type="button" class="underline" onclick={() => jumpTo(student.id)}
-									>{studentName(student)}</button
-								>
-							{:else}
-								<span>{studentName(student)}</span>
-								{#if document.reports[student.id] && row && !row.eligible}
-									<span class="text-muted-foreground">
-										Blocked ({row.blockers.map((blocker) => blockerText(blocker)).join(' · ')})
-									</span>
-								{:else}
-									<span class="text-muted-foreground">{statusOf(student.id)}</span>
-								{/if}
-							{/if}
-						</li>
-					{/each}
-				</ul>
-			</aside>
-			<div class="min-w-0 flex-1 space-y-8 overflow-x-auto">
-				{#if reviewIds.length === 0}
-					<p>No reports have been written yet.</p>
-				{/if}
-				<UndoAlert kinds={['report-edit', 'report-kept']} testid="report-edit-undo" />
-				{#each reviewIds as id (id)}
-					{@const changes = outOfDateChanges(id)}
-					{@const tile = run.tiles[id]}
-					{@const pageFit = fit.fitOf(id)}
-					<div data-page-for={id} class="space-y-2">
-						<div class="flex flex-wrap items-center gap-2">
-							<Button variant="outline" size="sm" onclick={() => askPrint([id])}
-								>Print this page</Button
-							>
-							{#if document.reports[id].edit !== null}
-								<Badge variant="secondary">edited</Badge>
-								<Button variant="outline" size="sm" onclick={() => store.revertReport(id)}
-									>Revert</Button
-								>
-							{/if}
-							{#if changes.length > 0}
-								<p class="text-sm font-medium">Out of date ({changes.join(', ')})</p>
-								<Button variant="outline" size="sm" onclick={() => store.keepReportWording(id)}
-									>Keep wording</Button
-								>
-							{/if}
-							{#if areasEmptied(id)}
-								<Badge variant="destructive">Areas for improvement is empty</Badge>
-							{/if}
-							{#if isFlagged(pageFit)}
-								<Badge variant="destructive"
-									>Runs {pageFit.overMm} mm over the page; print cuts it off</Badge
-								>
-							{/if}
-							<Button variant="outline" size="sm" onclick={() => rewriteOne(id)}>Rewrite</Button>
-							{#if tile?.kind === 'writing'}
-								<span class="text-sm text-muted-foreground">Rewriting…</span>
-							{/if}
-						</div>
-						{#if tile?.kind === 'failed'}
-							<p role="alert" class="rounded-md border border-destructive p-3 text-sm">
-								{tile.message}
-								<Button size="sm" variant="outline" onclick={() => rewriteOne(id)}>Retry</Button>
-							</p>
-						{/if}
-						<ReportSheet
-							{document}
-							studentId={id}
-							report={document.reports[id]}
-							editable
-							measure={false}
-							onedit={(prose) => store.editReport(id, prose)}
-						/>
-					</div>
-				{/each}
-			</div>
-		</section>
-	{/if}
-	{#if confirmRewrite !== null}
-		{@const id = confirmRewrite}
-		<ConfirmDialog
-			title="Rewrite this report?"
-			description="This discards your edits."
-			actions={[
-				{ label: 'Keep my edits', variant: 'outline', onclick: () => {} },
-				{
-					label: 'Discard edits and rewrite',
-					variant: 'destructive',
-					onclick: () => run.retry([id], modelOverride)
-				}
-			]}
-			onclose={() => (confirmRewrite = null)}
+		<WhoStep
+			{roster}
+			running={run.running}
+			{models}
+			bind:modelOverride
+			bind:modelCustom
+			onwrite={writeNew}
 		/>
-	{/if}
-	{#if pendingPrint}
-		{@const { ids, outOfDate, overflow } = pendingPrint}
-		<ConfirmDialog
-			title={outOfDate > 0 && overflow > 0
-				? 'Out-of-date and overflowing reports'
-				: outOfDate > 0
-					? 'Out-of-date reports'
-					: 'Overflowing reports'}
-			description={[
-				...(outOfDate > 0
-					? [`${count(outOfDate, 'report')} ${agree(outOfDate, 'is', 'are')} out of date.`]
-					: []),
-				...(overflow > 0
-					? [
-							`${count(overflow, 'report')} ${agree(overflow, 'runs', 'run')} over the page; print cuts the overflow off.`
-						]
-					: []),
-				'Print anyway?'
-			].join(' ')}
-			actions={[
-				{ label: 'Print anyway', onclick: () => void print(ids) },
-				...(rewritableOf(ids).length > 0
-					? [
-							{
-								label: `Rewrite ${outOfDate === 1 ? 'it' : 'them'} first`,
-								variant: 'outline' as const,
-								onclick: () => rewriteOutOfDate(ids)
-							}
-						]
-					: []),
-				{ label: 'Keep editing', variant: 'outline', onclick: () => {} }
-			]}
-			onclose={() => (pendingPrint = null)}
+	{:else if step === 'writing'}
+		<WritingStep
+			{run}
+			{roster}
+			onretry={writeAgain}
+			onreview={() => (step = 'review')}
+			onback={() => (step = 'who')}
+		/>
+	{:else}
+		<ReviewStep
+			{document}
+			{roster}
+			{run}
+			onprint={(ids) => void print(ids)}
+			onrewrite={rewriteHere}
+			onwritemore={writeAgain}
 		/>
 	{/if}
 </main>

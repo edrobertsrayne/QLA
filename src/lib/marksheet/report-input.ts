@@ -42,15 +42,12 @@ export function generationInputFor(
  * What a stored generation input no longer matches, in the words the Review
  * strip shows beside the marker: one phrase per changed thing. Position
  * matters — a reordered, added or removed question changes what the model
- * saw, even when every figure is otherwise the same. Null when the student
- * is blocked now — there is nothing to compare against, and Review hides
- * the report rather than marking it.
+ * saw, even when every figure is otherwise the same.
  */
 export function changedInputFields(
 	stored: ReportGenerationInput,
-	current: ReportGenerationInput | null
-): string[] | null {
-	if (!current) return null;
+	current: ReportGenerationInput
+): string[] {
 	const changes: string[] = [];
 	if (stored.paperLabel !== current.paperLabel) changes.push('the paper label');
 	const longest = Math.max(stored.entries.length, current.entries.length);
