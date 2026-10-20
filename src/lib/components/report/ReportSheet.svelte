@@ -49,8 +49,7 @@
 	/** The grade is live from the document, never stored or sent: moving a
 	 * boundary re-renders every page without marking anything out of date. */
 	const grade = $derived(paperGrade(document, figures.total));
-	const strengths = $derived((report.edit ?? report).strengths);
-	const areas = $derived((report.edit ?? report).areasForImprovement);
+	const prose = $derived(report.edit ?? report);
 	const displayName = $derived(student ? studentName(student) : '');
 
 	/**
@@ -65,34 +64,38 @@
 			.filter((line) => line !== '');
 	}
 
-	function sameProse(a: ReportProse, b: ReportProse): boolean {
-		return (
-			a.strengths.join('\n') === b.strengths.join('\n') &&
-			a.areasForImprovement.join('\n') === b.areasForImprovement.join('\n')
-		);
-	}
-
 	type Section = 'strengths' | 'areasForImprovement';
+
+	const SECTIONS = [
+		{ key: 'strengths', title: 'Strengths', noun: 'Strength', ordered: false },
+		{
+			key: 'areasForImprovement',
+			title: 'Areas for improvement',
+			noun: 'Area for improvement',
+			ordered: true
+		}
+	] as const satisfies readonly { key: Section; title: string; noun: string; ordered: boolean }[];
 
 	/**
 	 * Save on blur, not on input: every keystroke is not a change, and trimming
-	 * never lands while the teacher is still typing. An unchanged field saves
-	 * nothing, so tabbing through the page spends no undo.
+	 * never lands while the teacher is still typing. `onchange` only fires on a
+	 * real change, and the store ignores an edit that changes nothing, so
+	 * tabbing through the page spends no undo.
 	 */
 	function saveSection(section: Section, values: string[]): void {
-		const prose: ReportProse = {
-			strengths: section === 'strengths' ? values : [...strengths],
-			areasForImprovement: section === 'areasForImprovement' ? values : [...areas]
+		const next: ReportProse = {
+			strengths: prose.strengths,
+			areasForImprovement: prose.areasForImprovement
 		};
-		if (!sameProse(prose, report.edit ?? report)) onedit?.(prose);
+		next[section] = values;
+		onedit?.(next);
 	}
 
 	/** Replace one item of a section with what was typed in its field. */
 	function saveItem(section: Section, index: number, value: string): void {
-		const current = section === 'strengths' ? strengths : areas;
 		saveSection(
 			section,
-			current.flatMap((line, i) => (i === index ? valuesOf(value) : [line]))
+			prose[section].flatMap((line, i) => (i === index ? valuesOf(value) : [line]))
 		);
 	}
 
@@ -165,7 +168,7 @@
 	<div class="flex min-h-full flex-col p-[10mm]">
 		<header class="flex items-center justify-between gap-4">
 			<div class="min-w-0">
-				<h2 class="text-[18pt] leading-tight font-bold">{student ? studentName(student) : ''}</h2>
+				<h2 class="text-[18pt] leading-tight font-bold">{displayName}</h2>
 				{#if document.paper.className}<p class="text-[10pt]">{document.paper.className}</p>{/if}
 				<p class="text-[9pt] text-neutral-700">{document.paper.label ?? ''}</p>
 			</div>
@@ -205,10 +208,11 @@
 				class="grid grid-cols-2 gap-6 text-[10.5pt] leading-snug"
 				style:font-size={!measure ? feedbackFontSize(settled.scale) : undefined}
 			>
-				{#snippet feedback(section: Section, title: string, noun: string, ordered: boolean)}
-					{@const lines = section === 'strengths' ? strengths : areas}
+				{#snippet feedback(section: (typeof SECTIONS)[number])}
+					{@const { key, title, noun, ordered } = section}
+					{@const lines = prose[key]}
 					{@const emptyLine =
-						section === 'strengths'
+						key === 'strengths'
 							? EMPTY_STRENGTHS_LINE
 							: droppedNoMarks(figures)
 								? EMPTY_AREAS_LINE
@@ -222,7 +226,7 @@
 								rows={1}
 								class="field-sizing-content w-full resize-none bg-transparent align-top outline-none"
 								value={line}
-								onchange={(event) => saveItem(section, i, event.currentTarget.value)}></textarea>
+								onchange={(event) => saveItem(key, i, event.currentTarget.value)}></textarea>
 						{:else}
 							{line}
 						{/if}
@@ -239,7 +243,7 @@
 										: ''}"
 									placeholder={emptyLine ?? `Add ${noun.toLowerCase()}`}
 									value=""
-									onchange={(event) => saveSection(section, valuesOf(event.currentTarget.value))}
+									onchange={(event) => saveSection(key, valuesOf(event.currentTarget.value))}
 								></textarea>
 							{:else if emptyLine}
 								<p>{emptyLine}</p>
@@ -255,13 +259,9 @@
 						{/if}
 					</div>
 				{/snippet}
-				{@render feedback('strengths', 'Strengths', 'Strength', false)}
-				{@render feedback(
-					'areasForImprovement',
-					'Areas for improvement',
-					'Area for improvement',
-					true
-				)}
+				{#each SECTIONS as section (section.key)}
+					{@render feedback(section)}
+				{/each}
 			</section>
 		</div>
 
