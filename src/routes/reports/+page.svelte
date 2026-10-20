@@ -8,6 +8,7 @@
 	import ModelSelect, { type ModelOption } from '$lib/components/parse/ModelSelect.svelte';
 	import PrintRoot from '$lib/components/report/PrintRoot.svelte';
 	import ReportSheet from '$lib/components/report/ReportSheet.svelte';
+	import GradeBoundariesForm from '$lib/components/report/GradeBoundariesForm.svelte';
 	import { ReportRun } from '$lib/components/report/report-run.svelte.js';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
@@ -20,7 +21,7 @@
 	import { changedInputFields, generationInputFor } from '$lib/marksheet/report-input.js';
 	import { agree, count } from '$lib/prose.js';
 	import { specPointCodes } from '$lib/marksheet/document.js';
-	type Step = 'topics' | 'who' | 'writing' | 'review';
+	type Step = 'topics' | 'grades' | 'who' | 'writing' | 'review';
 
 	const store = marksheetStore();
 	const document = $derived(store.document);
@@ -110,11 +111,13 @@
 		topicCodes.length > 0
 			? [
 					{ id: 'topics', label: 'Topic names' },
+					{ id: 'grades', label: 'Grades' },
 					{ id: 'who', label: 'Who gets one' },
 					{ id: 'writing', label: 'Writing' },
 					{ id: 'review', label: 'Review and print' }
 				]
 			: [
+					{ id: 'grades', label: 'Grades' },
 					{ id: 'who', label: 'Who gets one' },
 					{ id: 'writing', label: 'Writing' },
 					{ id: 'review', label: 'Review and print' }
@@ -160,7 +163,7 @@
 				? 'review'
 				: topicCodes.length > 0
 					? 'topics'
-					: 'who';
+					: 'grades';
 	});
 	const missingNames = $derived(
 		topicCodes.filter((code) => (document?.topicNames[code] ?? '').trim() === '')
@@ -374,7 +377,7 @@
 				>
 					{proposing ? 'Proposing…' : 'Propose missing names'}
 				</Button>
-				<Button disabled={topicsBlocked} onclick={() => (step = 'who')}>Next</Button>
+				<Button disabled={topicsBlocked} onclick={() => (step = 'grades')}>Next</Button>
 			</div>
 			{#if topicsBlocked}
 				<p class="text-sm text-muted-foreground">
@@ -385,6 +388,22 @@
 					{/if}
 				</p>
 			{/if}
+		</section>
+	{:else if step === 'grades'}
+		<section class="max-w-xl space-y-4">
+			<h1 class="text-xl font-semibold">Grades</h1>
+			<p class="max-w-prose text-sm text-muted-foreground">
+				Reports show a grade when the paper has boundaries. Set them now, or skip and reports show
+				marks only.
+			</p>
+			<GradeBoundariesForm onDone={() => (step = 'who')} />
+			<div class="flex flex-wrap gap-2">
+				<Button variant="outline" onclick={() => (step = 'who')}>
+					{document?.paper.boundaries
+						? 'Skip: keep saved grades'
+						: 'Skip: no grades on these reports'}
+				</Button>
+			</div>
 		</section>
 	{:else if step === 'who'}
 		<section class="space-y-4">
