@@ -16,7 +16,7 @@ export interface FenceMarkers {
 }
 
 /** Marker strings for `nonce`; the single source — no other copy exists. */
-export function fenceMarkers(nonce: string): FenceMarkers {
+function fenceMarkers(nonce: string): FenceMarkers {
 	return {
 		open: `<<<DOCUMENT-START boundary="${nonce}">>>`,
 		close: `<<<DOCUMENT-END boundary="${nonce}">>>`

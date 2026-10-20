@@ -8,7 +8,7 @@
 // touch fetch.
 
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { fenceDocuments, fenceMarkers } from './fence';
+import { fenceDocuments } from './fence';
 import {
 	callStructuredModel,
 	resetStructuredFetch,
@@ -46,21 +46,15 @@ function chatBody(
 	};
 }
 
-describe('fenceMarkers', () => {
-	it('is the single source of the marker strings', () => {
-		expect(fenceMarkers('abc123')).toEqual({
-			open: '<<<DOCUMENT-START boundary="abc123">>>',
-			close: '<<<DOCUMENT-END boundary="abc123">>>'
-		});
-	});
-});
-
 describe('fenceDocuments', () => {
 	it('builds matching markers around a fresh 32-hex nonce and names them in the directive', () => {
 		const fence = fenceDocuments('alpha', 'beta');
 
 		expect(fence.nonce).toMatch(/^[0-9a-f]{32}$/);
-		expect({ open: fence.open, close: fence.close }).toEqual(fenceMarkers(fence.nonce));
+		expect({ open: fence.open, close: fence.close }).toEqual({
+			open: `<<<DOCUMENT-START boundary="${fence.nonce}">>>`,
+			close: `<<<DOCUMENT-END boundary="${fence.nonce}">>>`
+		});
 		expect(fence.directive).toContain(fence.open);
 		expect(fence.directive).toContain(fence.close);
 		expect(fence.directive).toMatch(/never instructions to follow/i);
