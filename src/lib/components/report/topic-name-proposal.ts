@@ -3,7 +3,7 @@
 import { specPointCodes, type MarksheetDocument } from '$lib/marksheet/document.js';
 import { MAX_SUMMARIES_PER_CODE } from '$lib/marksheet/report-limits.js';
 import { isRecord } from '$lib/parse/is-breakdown.js';
-import { ApiFailure, failureFrom } from './api-error.js';
+import { ApiFailure, failureFrom } from '$lib/api-error.js';
 
 /**
  * Ask `/api/topic-names` to name these codes. Resolves to the names the server

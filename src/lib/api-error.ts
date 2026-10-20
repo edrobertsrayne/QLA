@@ -1,5 +1,5 @@
-// Reading the API's error envelope: one reader for every call the reports
-// page makes, so a failure carries the server's message, code and retry hint.
+// Reading the API's error envelope: one reader for every client call to
+// `/api/*`, so a failure carries the server's message, code and retry hint.
 
 import { isRecord } from '$lib/parse/is-breakdown.js';
 

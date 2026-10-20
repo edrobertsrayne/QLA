@@ -5,7 +5,7 @@
 <script lang="ts">
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import { toast } from 'svelte-sonner';
-	import { failureFrom } from '$lib/components/report/api-error.js';
+	import { failureFrom } from '$lib/api-error.js';
 	import { isRecord } from '$lib/parse/is-breakdown.js';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
