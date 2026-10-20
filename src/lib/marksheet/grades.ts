@@ -1,11 +1,12 @@
 // Grade boundaries for one paper: an ordered list of (grade label, minimum
 // total mark), top grade first, plus the label for a total below the lowest
 // boundary. Pure functions over plain values — no I/O, no reactive state — so
-// the dialog, the marksheet grid and the report header share one rule.
+// the dialog, the marksheet grid and the report header share one rule; the
+// commands at the end mutate a document in place for the store to commit.
 //
-// A blank row is never stored: it reads as "not used" and is dropped on save.
-// Validation works on rows as typed, so a half-typed row shows its problem
-// where it is rather than refusing the keystroke.
+// A row with no minimum is never stored: it reads as "not used" and is dropped
+// on save. Validation works on rows as typed, so a half-typed row shows its
+// problem where it is rather than refusing the keystroke.
 
 import {
 	DEFAULT_BELOW_LOWEST_LABEL,
@@ -207,4 +208,31 @@ export function studentGrade(document: MarksheetDocument, student: StoredStudent
 	const grade = paperGrade(document, total);
 	const { marked, total: of } = progressOf(marks, entries);
 	return marked === of ? { kind: 'complete', total, grade } : { kind: 'partial', total, grade };
+}
+
+// Commands: mutate a document in place.
+
+/**
+ * Store the paper's grade boundaries, top grade first, and the below-lowest
+ * label. Saving what amounts to nothing is marks only: no boundaries stores
+ * null, like a paper that never had grades.
+ */
+export function setBoundaries(
+	document: MarksheetDocument,
+	boundaries: readonly GradeBoundary[],
+	belowLowestLabel: string
+): void {
+	document.paper.boundaries = boundaries.length === 0 ? null : boundaries.map((b) => ({ ...b }));
+	document.paper.belowLowestLabel = belowLabelOf(belowLowestLabel);
+}
+
+/**
+ * Drop every boundary, back to marks only. The below-lowest label stays
+ * where it was, so re-adding grades finds it as the teacher left it. False
+ * when the paper already had none.
+ */
+export function clearBoundaries(document: MarksheetDocument): boolean {
+	if (document.paper.boundaries === null) return false;
+	document.paper.boundaries = null;
+	return true;
 }

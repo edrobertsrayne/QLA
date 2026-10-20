@@ -52,7 +52,8 @@ import {
 	type StudentName,
 	type StudentSortKey
 } from './students.js';
-import { generationInputFor } from './report-input.js';
+import { keepWording, setReportEdit, writeReport } from './report-commands.js';
+import { clearBoundaries, setBoundaries } from './grades.js';
 
 export interface MarksheetStoreDeps {
 	storage: DocumentStorage;
@@ -68,17 +69,19 @@ export type BootRoute = '/' | '/breakdown' | '/marksheet';
  * change clears it, so a second click can never take back two things. Each kind
  * carries the whole document as it was before the change.
  */
-export type Undoable =
+export type UndoableChange =
 	| {
 			kind: 'entry-removal' | 'student-removal';
 			/** What the notice calls what went. */
 			name: string;
-			before: MarksheetDocument;
 	  }
-	| { kind: 'mark-paste'; before: MarksheetDocument }
-	| { kind: 'report-edit'; studentId: string; before: MarksheetDocument }
-	| { kind: 'report-kept'; studentId: string; before: MarksheetDocument }
-	| { kind: 'grade-boundaries'; action: 'saved' | 'removed'; before: MarksheetDocument };
+	| { kind: 'mark-paste' }
+	| { kind: 'report-edit'; studentId: string }
+	| { kind: 'report-kept'; studentId: string }
+	| { kind: 'grade-boundaries'; action: 'saved' | 'removed' };
+
+/** An undoable change with the whole document as it was before it. */
+export type Undoable = UndoableChange & { before: MarksheetDocument };
 
 export interface CreateFromParseInput {
 	breakdown: Breakdown;
@@ -369,26 +372,21 @@ export class MarksheetStore {
 
 	/** Delete an entry, leaving it — and what was recorded against it — one undo away. */
 	deleteEntry(entryId: string): boolean {
-		const document = this.#editable();
-		if (!document) return false;
+		if (!this.#editable()) return false;
+		return this.#commit((document) => {
+			const entries = document.breakdown.entries;
+			const index = entries.findIndex((entry) => entry.id === entryId);
+			if (index === -1) return null;
+			const [entry] = entries.splice(index, 1);
 
-		const before = copyOf(document);
-		const entries = document.breakdown.entries;
-		const index = entries.findIndex((entry) => entry.id === entryId);
-		if (index === -1) return false;
-		const [entry] = entries.splice(index, 1);
-
-		// What was recorded against the entry goes with it: nothing can reach it
-		// again, so it would sit in the document unread.
-		for (const byEntry of Object.values(document.marks)) delete byEntry[entryId];
-		document.breakdown.warnings = document.breakdown.warnings.filter(
-			(warning) => warning.questionId !== entryId
-		);
-
-		// After the change, since the change itself clears any undo on offer.
-		this.#mutated();
-		this.undoable = { kind: 'entry-removal', name: entryName(entry), before };
-		return true;
+			// What was recorded against the entry goes with it: nothing can reach it
+			// again, so it would sit in the document unread.
+			for (const byEntry of Object.values(document.marks)) delete byEntry[entryId];
+			document.breakdown.warnings = document.breakdown.warnings.filter(
+				(warning) => warning.questionId !== entryId
+			);
+			return { kind: 'entry-removal', name: entryName(entry) };
+		});
 	}
 
 	/**
@@ -470,23 +468,17 @@ export class MarksheetStore {
 
 	/** Remove a student, taking their marks with them, one undo away. */
 	removeStudent(studentId: string): boolean {
-		const document = this.document;
-		if (!document) return false;
+		return this.#commit((document) => {
+			const students = document.students;
+			const index = students.findIndex((student) => student.id === studentId);
+			if (index === -1) return null;
+			const [student] = students.splice(index, 1);
 
-		const before = copyOf(document);
-		const students = document.students;
-		const index = students.findIndex((student) => student.id === studentId);
-		if (index === -1) return false;
-		const [student] = students.splice(index, 1);
-
-		// Marks and a report whose student is gone can never be read again, so they go too.
-		delete document.marks[studentId];
-		delete document.reports[studentId];
-
-		// After the change, since the change itself clears any undo on offer.
-		this.#mutated();
-		this.undoable = { kind: 'student-removal', name: studentName(student), before };
-		return true;
+			// Marks and a report whose student is gone can never be read again, so they go too.
+			delete document.marks[studentId];
+			delete document.reports[studentId];
+			return { kind: 'student-removal', name: studentName(student) };
+		});
 	}
 
 	/** Put the class in order by one name part. The stored array is display order. */
@@ -540,17 +532,15 @@ export class MarksheetStore {
 	 * paste that changes nothing keeps no undo of its own.
 	 */
 	pasteMarks(rows: readonly (readonly string[])[], anchor: PasteAnchor): PasteResult {
-		const document = this.document;
-		if (!document) return emptyPasteResult();
+		if (!this.document) return emptyPasteResult();
 
-		// Taken before the first cell lands: undo puts back the document exactly as
-		// the teacher had it, added students included.
-		const before = copyOf(document);
-		const result = applyPaste(document, rows, anchor);
-		if (result.changed) {
-			this.#mutated();
-			this.undoable = { kind: 'mark-paste', before };
-		}
+		// The snapshot is taken before the first cell lands: undo puts back the
+		// document exactly as the teacher had it, added students included.
+		let result = emptyPasteResult();
+		this.#commit((document) => {
+			result = applyPaste(document, rows, anchor);
+			return result.changed ? { kind: 'mark-paste' } : null;
+		});
 		// A paste with nothing to say — every cell already held what was pasted —
 		// leaves no notice behind.
 		const worthNoticing =
@@ -635,6 +625,7 @@ export class MarksheetStore {
 		this.#persistence.writeNow();
 		return backupFile(document, this.#now());
 	}
+
 	/**
 	 * Store one student's generated report: prose, the verbatim generation
 	 * input it was written from, the model used (display only) and the clock.
@@ -647,31 +638,23 @@ export class MarksheetStore {
 		model: string
 	): void {
 		const document = this.document;
-		if (!document) return;
-		if (!document.students.some((student) => student.id === studentId)) return;
-		document.reports[studentId] = {
-			strengths: [...prose.strengths],
-			areasForImprovement: [...prose.areasForImprovement],
-			edit: null,
-			input: structuredClone(input),
-			model,
-			generatedAt: this.#now().toISOString()
-		};
-		this.#mutated();
+		if (
+			document &&
+			writeReport(document, studentId, prose, input, model, this.#now().toISOString())
+		) {
+			this.#mutated();
+		}
 	}
+
 	/**
-	 * Edit one student's generated feedback in place. The teacher's wording is
-	 * stored beside the generated prose, so a rewrite or a Revert restores the
-	 * generated wording without a model call. Wording identical to the
-	 * generated prose leaves no edit behind, so typing the text back clears the
-	 * badge. Typing a report twice running keeps one undo, not one per
-	 * keystroke: the edit is one change, whatever it took to type it.
+	 * Edit one student's generated feedback in place; see `setReportEdit`.
+	 * Typing a report twice running keeps one undo, not one per keystroke: the
+	 * edit is one change, whatever it took to type it.
 	 */
 	editReport(studentId: string, prose: ReportProse): void {
-		this.#setReportEdit(studentId, {
-			strengths: [...prose.strengths],
-			areasForImprovement: [...prose.areasForImprovement]
-		});
+		this.#commit((document) =>
+			setReportEdit(document, studentId, prose) ? { kind: 'report-edit', studentId } : null
+		);
 	}
 
 	/**
@@ -680,99 +663,38 @@ export class MarksheetStore {
 	 * alone: there is nothing to take back, so nothing is spent.
 	 */
 	revertReport(studentId: string): void {
-		this.#setReportEdit(studentId, null);
-	}
-	/**
-	 * Accept the generated prose as still right: the stored input becomes what
-	 * the document builds now, clearing the out-of-date marker with no model
-	 * call. The teacher's edit beside it is kept — the wording on the page
-	 * does not move, only what it is measured against.
-	 */
-	keepReportWording(studentId: string): void {
-		const document = this.document;
-		const report = document?.reports[studentId];
-		if (!document || !report) return;
-		const current = generationInputFor(document, studentId);
-		if (!current) return;
-		const undoable = this.undoable;
-		const before =
-			undoable?.kind === 'report-kept' && undoable.studentId === studentId
-				? undoable.before
-				: copyOf(document);
-		report.input = structuredClone(current);
-		// After the change, since the change itself clears any undo on offer.
-		this.#mutated();
-		this.undoable = { kind: 'report-kept', studentId, before };
+		this.#commit((document) =>
+			setReportEdit(document, studentId, null) ? { kind: 'report-edit', studentId } : null
+		);
 	}
 
 	/**
-	 * Put the teacher's edit beside one student's generated prose, or take it
-	 * away. Edits to the same report in a row share one undo — the document as
-	 * it was before the first of them — so a whole edit is one thing to take
-	 * back. A change anywhere else starts a new undo, like every other change.
+	 * Accept the generated prose as still right, with no model call; see
+	 * `keepWording`. One undo takes it back.
 	 */
-	#setReportEdit(studentId: string, edit: ReportProse | null): void {
-		const document = this.document;
-		const report = document?.reports[studentId];
-		if (!document || !report) return;
-		const next =
-			edit !== null &&
-			(edit.strengths.join('\n') !== report.strengths.join('\n') ||
-				edit.areasForImprovement.join('\n') !== report.areasForImprovement.join('\n'))
-				? edit
-				: null;
-		// Wording that resolves to what is already there — the generated prose
-		// when unedited, the edit beside it otherwise — changes nothing: no
-		// write, no spent undo.
-		const resolvesTo =
-			next === null
-				? report.edit === null
-				: report.edit !== null &&
-					next.strengths.join('\n') === report.edit.strengths.join('\n') &&
-					next.areasForImprovement.join('\n') === report.edit.areasForImprovement.join('\n');
-		if (resolvesTo) return;
-		const undoable = this.undoable;
-		const before =
-			undoable?.kind === 'report-edit' && undoable.studentId === studentId
-				? undoable.before
-				: copyOf(document);
-		report.edit = next;
-		// After the change, since the change itself clears any undo on offer.
-		this.#mutated();
-		this.undoable = { kind: 'report-edit', studentId, before };
+	keepReportWording(studentId: string): void {
+		this.#commit((document) =>
+			keepWording(document, studentId) ? { kind: 'report-kept', studentId } : null
+		);
 	}
+
 	/**
 	 * Save the paper's grade boundaries: the kept rows top grade first, with
 	 * blank and unawarded rows left out, and the below-lowest label. One undo
 	 * takes the save back, like every other marksheet change.
 	 */
 	saveBoundaries(boundaries: { label: string; minimum: number }[], belowLowestLabel: string): void {
-		const document = this.document;
-		if (!document) return;
-		const before = copyOf(document);
-		const trimmed = belowLowestLabel.trim() === '' ? 'U' : belowLowestLabel.trim();
-		// Saving what amounts to nothing is marks only: a blank scale stores
-		// null like a paper that never had grades.
-		document.paper.boundaries = boundaries.length === 0 ? null : boundaries.map((b) => ({ ...b }));
-		document.paper.belowLowestLabel = trimmed;
-		// After the change, since the change itself clears any undo on offer.
-		this.#mutated();
-		this.undoable = { kind: 'grade-boundaries', action: 'saved', before };
+		this.#commit((document) => {
+			setBoundaries(document, boundaries, belowLowestLabel);
+			return { kind: 'grade-boundaries', action: 'saved' };
+		});
 	}
 
-	/**
-	 * Drop every boundary, back to marks only. The below-lowest label stays
-	 * where it was, so re-adding grades finds it as the teacher left it.
-	 */
+	/** Drop every boundary, back to marks only, one undo away. */
 	removeBoundaries(): void {
-		const document = this.document;
-		if (!document) return;
-		if (document.paper.boundaries === null) return;
-		const before = copyOf(document);
-		document.paper.boundaries = null;
-		// After the change, since the change itself clears any undo on offer.
-		this.#mutated();
-		this.undoable = { kind: 'grade-boundaries', action: 'removed', before };
+		this.#commit((document) =>
+			clearBoundaries(document) ? { kind: 'grade-boundaries', action: 'removed' } : null
+		);
 	}
 
 	/** Say no to the reminder for this session. The next document asks again. */
@@ -866,6 +788,31 @@ export class MarksheetStore {
 		this.unreadable = null;
 		this.runUsage = null;
 		this.backupReminderDismissed = false;
+	}
+
+	/**
+	 * One undoable change: snapshot, apply, persist, then offer the undo. `change`
+	 * returns what the undo describes, or null when it changed nothing (no write,
+	 * no spent undo). Changes to the same report in a row share the first one's
+	 * snapshot, so a whole edit is one thing to take back.
+	 */
+	#commit(change: (document: MarksheetDocument) => UndoableChange | null): boolean {
+		const document = this.document;
+		if (!document) return false;
+		const running = this.undoable;
+		const snapshot = copyOf(document);
+		const offered = change(document);
+		if (offered === null) return false;
+		const continues =
+			(running?.kind === 'report-edit' || running?.kind === 'report-kept') &&
+			running.kind === offered.kind &&
+			'studentId' in offered &&
+			running.studentId === offered.studentId;
+		// `#mutated` clears the undo on offer, so the new one is set after it.
+		this.#mutated();
+		const undoable: Undoable = { ...offered, before: continues ? running.before : snapshot };
+		this.undoable = undoable;
+		return true;
 	}
 
 	/** Every command ends here: stamp the change, then save on the debounce. */
