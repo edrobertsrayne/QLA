@@ -24,8 +24,14 @@
 </div>
 
 <style>
+	/* On screen the print copies lay out invisibly out of flow: they are the
+	 * measurers — the same list markup the printer gets, at real A4 width —
+	 * so the settled scale and mm-over describe what print clips. Screen
+	 * sheets reuse the settled scale and never measure their textareas. */
 	.print-root {
-		display: none;
+		position: absolute;
+		visibility: hidden;
+		pointer-events: none;
 	}
 	@media print {
 		@page {
@@ -36,6 +42,9 @@
 			display: none !important;
 		}
 		.print-root {
+			position: static;
+			visibility: visible;
+			pointer-events: auto;
 			display: block;
 			print-color-adjust: exact;
 			-webkit-print-color-adjust: exact;

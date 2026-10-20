@@ -14,6 +14,7 @@
 	} from '$lib/marksheet/report-figures.js';
 	import type { MarksheetDocument, ReportProse, StoredReport } from '$lib/marksheet/document.js';
 	import { studentName } from '$lib/marksheet/students.js';
+	import { feedbackFontSize, reportFit, settleFit } from './report-fit.svelte.js';
 	import BandMark from './BandMark.svelte';
 	import RollupStrip from './RollupStrip.svelte';
 
@@ -22,6 +23,7 @@
 		studentId,
 		report,
 		editable = false,
+		measure = true,
 		onedit
 	}: {
 		document: MarksheetDocument;
@@ -29,10 +31,18 @@
 		report: StoredReport;
 		/** On screen the feedback edits in place; in print it is plain text. */
 		editable?: boolean;
+		/**
+		 * The print copies measure: they carry the same list markup the
+		 * printer gets, so the settled scale describes what print clips.
+		 * Screen copies reuse the settled scale for their textareas.
+		 */
+		measure?: boolean;
 		/** The teacher's wording, saved when a feedback field loses focus. */
 		onedit?: (prose: ReportProse) => void;
 	} = $props();
 
+	const fit = reportFit();
+	const settled = $derived(fit.fitOf(studentId));
 	const student = $derived(document.students.find((candidate) => candidate.id === studentId));
 	const figures = $derived(reportFiguresFor(document, studentId));
 	/** The grade is live from the document, never stored or sent: moving a
@@ -109,11 +119,45 @@
 		}
 		return [bands.slice(0, cut), bands.slice(cut)];
 	});
+
+	/**
+	 * Settle the feedback scale on the live page: step down from full size
+	 * until the content fits or 90% is reached, then record how far over the
+	 * page it still runs. Re-runs whenever the content changes size — a
+	 * teacher's edit, a rewrite, or fresh figures.
+	 */
+	function measureFit(box: HTMLElement) {
+		if (!measure) return;
+		const content = box.firstElementChild as HTMLElement | null;
+		const feedback = content?.querySelector('[data-feedback]') as HTMLElement | null;
+		if (!content || !feedback) return;
+		const settle = () => {
+			fit.setFit(
+				studentId,
+				settleFit(box.clientHeight, (scale) => {
+					feedback.style.fontSize = feedbackFontSize(scale) ?? '';
+					return content.scrollHeight;
+				})
+			);
+		};
+		settle();
+		const observer = new ResizeObserver(settle);
+		observer.observe(content);
+		const textObserver = new MutationObserver(settle);
+		textObserver.observe(content, { subtree: true, characterData: true, childList: true });
+		content.addEventListener('input', settle);
+		return () => {
+			observer.disconnect();
+			textObserver.disconnect();
+			content.removeEventListener('input', settle);
+		};
+	}
 </script>
 
 <div
 	class="report-sheet relative h-[297mm] w-[210mm] shrink-0 overflow-hidden bg-white text-[9pt] leading-snug text-black shadow-md print:shadow-none"
 	data-report-id={studentId}
+	{@attach measureFit}
 >
 	<div class="flex min-h-full flex-col p-[10mm]">
 		<header class="flex items-center justify-between gap-4">
@@ -151,7 +195,11 @@
 		</header>
 
 		<div class="mt-4 border-t-2 border-black pt-2">
-			<section class="grid grid-cols-2 gap-6 text-[10.5pt] leading-snug">
+			<section
+				data-feedback
+				class="grid grid-cols-2 gap-6 text-[10.5pt] leading-snug"
+				style:font-size={!measure ? feedbackFontSize(settled.scale) : undefined}
+			>
 				{#snippet feedback(
 					title: string,
 					label: string,
