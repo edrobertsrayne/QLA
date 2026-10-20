@@ -14,7 +14,6 @@
 	import { isFlagged, reportFit } from '$lib/components/report/report-fit.svelte.js';
 	import { proposeTopicNames } from '$lib/components/report/topic-name-proposal.js';
 	import { ReportRun } from '$lib/components/report/report-run.svelte.js';
-	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -28,6 +27,7 @@
 	import { MAX_LABEL_LENGTH } from '$lib/marksheet/report-limits.js';
 	import { topicCodesOf } from '$lib/marksheet/document.js';
 	import { boundariesOf } from '$lib/marksheet/grades.js';
+	import { topicNameGaps } from '$lib/marksheet/report-rollup.js';
 	import { droppedNoMarks, reportFiguresFor } from '$lib/marksheet/report-figures.js';
 	type Step = 'topics' | 'grades' | 'who' | 'writing' | 'review';
 
@@ -138,11 +138,15 @@
 	// layout load has already read the document before this page renders.
 	const landing = store.document;
 	let step = $state<Step>(
-		landing && Object.keys(landing.reports).length > 0
-			? 'review'
-			: landing && topicCodesOf(landing).length > 0
+		!landing
+			? 'grades'
+			: topicNameGaps(landing).blocked
 				? 'topics'
-				: 'grades'
+				: Object.keys(landing.reports).length > 0
+					? 'review'
+					: topicCodesOf(landing).length > 0
+						? 'topics'
+						: 'grades'
 	);
 
 	// The paper has topic codes only when some entry carries a specification point.
@@ -169,17 +173,11 @@
 
 	onMount(() => {
 		void models.load();
-		if (step === 'topics' && missingNames.length > 0) void proposeMissing();
+		if (step === 'topics' && gaps.missing.length > 0) void proposeMissing();
 	});
-	const missingNames = $derived(
-		topicCodes.filter((code) => (document?.topicNames[code] ?? '').trim() === '')
+	const gaps = $derived(
+		document ? topicNameGaps(document) : { missing: [], overLong: [], blocked: false }
 	);
-	// A typed name past the server's length cap would fail every report
-	// write, so it blocks Next like a blank one.
-	const overLongNames = $derived(
-		topicCodes.filter((code) => (document?.topicNames[code] ?? '').trim().length > MAX_LABEL_LENGTH)
-	);
-	const topicsBlocked = $derived(missingNames.length > 0 || overLongNames.length > 0);
 
 	let proposing = $state(false);
 	let proposeError = $state<string | null>(null);
@@ -191,7 +189,7 @@
 	 */
 	async function proposeMissing(): Promise<void> {
 		if (!document || proposing) return;
-		const missing = [...missingNames];
+		const missing = [...gaps.missing];
 		if (missing.length === 0) return;
 		proposing = true;
 		proposeError = null;
@@ -219,7 +217,7 @@
 	function goTo(next: Step): void {
 		const arriving = next === 'topics' && step !== 'topics';
 		step = next;
-		if (arriving && missingNames.length > 0) void proposeMissing();
+		if (arriving && gaps.missing.length > 0) void proposeMissing();
 	}
 
 	const run = new ReportRun(store, () => {
@@ -294,18 +292,6 @@
 	<title>Reports · QLA</title>
 </svelte:head>
 
-{#snippet namesNeeded()}
-	{@const needing = missingNames.length + overLongNames.length}
-	<Alert>
-		<AlertDescription>
-			{count(needing, 'topic')}
-			{agree(needing, 'needs', 'need')} a name of at most {MAX_LABEL_LENGTH} characters before reports
-			are written or printed.
-		</AlertDescription>
-		<Button size="xs" variant="outline" onclick={() => goTo('topics')}>Name topics</Button>
-	</Alert>
-{/snippet}
-
 <main class="mx-auto max-w-6xl space-y-6 p-6 print:hidden">
 	<div class="flex flex-wrap items-center gap-4">
 		<Button variant="ghost" size="sm" onclick={() => void goto(resolve('/marksheet'))}>
@@ -319,10 +305,8 @@
 							size="sm"
 							variant={step === item.id ? 'default' : 'outline'}
 							aria-current={step === item.id ? 'step' : undefined}
-							disabled={step === 'topics' && item.id !== 'topics' && topicsBlocked}
-							title={step === 'topics' && item.id !== 'topics' && topicsBlocked
-								? 'Name every topic first'
-								: undefined}
+							disabled={item.id !== 'topics' && gaps.blocked}
+							title={item.id !== 'topics' && gaps.blocked ? 'Name every topic first' : undefined}
 							onclick={() => goTo(item.id)}>{index + 1}. {item.label}</Button
 						>
 					</li>
@@ -369,16 +353,16 @@
 			<div class="flex flex-wrap gap-2">
 				<Button
 					variant="outline"
-					disabled={proposing || missingNames.length === 0}
+					disabled={proposing || gaps.missing.length === 0}
 					onclick={() => void proposeMissing()}
 				>
 					{proposing ? 'Proposing…' : 'Propose missing names'}
 				</Button>
-				<Button disabled={topicsBlocked} onclick={() => goTo('grades')}>Next</Button>
+				<Button disabled={gaps.blocked} onclick={() => goTo('grades')}>Next</Button>
 			</div>
-			{#if topicsBlocked}
+			{#if gaps.blocked}
 				<p class="text-sm text-muted-foreground">
-					{#if overLongNames.length > 0}
+					{#if gaps.overLong.length > 0}
 						Keep every name to {MAX_LABEL_LENGTH} characters: longer names fail the report run.
 					{:else}
 						Name every topic before continuing: reports never show a bare code.
@@ -407,7 +391,6 @@
 	{:else if step === 'who'}
 		<section class="space-y-4">
 			<h1 class="text-xl font-semibold">{count(eligibleIds.length, 'student')} get a report</h1>
-			{#if topicsBlocked}{@render namesNeeded()}{/if}
 			{#if blocked.length > 0}
 				<div class="space-y-2 rounded-md border p-3">
 					<h2 class="font-medium">Not getting one yet</h2>
@@ -437,7 +420,7 @@
 					onretry={() => void models.load()}
 				/>
 			</div>
-			<Button disabled={unwrittenIds.length === 0 || run.running || topicsBlocked} onclick={write}>
+			<Button disabled={unwrittenIds.length === 0 || run.running} onclick={write}>
 				Write {count(unwrittenIds.length, 'report')}
 			</Button>
 			{#if eligibleIds.length > 0 && unwrittenIds.length === 0}
@@ -448,7 +431,6 @@
 		</section>
 	{:else if step === 'writing'}
 		<section class="space-y-4">
-			{#if topicsBlocked}{@render namesNeeded()}{/if}
 			{#if run.order.length === 0}
 				<h1 class="text-xl font-semibold">Nothing is being written</h1>
 			{:else}
@@ -468,9 +450,7 @@
 			{:else if run.order.length > 0}
 				<div class="flex gap-2">
 					{#if run.failed.length > 0}
-						<Button variant="outline" disabled={topicsBlocked} onclick={retryFailed}>
-							Retry failed
-						</Button>
+						<Button variant="outline" onclick={retryFailed}>Retry failed</Button>
 					{/if}
 					{#if run.failed.length > 0 || writtenIds.length > 0}
 						<Button onclick={() => goTo('review')}>Review {writtenIds.length}</Button>
@@ -489,7 +469,7 @@
 							<Button
 								size="sm"
 								variant="outline"
-								disabled={run.running || topicsBlocked}
+								disabled={run.running}
 								onclick={() => {
 									goTo('writing');
 									run.retry([id], modelOverride);
@@ -503,7 +483,7 @@
 	{:else if document}
 		<section class="flex items-start gap-6">
 			<aside class="sticky top-4 w-56 shrink-0 space-y-3 self-start">
-				<Button disabled={reviewIds.length === 0 || topicsBlocked} onclick={() => askPrint(null)}>
+				<Button disabled={reviewIds.length === 0} onclick={() => askPrint(null)}>
 					Print all {reviewIds.length}
 				</Button>
 				{#if outOfDateIds.length > 0 && !run.running}
@@ -511,7 +491,7 @@
 					{@const rewritable = outOfDateIds.length - skipped}
 					<Button
 						variant="outline"
-						disabled={rewritable === 0 || topicsBlocked}
+						disabled={rewritable === 0}
 						onclick={rewriteOutOfDate}
 						title={skipped > 0 ? 'Tick the box to include edited reports' : undefined}
 					>
@@ -528,9 +508,7 @@
 					<p class="text-sm text-muted-foreground">Rewriting…</p>
 				{/if}
 				{#if pendingIds.length > 0 && !run.running}
-					<Button variant="outline" disabled={topicsBlocked} onclick={writeMore}
-						>Write {pendingIds.length} more</Button
-					>
+					<Button variant="outline" onclick={writeMore}>Write {pendingIds.length} more</Button>
 				{/if}
 				<ul class="space-y-1 text-sm">
 					{#each students as student (student.id)}
@@ -555,7 +533,6 @@
 				</ul>
 			</aside>
 			<div class="min-w-0 flex-1 space-y-8 overflow-x-auto">
-				{#if topicsBlocked}{@render namesNeeded()}{/if}
 				{#if reviewIds.length === 0}
 					<p>No reports have been written yet.</p>
 				{/if}
@@ -566,11 +543,8 @@
 					{@const pageFit = fit.fitOf(id)}
 					<div data-page-for={id} class="space-y-2">
 						<div class="flex flex-wrap items-center gap-2">
-							<Button
-								variant="outline"
-								size="sm"
-								disabled={topicsBlocked}
-								onclick={() => void print([id])}>Print this page</Button
+							<Button variant="outline" size="sm" onclick={() => void print([id])}
+								>Print this page</Button
 							>
 							{#if document.reports[id].edit !== null}
 								<Badge variant="secondary">edited</Badge>
@@ -592,12 +566,7 @@
 									>Runs {pageFit.overMm} mm over the page; print cuts it off</Badge
 								>
 							{/if}
-							<Button
-								variant="outline"
-								size="sm"
-								disabled={topicsBlocked}
-								onclick={() => rewriteOne(id)}>Rewrite</Button
-							>
+							<Button variant="outline" size="sm" onclick={() => rewriteOne(id)}>Rewrite</Button>
 							{#if tile?.kind === 'writing'}
 								<span class="text-sm text-muted-foreground">Rewriting…</span>
 							{/if}
@@ -605,12 +574,7 @@
 						{#if tile?.kind === 'failed'}
 							<p role="alert" class="rounded-md border border-destructive p-3 text-sm">
 								{tile.message}
-								<Button
-									size="sm"
-									variant="outline"
-									disabled={topicsBlocked}
-									onclick={() => rewriteOne(id)}>Retry</Button
-								>
+								<Button size="sm" variant="outline" onclick={() => rewriteOne(id)}>Retry</Button>
 							</p>
 						{/if}
 						<ReportSheet
@@ -675,7 +639,6 @@
 				</Dialog.Header>
 				<Dialog.Footer>
 					<Button
-						disabled={topicsBlocked}
 						onclick={() => {
 							const pending = confirmPrint;
 							confirmPrint = null;
@@ -686,7 +649,6 @@
 					</Button>
 					<Button
 						variant="outline"
-						disabled={topicsBlocked}
 						onclick={() => {
 							confirmPrint = null;
 							rewriteOutOfDate();

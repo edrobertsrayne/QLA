@@ -151,7 +151,7 @@ describe('topic names step', () => {
 });
 
 describe('review fixes', () => {
-	it('blocks writing and printing when a topic loses its name after reports exist', async () => {
+	it('sends a paper whose topic lost its name back to Topic names', async () => {
 		const doc = h556();
 		doc.topicNames = {
 			'5.1.1': 'Kinetic theory of gases',
@@ -161,16 +161,24 @@ describe('review fixes', () => {
 		writeFor(doc, ['ada']);
 		delete doc.topicNames['5.2.1'];
 		seed(doc);
-		stubFetch(() => topicNames());
+		// The proposal on arrival is the first call: it fails, so the name stays blank.
+		stubFetch((n) =>
+			n === 0
+				? Response.json({ error: { message: 'Proposal unavailable.' } }, { status: 502 })
+				: ok()
+		);
 		openPage(ReportsPage);
 
-		await expect.element(page.getByRole('button', { name: 'Name topics' })).toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeDisabled();
-		await expect.element(page.getByRole('button', { name: 'Print this page' })).toBeDisabled();
-		await expect.element(page.getByRole('button', { name: 'Rewrite', exact: true })).toBeDisabled();
-
-		await page.getByRole('button', { name: 'Name topics' }).click();
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		for (const step of [/Who gets one/, /Writing/, /Review and print/]) {
+			await expect.element(page.getByRole('button', { name: step })).toBeDisabled();
+		}
+		await expect.element(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+
+		await page.getByLabelText('Name for 5.2.1').fill('Internal energy stores');
+		await expect.element(page.getByRole('button', { name: /Review and print/ })).toBeEnabled();
+		await page.getByRole('button', { name: /Review and print/ }).click();
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeEnabled();
 	});
 
 	it('gives codes that share a name one row, counting each entry once', async () => {
