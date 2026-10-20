@@ -2,7 +2,25 @@
 
 import type { MarksheetDocument } from './document.js';
 import { studentName } from './students.js';
-import type { Undoable } from './store.svelte.js';
+
+/**
+ * The one change undo would take back, held in memory for the session. The next
+ * change clears it, so a second click can never take back two things. Each kind
+ * carries the whole document as it was before the change.
+ */
+export type UndoableChange =
+	| {
+			kind: 'entry-removal' | 'student-removal';
+			/** What the notice calls what went. */
+			name: string;
+	  }
+	| { kind: 'mark-paste' }
+	| { kind: 'report-edit'; studentId: string }
+	| { kind: 'report-kept'; studentId: string }
+	| { kind: 'grade-boundaries'; action: 'saved' | 'removed' };
+
+/** An undoable change with the whole document as it was before it. */
+export type Undoable = UndoableChange & { before: MarksheetDocument };
 
 /** What an undo notice says: a verb phrase, then the bolded thing it is about (if any). */
 export interface UndoNotice {

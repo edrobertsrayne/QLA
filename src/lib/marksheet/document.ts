@@ -536,6 +536,16 @@ export function dropUnreachable(document: MarksheetDocument): MarksheetDocument 
 	};
 }
 
+/**
+ * The document as it is now, in a copy no later change reaches. A document is
+ * plain JSON by construction (it is stored as such), so this holds under a
+ * reactive proxy and in plain code alike; `$state.snapshot` does not copy in
+ * the server build the specs run in.
+ */
+export function copyOfDocument(document: MarksheetDocument): MarksheetDocument {
+	return JSON.parse(JSON.stringify(document)) as MarksheetDocument;
+}
+
 /** What the breakdown adds up to: the marks a marksheet's columns carry. */
 export function totalMarks(entries: readonly BreakdownEntry[]): number {
 	return entries.reduce((sum, entry) => sum + (entry.marks ?? 0), 0);
