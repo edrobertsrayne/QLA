@@ -7,6 +7,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { describePaste } from '$lib/marksheet/paste.js';
+	import UndoAlert from './UndoAlert.svelte';
 
 	let { refusal }: { refusal: string | null } = $props();
 
@@ -22,28 +23,10 @@
 	     must still be where the teacher is looking. Neither notice takes a click,
 	     so the mark cells it passes over stay reachable. -->
 	<div class="pointer-events-none sticky top-2 z-10 space-y-2">
-		{#if undoable?.kind === 'student-removal'}
-			<Alert
-				class="pointer-events-auto flex flex-row items-center gap-2 py-2 shadow-sm"
-				data-testid="undo"
-			>
-				<AlertDescription>
-					Removed <strong>{undoable.name}</strong>.
-				</AlertDescription>
-				<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
-			</Alert>
-		{/if}
-		{#if undoable?.kind === 'grade-boundaries'}
-			<Alert
-				class="pointer-events-auto flex flex-row items-center gap-2 py-2 shadow-sm"
-				data-testid="undo"
-			>
-				<AlertDescription>
-					{undoable.action === 'saved' ? 'Grade boundaries saved.' : 'Grade boundaries removed.'}
-				</AlertDescription>
-				<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
-			</Alert>
-		{/if}
+		<UndoAlert
+			kinds={['student-removal', 'grade-boundaries']}
+			class="pointer-events-auto flex flex-row items-center gap-2 py-2 shadow-sm"
+		/>
 		{#if pasteNotice && described}
 			<!-- What a block did, beside the grid: the sheet under it has already
 			     changed, so the account has to be where the teacher can read it. -->

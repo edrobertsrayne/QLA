@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount, tick } from 'svelte';
+	import UndoAlert from '$lib/components/marksheet/UndoAlert.svelte';
 	import ModelSelect from '$lib/components/parse/ModelSelect.svelte';
 	import { ModelList } from '$lib/components/parse/model-list.svelte.js';
 	import PrintRoot from '$lib/components/report/PrintRoot.svelte';
@@ -579,18 +580,7 @@
 				{#if reviewIds.length === 0}
 					<p>No reports have been written yet.</p>
 				{/if}
-				{#if store.undoable?.kind === 'report-edit' || store.undoable?.kind === 'report-kept'}
-					{@const undone = nameOf(store.undoable.studentId)}
-					{@const kept = store.undoable.kind === 'report-kept'}
-					{@const stillEdited = document.reports[store.undoable.studentId]?.edit !== null}
-					<Alert data-testid="report-edit-undo">
-						<AlertDescription>
-							{kept ? 'Kept wording for' : stillEdited ? 'Edited' : 'Reverted'}
-							{undone === '' ? 'a report' : undone}.
-						</AlertDescription>
-						<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
-					</Alert>
-				{/if}
+				<UndoAlert kinds={['report-edit', 'report-kept']} testid="report-edit-undo" />
 				{#each reviewIds as id (id)}
 					{@const changes = outOfDateChanges(id)}
 					{@const tile = run.tiles[id]}

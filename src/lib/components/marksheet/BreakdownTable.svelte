@@ -15,6 +15,7 @@
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import UndoAlert from './UndoAlert.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Table from '$lib/components/ui/table';
@@ -43,7 +44,6 @@
 	const entries = $derived(store.entries);
 	const bands = $derived(store.questionBands);
 	const warnings = $derived(store.warnings);
-	const undoable = $derived(store.undoable);
 	/**
 	 * The entry whose marks field the cursor is in. It is left out of the warning
 	 * below while it is being typed in: a total is saved keystroke by keystroke,
@@ -328,19 +328,12 @@
 	</Table.Row>
 {/snippet}
 
-{#if undoable?.kind === 'entry-removal'}
-	<!-- Sticky: a row deleted 30 rows down must still offer its undo where the
-	     teacher is looking, and it stays until the next change clears it. -->
-	<Alert
-		class="sticky top-2 z-10 flex flex-row items-center gap-2 py-2 shadow-sm"
-		data-testid="undo"
-	>
-		<AlertDescription>
-			Deleted <strong>{undoable.name}</strong>.
-		</AlertDescription>
-		<Button variant="outline" size="xs" onclick={() => store.undo()}>Undo</Button>
-	</Alert>
-{/if}
+<!-- Sticky: a row deleted 30 rows down must still offer its undo where the
+     teacher is looking, and it stays until the next change clears it. -->
+<UndoAlert
+	kinds={['entry-removal']}
+	class="sticky top-2 z-10 flex flex-row items-center gap-2 py-2 shadow-sm"
+/>
 
 {#if overMax.length > 0}
 	<!-- A standing fact about the sheet rather than a report of one keystroke: an
