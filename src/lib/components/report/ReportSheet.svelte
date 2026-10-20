@@ -10,7 +10,7 @@
 		EMPTY_STRENGTHS_LINE,
 		reportFiguresFor
 	} from '$lib/marksheet/report-figures.js';
-	import type { MarksheetDocument, StoredReport } from '$lib/marksheet/document.js';
+	import type { MarksheetDocument, ReportProse, StoredReport } from '$lib/marksheet/document.js';
 	import { studentName } from '$lib/marksheet/students.js';
 	import BandMark from './BandMark.svelte';
 	import RollupStrip from './RollupStrip.svelte';
@@ -18,13 +18,62 @@
 	let {
 		document,
 		studentId,
-		report
-	}: { document: MarksheetDocument; studentId: string; report: StoredReport } = $props();
+		report,
+		editable = false,
+		onedit
+	}: {
+		document: MarksheetDocument;
+		studentId: string;
+		report: StoredReport;
+		/** On screen the feedback edits in place; in print it is plain text. */
+		editable?: boolean;
+		/** The teacher's wording, saved when a feedback field loses focus. */
+		onedit?: (prose: ReportProse) => void;
+	} = $props();
 
 	const student = $derived(document.students.find((candidate) => candidate.id === studentId));
 	const figures = $derived(reportFiguresFor(document, studentId));
 	const strengths = $derived((report.edit ?? report).strengths);
 	const areas = $derived((report.edit ?? report).areasForImprovement);
+	const displayName = $derived(student ? studentName(student) : '');
+
+	/**
+	 * The edit as textareas hold it: one line per item, so a strength stays one
+	 * strength and an area stays one area through the edit. Empty sections edit
+	 * as blank. What is typed past the fixed lines is teacher wording, not an
+	 * edit of the app's own line.
+	 */
+	function linesOf(values: string[]): string {
+		return values.join('\n');
+	}
+
+	function valuesOf(draft: string): string[] {
+		return draft
+			.split('\n')
+			.map((line) => line.trim())
+			.filter((line) => line !== '');
+	}
+
+	function sameProse(a: ReportProse, b: ReportProse): boolean {
+		return (
+			a.strengths.join('\n') === b.strengths.join('\n') &&
+			a.areasForImprovement.join('\n') === b.areasForImprovement.join('\n')
+		);
+	}
+
+	/**
+	 * Save on blur, not on input: every keystroke is not a change, and trimming
+	 * never lands while the teacher is still typing. An unchanged field saves
+	 * nothing, so tabbing through the page spends no undo.
+	 */
+	function saveEdit(draft: { strengths: string; areas: string }): void {
+		const prose: ReportProse = {
+			strengths: valuesOf(draft.strengths),
+			areasForImprovement: valuesOf(draft.areas)
+		};
+		if (!sameProse(prose, report.edit ?? report)) onedit?.(prose);
+	}
+
 	const figureOf = $derived(new Map(figures.entries.map((row) => [row.entryId, row])));
 
 	const bands = $derived(
@@ -74,26 +123,52 @@
 
 		<div class="mt-4 border-t-2 border-black pt-2">
 			<section class="grid grid-cols-2 gap-6 text-[10.5pt] leading-snug">
-				<div>
-					<h3 class="mb-1 text-[1.15em] font-bold">Strengths</h3>
-					{#if strengths.length === 0}
-						<p>{EMPTY_STRENGTHS_LINE}</p>
-					{:else}
-						<ul class="list-disc space-y-1 pl-[1.2em]">
-							{#each strengths as line, i (i)}<li>{line}</li>{/each}
-						</ul>
-					{/if}
-				</div>
-				<div>
-					<h3 class="mb-1 text-[1.15em] font-bold">Areas for improvement</h3>
-					{#if areas.length === 0}
-						<p>{EMPTY_AREAS_LINE}</p>
-					{:else}
-						<ol class="list-decimal space-y-1.5 pl-[1.2em]">
-							{#each areas as line, i (i)}<li>{line}</li>{/each}
-						</ol>
-					{/if}
-				</div>
+				{#snippet feedback(
+					title: string,
+					label: string,
+					lines: string[],
+					empty: string,
+					ordered: boolean,
+					draft: (text: string) => { strengths: string; areas: string }
+				)}
+					<div>
+						<h3 class="mb-1 text-[1.15em] font-bold">{title}</h3>
+						{#if editable}
+							<textarea
+								aria-label={label}
+								rows={Math.max(lines.length, 1)}
+								class="field-sizing-content w-full resize-none bg-transparent outline-none"
+								value={linesOf(lines)}
+								onchange={(event) => saveEdit(draft(event.currentTarget.value))}></textarea>
+						{:else if lines.length === 0}
+							<p>{empty}</p>
+						{:else if ordered}
+							<ol class="list-decimal space-y-1.5 pl-[1.2em]">
+								{#each lines as line, i (i)}<li>{line}</li>{/each}
+							</ol>
+						{:else}
+							<ul class="list-disc space-y-1 pl-[1.2em]">
+								{#each lines as line, i (i)}<li>{line}</li>{/each}
+							</ul>
+						{/if}
+					</div>
+				{/snippet}
+				{@render feedback(
+					'Strengths',
+					displayName ? `Strengths for ${displayName}` : 'Strengths',
+					strengths,
+					EMPTY_STRENGTHS_LINE,
+					false,
+					(text) => ({ strengths: text, areas: linesOf(areas) })
+				)}
+				{@render feedback(
+					'Areas for improvement',
+					displayName ? `Areas for improvement for ${displayName}` : 'Areas for improvement',
+					areas,
+					EMPTY_AREAS_LINE,
+					true,
+					(text) => ({ strengths: linesOf(strengths), areas: text })
+				)}
 			</section>
 		</div>
 
