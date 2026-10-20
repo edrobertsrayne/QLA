@@ -6,6 +6,7 @@
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import { toast } from 'svelte-sonner';
 	import { failureFrom } from '$lib/api-error.js';
+	import { FEEDBACK_MAX_CHARS, isFiledIssue } from '$lib/feedback';
 	import { isRecord } from '$lib/parse/is-breakdown.js';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
@@ -38,11 +39,10 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ text, page: window.location.pathname })
 			});
-			if (response.ok) {
-				const issue: { number: number; url: string } = await response.json();
-				const { number, url } = issue;
-				toast.success(`Feedback sent as issue #${number}`, {
-					action: { label: 'Open', onClick: () => window.open(url, '_blank', 'noopener') }
+			const issue: unknown = response.ok ? await response.json() : null;
+			if (isFiledIssue(issue)) {
+				toast.success(`Feedback sent as issue #${issue.number}`, {
+					action: { label: 'Open', onClick: () => window.open(issue.url, '_blank', 'noopener') }
 				});
 				text = '';
 				open = false;
@@ -85,7 +85,7 @@
 					id="feedback-text"
 					bind:value={text}
 					rows={5}
-					maxlength={10000}
+					maxlength={FEEDBACK_MAX_CHARS}
 					placeholder="What did you notice?"
 					onkeydown={(e) => {
 						if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') send();
