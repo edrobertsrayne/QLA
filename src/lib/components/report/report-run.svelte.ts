@@ -5,6 +5,7 @@
 // `retryAfter`: only INVALID_REPORT_INPUT-style answers fail a student at once.
 import { isRecord } from '$lib/parse/is-breakdown.js';
 import { generationInputFor } from '$lib/marksheet/report-input.js';
+import { isRunStoppingCode } from '$lib/marksheet/report-errors.js';
 import type { MarksheetStore } from '$lib/marksheet/store.svelte.js';
 
 /** Most requests in flight at once. */
@@ -17,14 +18,6 @@ export const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 8000;
 const JITTER_MS = 250;
-
-/** Errors that would fail every student alike: the run stops on the first. */
-const RUN_STOPPING_CODES = new Set([
-	'MISSING_API_KEY',
-	'MODEL_AUTH',
-	'MODEL_CREDIT',
-	'MODEL_REJECTED'
-]);
 
 export type TileState =
 	| { kind: 'queued' }
@@ -252,7 +245,7 @@ export class ReportRun {
 						: new RequestFailure('The report could not be written. Check the connection.', {
 								retryable: true
 							});
-				if (failure.code && RUN_STOPPING_CODES.has(failure.code)) {
+				if (failure.code && isRunStoppingCode(failure.code)) {
 					this.stoppedBy = failure.message;
 					this.#park(id);
 					abort.abort();

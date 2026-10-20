@@ -35,7 +35,6 @@ interface Envelope {
 		retryable?: boolean;
 		retryAfter?: number;
 		field?: string;
-		problems?: { field: string; message: string }[];
 		checks?: { id: string; message: string }[];
 	};
 }
@@ -269,7 +268,7 @@ describe('POST /api/topic-names input validation (no model spend)', () => {
 		expect(status).toBe(400);
 		expect(json.error?.code).toBe('INVALID_TOPIC_NAMES_INPUT');
 		expect(json.error?.retryable).toBe(false);
-		expect(json.error?.problems?.map((problem) => problem.field)).toContain(field);
+		expect(json.error?.field).toBe(field);
 		expect(calls).toHaveLength(0);
 	});
 

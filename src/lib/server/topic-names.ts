@@ -5,8 +5,7 @@
 // call sites is not a shared validation framework, and the two routes answer
 // with different codes and fields.
 
-/** Model resolves override → env → this default. Not checked against the curated list. */
-export const TOPIC_NAMES_DEFAULT_MODEL = 'openai/gpt-6-luna';
+import { MAX_LABEL_LENGTH, MAX_SUMMARY_LENGTH } from '$lib/marksheet/report-limits.js';
 
 /** Bodies over this size are refused before parsing. */
 export const TOPIC_NAMES_MAX_BODY_BYTES = 256 * 1024;
@@ -87,8 +86,11 @@ export function validateTopicNamesBody(body: unknown): {
 	let paperLabel = '';
 	if (typeof record['paperLabel'] !== 'string') {
 		problems.push({ field: 'paperLabel', message: 'Must be a string.' });
-	} else if (record['paperLabel'].length > 120) {
-		problems.push({ field: 'paperLabel', message: 'Must be at most 120 characters.' });
+	} else if (record['paperLabel'].length > MAX_LABEL_LENGTH) {
+		problems.push({
+			field: 'paperLabel',
+			message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
+		});
 	} else {
 		paperLabel = record['paperLabel'];
 	}
@@ -115,8 +117,11 @@ export function validateTopicNamesBody(body: unknown): {
 			let code = '';
 			if (typeof entry['code'] !== 'string' || entry['code'].trim() === '') {
 				problems.push({ field: `${field}.code`, message: 'Must be a non-blank code.' });
-			} else if (entry['code'].length > 120) {
-				problems.push({ field: `${field}.code`, message: 'Must be at most 120 characters.' });
+			} else if (entry['code'].length > MAX_LABEL_LENGTH) {
+				problems.push({
+					field: `${field}.code`,
+					message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
+				});
 			} else {
 				code = entry['code'];
 				if (seen.has(code)) problems.push({ field: `${field}.code`, message: 'Must be unique.' });
@@ -136,10 +141,10 @@ export function validateTopicNamesBody(body: unknown): {
 							message: 'Must be a string.'
 						});
 						ok = false;
-					} else if (summary.length > 300) {
+					} else if (summary.length > MAX_SUMMARY_LENGTH) {
 						problems.push({
 							field: `${field}.summaries[${summaryIndex}]`,
-							message: 'Must be at most 300 characters.'
+							message: `Must be at most ${MAX_SUMMARY_LENGTH} characters.`
 						});
 						ok = false;
 					}
@@ -158,13 +163,13 @@ export function validateTopicNamesBody(body: unknown): {
 }
 
 /**
- * Whether a proposed name may reach a printed page: non-blank, at most 120
- * characters, with no link or email address (`no-contact`).
+ * Whether a proposed name may reach a printed page: non-blank, at most
+ * `MAX_LABEL_LENGTH` characters, with no link or email address (`no-contact`).
  */
 export function topicNameIsUsable(name: unknown): boolean {
 	if (typeof name !== 'string') return false;
 	const trimmed = name.trim();
-	if (trimmed === '' || name.length > 120) return false;
+	if (trimmed === '' || name.length > MAX_LABEL_LENGTH) return false;
 	if (trimmed.includes('://') || trimmed.includes('www.') || trimmed.includes('@')) return false;
 	return true;
 }

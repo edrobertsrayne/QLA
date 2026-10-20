@@ -8,6 +8,7 @@
 import { assessmentObjectiveOf } from '$lib/parse/assessment-objectives.js';
 import { isRecord } from '$lib/parse/is-breakdown.js';
 import { facilityBand } from '$lib/marksheet/analysis.js';
+import { MAX_LABEL_LENGTH, MAX_SUMMARY_LENGTH } from '$lib/marksheet/report-limits.js';
 
 /** Model resolves override → env → this default. Not checked against the curated list. */
 export const REPORT_DEFAULT_MODEL = 'openai/gpt-6-luna';
@@ -135,8 +136,11 @@ export function validateReportBody(body: unknown): {
 	let paperLabel = '';
 	if (typeof body['paperLabel'] !== 'string') {
 		problems.push({ field: 'paperLabel', message: 'Must be a string.' });
-	} else if (body['paperLabel'].length > 120) {
-		problems.push({ field: 'paperLabel', message: 'Must be at most 120 characters.' });
+	} else if (body['paperLabel'].length > MAX_LABEL_LENGTH) {
+		problems.push({
+			field: 'paperLabel',
+			message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
+		});
 	} else {
 		paperLabel = body['paperLabel'];
 	}
@@ -162,8 +166,11 @@ export function validateReportBody(body: unknown): {
 			let label = '';
 			if (typeof raw['label'] !== 'string' || raw['label'].trim() === '') {
 				problems.push({ field: `${field}.label`, message: 'Must be a non-blank label.' });
-			} else if (raw['label'].length > 120) {
-				problems.push({ field: `${field}.label`, message: 'Must be at most 120 characters.' });
+			} else if (raw['label'].length > MAX_LABEL_LENGTH) {
+				problems.push({
+					field: `${field}.label`,
+					message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
+				});
 			} else {
 				label = raw['label'];
 				if (seen.has(label)) problems.push({ field: `${field}.label`, message: 'Must be unique.' });
@@ -172,8 +179,11 @@ export function validateReportBody(body: unknown): {
 			let summary = '';
 			if (typeof raw['summary'] !== 'string') {
 				problems.push({ field: `${field}.summary`, message: 'Must be a string.' });
-			} else if (raw['summary'].length > 300) {
-				problems.push({ field: `${field}.summary`, message: 'Must be at most 300 characters.' });
+			} else if (raw['summary'].length > MAX_SUMMARY_LENGTH) {
+				problems.push({
+					field: `${field}.summary`,
+					message: `Must be at most ${MAX_SUMMARY_LENGTH} characters.`
+				});
 			} else {
 				summary = raw['summary'];
 			}
@@ -183,10 +193,10 @@ export function validateReportBody(body: unknown): {
 					problems.push({ field: `${field}.commandWord`, message: 'Must be a string or null.' });
 			} else if (typeof raw['commandWord'] !== 'string') {
 				problems.push({ field: `${field}.commandWord`, message: 'Must be a string or null.' });
-			} else if (raw['commandWord'].length > 120) {
+			} else if (raw['commandWord'].length > MAX_LABEL_LENGTH) {
 				problems.push({
 					field: `${field}.commandWord`,
-					message: 'Must be at most 120 characters.'
+					message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
 				});
 			} else {
 				commandWord = raw['commandWord'];
@@ -220,10 +230,10 @@ export function validateReportBody(body: unknown): {
 							message: 'Must be a non-blank topic name.'
 						});
 						ok = false;
-					} else if (topic.length > 120) {
+					} else if (topic.length > MAX_LABEL_LENGTH) {
 						problems.push({
 							field: `${field}.topics[${topicIndex}]`,
-							message: 'Must be at most 120 characters.'
+							message: `Must be at most ${MAX_LABEL_LENGTH} characters.`
 						});
 						ok = false;
 					}
