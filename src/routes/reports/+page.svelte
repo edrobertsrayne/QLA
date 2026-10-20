@@ -12,6 +12,7 @@
 	import ReportSheet from '$lib/components/report/ReportSheet.svelte';
 	import GradeBoundariesForm from '$lib/components/report/GradeBoundariesForm.svelte';
 	import { isFlagged, reportFit } from '$lib/components/report/report-fit.svelte.js';
+	import { proposeTopicNames } from '$lib/components/report/topic-name-proposal.js';
 	import { ReportRun } from '$lib/components/report/report-run.svelte.js';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
@@ -25,7 +26,7 @@
 	import { changedInputFields, generationInputFor } from '$lib/marksheet/report-input.js';
 	import { agree, count } from '$lib/prose.js';
 	import { MAX_LABEL_LENGTH } from '$lib/marksheet/report-limits.js';
-	import { specPointCodes, topicCodesOf } from '$lib/marksheet/document.js';
+	import { topicCodesOf } from '$lib/marksheet/document.js';
 	import { boundariesOf } from '$lib/marksheet/grades.js';
 	import { droppedNoMarks, reportFiguresFor } from '$lib/marksheet/report-figures.js';
 	type Step = 'topics' | 'grades' | 'who' | 'writing' | 'review';
@@ -195,34 +196,10 @@
 		proposing = true;
 		proposeError = null;
 		try {
-			const summariesOf = (wanted: string): string[] => {
-				const summaries: string[] = [];
-				for (const entry of document.breakdown.entries) {
-					if (specPointCodes(entry.specPoint).includes(wanted)) {
-						summaries.push(entry.summary || entry.label);
-					}
-				}
-				return summaries.slice(0, 200);
-			};
-			const response = await fetch('/api/topic-names', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					...(modelOverride.trim() === '' ? {} : { model: modelOverride.trim() }),
-					paperLabel: document.paper.label ?? '',
-					codes: missing.map((code) => ({ code, summaries: summariesOf(code) }))
-				})
-			});
-			const payload = (await response.json().catch(() => null)) as {
-				names?: Record<string, string>;
-				error?: { message?: string };
-			} | null;
-			if (!response.ok || !payload?.names) {
-				throw new Error(payload?.error?.message ?? `Proposal failed (status ${response.status}).`);
-			}
+			const names = await proposeTopicNames(document, missing, modelOverride);
 			for (const code of missing) {
-				const name = payload.names[code];
-				if (typeof name === 'string' && store.document) {
+				const name = names[code];
+				if (name !== undefined && store.document) {
 					const current = store.document.topicNames[code] ?? '';
 					if (current.trim() === '') store.setTopicName(code, name);
 				}
@@ -481,8 +458,10 @@
 						: `Wrote ${run.done} of ${run.order.length}`}
 				</h1>
 			{/if}
-			{#if run.stoppedBy}
-				<p role="alert" class="rounded-md border border-destructive p-3 text-sm">{run.stoppedBy}</p>
+			{#if run.phase.kind === 'halted'}
+				<p role="alert" class="rounded-md border border-destructive p-3 text-sm">
+					{run.phase.message}
+				</p>
 			{/if}
 			{#if run.running}
 				<Button variant="outline" onclick={() => run.stop()}>Stop</Button>

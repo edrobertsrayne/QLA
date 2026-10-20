@@ -4,7 +4,8 @@ import type { ModelOption } from './ModelSelect.svelte';
 
 export class ModelList {
 	options = $state<ModelOption[]>([]);
-	loading = $state(false);
+	/** True until the first load settles: every owner loads on mount. */
+	loading = $state(true);
 	error = $state<string | null>(null);
 
 	/** Fetch the curated list; true when it arrived. On failure the server default still works. */

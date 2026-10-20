@@ -6,13 +6,14 @@
 import { isRecord } from '$lib/parse/is-breakdown.js';
 import { generationInputFor } from '$lib/marksheet/report-input.js';
 import { isRunStoppingCode } from '$lib/marksheet/report-errors.js';
+import { ApiFailure, failureFrom } from './api-error.js';
 import type { MarksheetStore } from '$lib/marksheet/store.svelte.js';
 
 /** Most requests in flight at once. */
-export const CONCURRENCY = 5;
+const CONCURRENCY = 5;
 
 /** Tries per student before their tile fails. */
-export const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 3;
 
 /** Backoff between tries: `min(8 s, 1 s × 2^n)` plus jitter, honouring `retryAfter`. */
 const BASE_BACKOFF_MS = 1000;
@@ -31,21 +32,6 @@ interface Written {
 	model: string;
 }
 
-class RequestFailure extends Error {
-	readonly code: string | null;
-	readonly retryable: boolean;
-	readonly retryAfterSeconds?: number;
-	constructor(
-		message: string,
-		options: { code?: string | null; retryable?: boolean; retryAfterSeconds?: number } = {}
-	) {
-		super(message);
-		this.code = options.code ?? null;
-		this.retryable = options.retryable ?? false;
-		this.retryAfterSeconds = options.retryAfterSeconds;
-	}
-}
-
 function isStringArray(value: unknown): value is string[] {
 	return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
@@ -60,30 +46,6 @@ function writtenFrom(body: unknown, fallbackModel: string): Written | null {
 		areasForImprovement,
 		model: typeof model === 'string' && model !== '' ? model : fallbackModel
 	};
-}
-
-async function errorFrom(response: Response): Promise<RequestFailure> {
-	let code: string | null = null;
-	let message = `The report could not be written (status ${response.status}).`;
-	let retryable = false;
-	let retryAfterSeconds: number | undefined;
-	try {
-		const body: unknown = await response.json();
-		const error = isRecord(body) ? body['error'] : null;
-		if (isRecord(error)) {
-			if (typeof error['code'] === 'string') code = error['code'];
-			if (typeof error['message'] === 'string' && error['message'] !== '')
-				message = error['message'];
-			// Only an explicit flag retries: anything else fails the student at once.
-			retryable = error['retryable'] === true;
-			const wait = error['retryAfter'];
-			retryAfterSeconds =
-				typeof wait === 'number' && Number.isFinite(wait) && wait >= 0 ? wait : undefined;
-		}
-	} catch {
-		// The status line above is all there is to say.
-	}
-	return new RequestFailure(message, { code, retryable, retryAfterSeconds });
 }
 
 /** `min(8 s, 1 s × 2^n)` after the nth failed try, plus jitter. */
@@ -117,6 +79,9 @@ function sleepUnlessStopped(ms: number, signal: AbortSignal): Promise<void> {
 	});
 }
 
+/** Where the run stands: a halted run carries the one banner a run-stopping error leaves. */
+export type RunPhase = { kind: 'idle' } | { kind: 'running' } | { kind: 'halted'; message: string };
+
 export class ReportRun {
 	readonly #store: MarksheetStore;
 	readonly #onFinished: () => void;
@@ -125,9 +90,10 @@ export class ReportRun {
 	/** Student ids in the order the tiles show them. */
 	order = $state<string[]>([]);
 	tiles = $state<Record<string, TileState>>({});
-	running = $state(false);
-	/** The one banner a run-stopping error leaves, or null. */
-	stoppedBy = $state<string | null>(null);
+	phase = $state<RunPhase>({ kind: 'idle' });
+	running = $derived(this.phase.kind === 'running');
+	/** The run-stopping error of the run in flight; becomes the halted phase once every worker settles. */
+	#haltedBy: string | null = null;
 
 	constructor(store: MarksheetStore, onFinished: () => void) {
 		this.#store = store;
@@ -144,7 +110,9 @@ export class ReportRun {
 	/** Write one report for each student, with the model override when one is chosen. */
 	start(studentIds: string[], modelOverride: string): void {
 		if (this.running) return;
-		this.#launch([...studentIds], modelOverride);
+		this.order = [...studentIds];
+		this.tiles = Object.fromEntries(studentIds.map((id) => [id, { kind: 'queued' } as TileState]));
+		this.#run([...studentIds], modelOverride);
 	}
 
 	/**
@@ -154,27 +122,19 @@ export class ReportRun {
 	 */
 	retry(studentIds: string[], modelOverride: string): void {
 		if (this.running) return;
-		this.#launch([...studentIds], modelOverride, true);
+		for (const id of studentIds) {
+			if (!this.order.includes(id)) this.order.push(id);
+			this.tiles[id] = { kind: 'queued' };
+		}
+		this.#run([...studentIds], modelOverride);
 	}
 
-	/** Run the queue: fresh tiles for a start, reset tiles for a retry. */
-	#launch(studentIds: string[], modelOverride: string, keepTiles = false): void {
-		if (!keepTiles) {
-			this.order = studentIds;
-			this.tiles = Object.fromEntries(
-				studentIds.map((id) => [id, { kind: 'queued' } as TileState])
-			);
-		} else {
-			for (const id of studentIds) {
-				if (!this.order.includes(id)) this.order.push(id);
-				this.tiles[id] = { kind: 'queued' };
-			}
-		}
-		this.stoppedBy = null;
-		this.running = true;
+	/** Work the queue with up to CONCURRENCY workers until it drains or a Stop lands. */
+	#run(queue: string[], modelOverride: string): void {
+		this.phase = { kind: 'running' };
+		this.#haltedBy = null;
 		const abort = new AbortController();
 		this.#abort = abort;
-		const queue = [...studentIds];
 		const worker = async (): Promise<void> => {
 			for (;;) {
 				const id = abort.signal.aborted ? undefined : queue.shift();
@@ -185,11 +145,11 @@ export class ReportRun {
 		};
 
 		void Promise.all(
-			Array.from({ length: Math.min(CONCURRENCY, studentIds.length) }, () => worker())
+			Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => worker())
 		).then(() => {
-			const stopped = abort.signal.aborted;
-			this.running = false;
 			this.#abort = null;
+			const stopped = abort.signal.aborted;
+			this.phase = this.#haltedBy ? { kind: 'halted', message: this.#haltedBy } : { kind: 'idle' };
 			// A retry still leaves other tiles alone: only advance when nothing failed.
 			if (!stopped && this.failed.length === 0) this.#onFinished();
 		});
@@ -219,10 +179,14 @@ export class ReportRun {
 					signal: abort.signal,
 					body: JSON.stringify({ ...input, ...(modelOverride ? { model: modelOverride } : {}) })
 				});
-				if (!response.ok) throw await errorFrom(response);
+				if (!response.ok)
+					throw await failureFrom(
+						response,
+						`The report could not be written (status ${response.status}).`
+					);
 				const written = writtenFrom(await response.json(), modelOverride);
 				if (!written)
-					throw new RequestFailure('The model returned a report in an unexpected shape.', {
+					throw new ApiFailure('The model returned a report in an unexpected shape.', {
 						retryable: true
 					});
 				this.#store.storeReport(
@@ -240,13 +204,13 @@ export class ReportRun {
 				}
 				// Anything but our own abort is transient until the envelope says otherwise.
 				const failure =
-					error instanceof RequestFailure
+					error instanceof ApiFailure
 						? error
-						: new RequestFailure('The report could not be written. Check the connection.', {
+						: new ApiFailure('The report could not be written. Check the connection.', {
 								retryable: true
 							});
 				if (failure.code && isRunStoppingCode(failure.code)) {
-					this.stoppedBy = failure.message;
+					this.#haltedBy = failure.message;
 					this.#park(id);
 					abort.abort();
 					return;
