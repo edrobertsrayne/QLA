@@ -7,7 +7,8 @@
 	import RestoreCard from '$lib/components/shell/RestoreCard.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import ModelSelect, { type ModelOption } from '$lib/components/parse/ModelSelect.svelte';
+	import ModelSelect from '$lib/components/parse/ModelSelect.svelte';
+	import { ModelList } from '$lib/components/parse/model-list.svelte.js';
 	import { onMount } from 'svelte';
 	import * as Card from '$lib/components/ui/card';
 	import type { FatalError, RunResult } from '$lib/components/parse/types.js';
@@ -32,9 +33,7 @@
 	let markschemeError = $state<string | null>(null);
 	let modelOverride = $state('');
 	let modelCustom = $state(false);
-	let modelOptions = $state<ModelOption[]>([]);
-	let modelsLoading = $state(true);
-	let modelsError = $state<string | null>(null);
+	const models = new ModelList();
 	let specUrl = $state('');
 	let specUrlError = $state<string | null>(null);
 	let running = $state(false);
@@ -110,27 +109,13 @@
 	}
 
 	async function loadModels(): Promise<void> {
-		modelsLoading = true;
-		modelsError = null;
-		try {
-			const response = await fetch('/api/models');
-			if (!response.ok) throw new Error(`status ${response.status}`);
-			const body = (await response.json()) as {
-				models?: ModelOption[];
-			};
-			modelOptions = Array.isArray(body.models) ? body.models : [];
-			if (
-				!modelCustom &&
-				modelOverride !== '' &&
-				!modelOptions.some((m) => m.id === modelOverride)
-			) {
-				modelOverride = '';
-			}
-		} catch {
-			modelsError = 'The model list could not be loaded. Server default still works.';
-			modelOptions = [];
-		} finally {
-			modelsLoading = false;
+		if (!(await models.load())) return;
+		if (
+			!modelCustom &&
+			modelOverride !== '' &&
+			!models.options.some((m) => m.id === modelOverride)
+		) {
+			modelOverride = '';
 		}
 	}
 
@@ -232,9 +217,9 @@
 					<ModelSelect
 						bind:value={modelOverride}
 						bind:custom={modelCustom}
-						models={modelOptions}
-						loading={modelsLoading}
-						loadError={modelsError}
+						models={models.options}
+						loading={models.loading}
+						loadError={models.error}
 						onretry={() => void loadModels()}
 					/>
 				</div>

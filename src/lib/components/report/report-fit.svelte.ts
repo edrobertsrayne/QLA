@@ -32,11 +32,6 @@ export function isFlagged(fit: PageFit): boolean {
 	return fit.overMm > 0;
 }
 
-/** The page absorbed the edit by shrinking its feedback. */
-export function isShrunk(fit: PageFit): boolean {
-	return !isFlagged(fit) && fit.scale < 1;
-}
-
 export function overMmOf(overPx: number): number {
 	return overPx <= 0 ? 0 : Math.max(1, Math.ceil(overPx / PX_PER_MM));
 }
