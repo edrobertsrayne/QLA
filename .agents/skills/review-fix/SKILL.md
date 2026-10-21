@@ -1,6 +1,6 @@
 ---
 name: review-fix
-description: Review a PR for code quality, post the findings, fix each one in its own commit, then push and re-verify.
+description: Review a PR against CODING_STANDARDS.md, post the findings, fix each one in its own commit, then push and re-verify.
 disable-model-invocation: true
 ---
 
@@ -14,17 +14,25 @@ Done when `git diff <base>...HEAD` is non-empty and both refs resolve.
 
 ## 2. Review
 
-Spawn one subagent on the strongest available model, in a fresh context so the reviewer is not the author. Brief: read `.agents/skills/thermo-nuclear-code-quality-review/SKILL.md`, apply it to `git diff <base>...HEAD`, and write `local://review-<N>.md`.
+Spawn one subagent on the strongest available model, in a fresh context so the reviewer is not the author. Brief:
+
+- The rulebook is `CODING_STANDARDS.md`, plus `.agents/skills/svelte-core-bestpractices/SKILL.md` when the diff touches `.svelte` or `.svelte.ts` files. Nothing else.
+- Review `git diff <base>...HEAD`. Flag only lines the diff adds or changes, and skip anything `npm run lint` or `npm run check` already catches.
+- Each finding names the standard it breaks by its heading. A problem no standard covers goes in an unnumbered **Outside the standards** list at the end; this skill does not fix those (they are `retro` material).
+- Before writing a finding, reread the code it cites and confirm the problem is real. Drop it if you can't.
+- Order findings by leverage: a fix that deletes a branch, layer or file comes before a rename. No style nits.
+- Write `local://review-<N>.md`. A review with no findings lists the standards it checked.
 
 Every finding in that file is numbered and carries:
 
 - **Problem** and **fix**.
+- **Standard**: the `CODING_STANDARDS.md` heading it breaks.
 - **Files** it touches.
 - **behaviour:** `none`, or the change.
 - **size:** `mechanical` (moves, renames, named constants) or `judgement` (restructuring).
 - **after:** the findings it depends on.
 
-Done when every finding has all five fields.
+Done when every finding has all six fields.
 
 ## 3. Post and gate
 
