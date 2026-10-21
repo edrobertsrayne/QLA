@@ -15,6 +15,7 @@
 	import VariantB from './VariantB.svelte';
 	import VariantC from './VariantC.svelte';
 	import VariantD from './VariantD.svelte';
+	import VariantE from './VariantE.svelte';
 
 	let { variant, names }: { variant: string; names: string[] } = $props();
 
@@ -22,7 +23,8 @@
 		{ key: 'A', name: 'Tint', component: VariantA },
 		{ key: 'B', name: 'Stripe and badge', component: VariantB },
 		{ key: 'C', name: 'Grouped by state', component: VariantC },
-		{ key: 'D', name: 'Strip and chips', component: VariantD }
+		{ key: 'D', name: 'Strip and chips', component: VariantD },
+		{ key: 'E', name: 'D, failures first', component: VariantE }
 	];
 	const current = $derived(VARIANTS.find((v) => v.key === variant) ?? VARIANTS[0]);
 
