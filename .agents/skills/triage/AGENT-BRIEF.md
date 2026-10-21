@@ -42,6 +42,7 @@ State what is out of scope. This prevents the agent from gold-plating or making 
 ## Agent Brief
 
 **Category:** bug / enhancement
+**Blocked by:** #<prototype>: build the variant its verdict comment records (only when split from a prototype ticket)
 **Summary:** one-line description of what needs to happen
 
 **Current behavior:**
@@ -65,6 +66,32 @@ Be specific about edge cases and error conditions.
 **Out of scope:**
 - Thing that should NOT be changed or addressed in this issue
 - Adjacent feature that might seem related but is separate
+```
+
+## Prototype brief
+
+A **prototype ticket** is split off when an issue still carries a question only a runnable answer settles (look and feel, a state model you have to see). It gets its own issue, titled `Prototype: <question>`, carrying the parent's category and `ready-for-human`: an agent drives `/prototype`, but the maintainer has to pick. The parent keeps its agent brief for everything already decided, with a **Blocked by** line pointing here, and is linked as blocked by this issue through the tracker's blocking mechanism.
+
+```markdown
+## Prototype Brief
+
+**Question:** the one design question the prototype answers
+**Branch:** UI / logic (`/prototype`)
+**For:** #<parent>, which is blocked until this issue closes
+
+**Fixed (variants must respect):**
+- Decisions already made in triage that every variant must honour
+
+**Variants:** how many, how different, where they run, and the maintainer's own idea included as one
+
+**Every variant shows:** the states/cases each must render, and a free-play control between them
+
+**Done when:**
+- [ ] The maintainer has picked a variant, and the verdict (which one, and any tweaks) is recorded in a comment here
+- [ ] The prototype is captured on a `prototype/<name>` branch, linked from here
+- [ ] This issue is closed, which unblocks #<parent>
+
+**Out of scope:** building the choice into the real code (that's #<parent>)
 ```
 
 ## Examples

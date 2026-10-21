@@ -78,6 +78,7 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 5. **Apply the outcome:**
    - `ready-for-agent`: post an agent brief comment ([AGENT-BRIEF.md](AGENT-BRIEF.md)).
    - `ready-for-human`: same structure as an agent brief, but note why it can't be delegated (judgment calls, external access, design decisions, manual testing).
+   - **Prototype split**: before applying `ready-for-agent`, check whether the issue still carries a question only a runnable answer settles (look and feel, a state model you need to see). A brief that has to stop and wait for the maintainer's pick is a prototype ticket in disguise. Split it: open a prototype ticket (`ready-for-human`, Prototype brief in [AGENT-BRIEF.md](AGENT-BRIEF.md)), give the original issue `ready-for-agent` with an agent brief covering everything already decided plus a **Blocked by** line, and link it as blocked by the prototype ticket through the tracker's blocking mechanism.
    - `needs-info`: post triage notes (template below).
    - For `wontfix`, close the issue, with the comment depending on *why*:
      - **Already implemented**: the change already exists in the codebase. Point to where it lives; do **not** write to `.out-of-scope/` (that KB is for *rejected* requests, not built ones).
