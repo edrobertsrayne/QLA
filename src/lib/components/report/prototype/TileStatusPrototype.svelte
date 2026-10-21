@@ -1,8 +1,8 @@
 <!--
 	PROTOTYPE (#92), throwaway: how should Writing-step tiles show queued /
-	writing / ready / failed? Four variants of the Writing step on /reports,
-	switchable via ?variant=A|B|C|D. The step chrome mirrors WritingStep; the run
-	is a fake in-memory simulation; nothing is stored.
+	writing / ready / failed? Four variants of the Writing step on
+	/prototype/report-tiles, switchable via ?variant=A|B|C|D. The step chrome
+	mirrors WritingStep; the run is a fake in-memory simulation; nothing is stored.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';

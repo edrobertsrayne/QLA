@@ -4,10 +4,6 @@
 	step is a component over the roster.
 -->
 <script lang="ts">
-	import { dev } from '$app/environment';
-	import { page } from '$app/state';
-	// PROTOTYPE (#92): ?variant= swaps the step for the tile-status prototype.
-	import TileStatusPrototype from '$lib/components/report/prototype/TileStatusPrototype.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount, tick } from 'svelte';
@@ -51,7 +47,6 @@
 						? 'topics'
 						: 'grades'
 	);
-	if (dev && page.url.searchParams.has('variant')) step = 'writing'; // PROTOTYPE (#92)
 
 	// The paper has topic codes only when some entry carries a specification point.
 	const hasTopics = $derived(document ? topicCodesOf(document).length > 0 : false);
@@ -75,7 +70,6 @@
 	const roster = $derived(document ? reportRoster(document, run.tiles) : []);
 	/** Reports the teacher can see: written and still eligible. */
 	const reviewIds = $derived(rowsOf(roster, 'review').map((row) => row.studentId));
-	const prototypeVariant = $derived(dev ? page.url.searchParams.get('variant') : null);
 
 	function writeNew(ids: string[]): void {
 		if (modelCustom) modelOverride = modelOverride.trim();
@@ -137,8 +131,6 @@
 
 	{#if !document}
 		<!-- No document: the layout redirects away. -->
-	{:else if prototypeVariant}
-		<TileStatusPrototype variant={prototypeVariant} names={roster.map((row) => row.name)} />
 	{:else if step === 'topics'}
 		<TopicNamesStep {document} {modelOverride} onnext={() => (step = 'grades')} />
 	{:else if step === 'grades'}

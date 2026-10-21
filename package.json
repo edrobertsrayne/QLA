@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"prototype": "vite dev --open '/reports?variant=A'",
+		"prototype": "vite dev --open '/prototype/report-tiles?variant=A'",
 		"build": "vite build",
 		"preview": "vite preview",
 		"start": "node build",
