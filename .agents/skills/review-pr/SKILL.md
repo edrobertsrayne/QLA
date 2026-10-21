@@ -1,5 +1,5 @@
 ---
-name: review-fix
+name: review-pr
 description: Review a PR against CODING_STANDARDS.md, post the findings, fix each one in its own commit, then push and re-verify.
 disable-model-invocation: true
 ---
