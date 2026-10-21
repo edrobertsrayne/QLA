@@ -46,18 +46,14 @@ Per finding, one subagent: `sonic` for `mechanical`, `task` for `judgement`. Its
 
 1. Make that one fix.
 2. Update any test that pins the old behaviour. When `behaviour` is not `none`, add a test for the new behaviour.
-3. Run the targeted tests and `npm run check`.
-4. Commit with a Conventional Commit message (`refactor(scope): ...`).
-
-The commit hook runs the full suite, so there is no separate full run per fix.
+3. Commit with a Conventional Commit message (`refactor(scope): ...`). The commit hook runs lint-staged, `npm run check` and the full suite; do not run them separately.
 
 Before the next finding, check the commit yourself: `git show --stat HEAD` lists the files the finding named, and `git status --short` is empty. A subagent's report is not evidence. If the check fails, stop and report.
 
 ## 5. Ship
 
 1. `git push`.
-2. `npm test`, `npm run check`, `npm run lint`.
-3. Smoke the changed surface: run it live if a route or the UI changed. Screenshots go through `upload-screenshots` only when the UI changed visibly.
-4. Update the PR body's Evidence section with `gh pr edit <N> --body-file`, following the `pr` skill.
+2. Smoke the changed surface: run it live if a route or the UI changed. Screenshots go through `upload-screenshots` only when the UI changed visibly.
+3. Update the PR body's Evidence section with `gh pr edit <N> --body-file`, following the `pr` skill.
 
-Done when the tests pass, the smoke ran, and the PR body reflects the fixes.
+Done when every fix is committed (the hooks passed), the smoke ran, and the PR body reflects the fixes.
