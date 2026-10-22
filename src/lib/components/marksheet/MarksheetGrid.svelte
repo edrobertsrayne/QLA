@@ -441,7 +441,7 @@
 									{@attach caretAtEnd}
 									aria-label={`Mark for ${name} on ${entryName(entry)}`}
 									inputmode="numeric"
-									class="w-full min-w-0 rounded-sm bg-background px-0.5 py-0 text-center tabular-nums outline-none ring-1 ring-ring"
+									class="m-0 block w-full min-w-0 appearance-none rounded-none border-0 bg-transparent p-0 text-center tabular-nums shadow-none outline-none ring-0"
 									value={editing.value}
 									oninput={(event) => {
 										if (editing) editing.value = event.currentTarget.value;
