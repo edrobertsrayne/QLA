@@ -25,9 +25,17 @@ function rootOf(printRoot: HTMLElement, ids: string[]): HTMLElement {
 		const page = printRoot
 			.querySelector(`[data-report-id="${CSS.escape(id)}"]`)
 			?.closest('.print-page');
-		if (page) copy.append(page.cloneNode(true));
+		if (!page) throw new Error(`No report page for student ${id}`);
+		copy.append(page.cloneNode(true));
 	}
 	return copy;
+}
+
+/** The student `id` in `document`; a report for someone not on the sheet is a bug. */
+function studentOf(document: MarksheetDocument, id: string): MarksheetDocument['students'][number] {
+	const student = document.students.find((candidate) => candidate.id === id);
+	if (!student) throw new Error(`No student ${id} on the marksheet`);
+	return student;
 }
 
 function pdfOf(printRoot: HTMLElement, ids: string[]): Promise<Blob> {
@@ -53,8 +61,7 @@ async function downloadZip(
 	const files: Record<string, Uint8Array> = {};
 	// One at a time: the server renders them in its one shared browser anyway.
 	for (const id of ids) {
-		const student = document.students.find((candidate) => candidate.id === id);
-		if (!student) continue;
+		const student = studentOf(document, id);
 		const name = distinctName(reportPdfFilename(document, student, now), taken);
 		files[name] = new Uint8Array(await (await pdfOf(printRoot, [id])).arrayBuffer());
 	}
@@ -74,8 +81,7 @@ export async function downloadReports(
 ): Promise<void> {
 	switch (download.kind) {
 		case 'page': {
-			const student = document.students.find((candidate) => candidate.id === download.id);
-			if (!student) return;
+			const student = studentOf(document, download.id);
 			saveBlob(reportPdfFilename(document, student, now), await pdfOf(printRoot, [download.id]));
 			return;
 		}

@@ -97,16 +97,19 @@
 		window.print();
 	}
 
+	/** The print copies of the visible pages, which a PDF is made from. */
+	let printRoot = $state<HTMLElement>();
+
 	/** The PDF being made, or null when none is. */
 	let downloading = $state<ReportDownload | null>(null);
 
 	async function download(request: ReportDownload): Promise<void> {
-		if (!document) return;
-		const printRoot = globalThis.document.querySelector<HTMLElement>('.print-root');
-		if (!printRoot) return;
 		downloading = request;
 		try {
-			await toastPdfFailure(() => downloadReports(printRoot, document, request, new Date()));
+			await toastPdfFailure(() => {
+				if (!document || !printRoot) throw new Error('The report pages are not ready to download');
+				return downloadReports(printRoot, document, request, new Date());
+			});
 		} finally {
 			downloading = null;
 		}
@@ -200,5 +203,5 @@
 </main>
 
 {#if document}
-	<PrintRoot {document} ids={printing ?? reviewIds} />
+	<PrintRoot {document} ids={printing ?? reviewIds} bind:root={printRoot} />
 {/if}
