@@ -8,7 +8,7 @@
 // or null, summary 3–8 words, specPoint string-or-null (exact lift, never
 // validated), commandWord string-or-null, ao AO1/AO2/AO3-or-null.
 
-import type { ParseWarning } from './schema';
+import { MAX_AO_DESCRIPTION_WORDS, type AoDescription, type ParseWarning } from './schema';
 import { ASSESSMENT_OBJECTIVES } from '$lib/parse/assessment-objectives.js';
 import { isBreakdown, isRecord } from '$lib/parse/is-breakdown.js';
 import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
@@ -139,4 +139,31 @@ export function applyQuestionNumberFallback(breakdown: unknown): void {
 		const id = question['id'];
 		if (typeof id === 'string' && id.trim() !== '') question['questionNumber'] = id;
 	}
+}
+
+/** A description the model gave, or null when it is empty, over-long or not text. */
+function cleanDescription(value: unknown): string | null {
+	if (typeof value !== 'string') return null;
+	const trimmed = value.trim();
+	if (trimmed === '' || countWords(trimmed) > MAX_AO_DESCRIPTION_WORDS) return null;
+	return trimmed;
+}
+
+/**
+ * Replace the model's `aoDescriptions` with one checked entry per assessment
+ * objective: empty, over-long or malformed values become null, and a run with
+ * no specification attached has none whatever the model said, since only a
+ * specification can ground one.
+ */
+export function applyAoDescriptionChecks(breakdown: unknown, hasSpec: boolean): void {
+	if (!isRecord(breakdown)) return;
+	const given = Array.isArray(breakdown['aoDescriptions']) ? breakdown['aoDescriptions'] : [];
+	const descriptions: AoDescription[] = ASSESSMENT_OBJECTIVES.map((ao) => {
+		const match = given.find((item) => isRecord(item) && item['ao'] === ao);
+		return {
+			ao,
+			description: hasSpec && isRecord(match) ? cleanDescription(match['description']) : null
+		};
+	});
+	breakdown['aoDescriptions'] = descriptions;
 }

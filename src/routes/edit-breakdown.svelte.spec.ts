@@ -31,7 +31,8 @@ function confirmedDocument(overrides: Partial<MarksheetDocument> = {}): Markshee
 					ao: null
 				})
 			],
-			warnings: []
+			warnings: [],
+			aoDescriptions: {}
 		},
 		students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
 		marks: {

@@ -127,20 +127,22 @@
 	});
 
 	/**
-	 * Settle the feedback scale on the live page: step down from full size
-	 * until the content fits or 90% is reached, then record how far over the
-	 * page it still runs. Re-runs whenever the content changes size — a
+	 * Settle the layout on the live page: try one column at full feedback
+	 * size, then two, then shrink the feedback to 90% and record how far over
+	 * the page it still runs. Re-runs whenever the content changes size — a
 	 * teacher's edit, a rewrite, or fresh figures.
 	 */
 	function measureFit(box: HTMLElement) {
 		if (!measure) return;
 		const content = box.firstElementChild as HTMLElement | null;
-		const feedback = content?.querySelector('[data-feedback]') as HTMLElement | null;
-		if (!content || !feedback) return;
+		const feedback = content?.querySelector<HTMLElement>('[data-feedback]');
+		const questions = content?.querySelector<HTMLElement>('[data-questions]');
+		if (!content || !feedback || !questions) return;
 		const settle = () => {
 			fit.setFit(
 				studentId,
-				settleFit(box.clientHeight, (scale) => {
+				settleFit(box.clientHeight, (columns, scale) => {
+					questions.dataset.columns = String(columns);
 					feedback.style.fontSize = feedbackFontSize(scale) ?? '';
 					return content.scrollHeight;
 				})
@@ -280,15 +282,26 @@
 			</section>
 		{/if}
 
-		<div class="mt-4 grid grid-cols-2 gap-5 text-[9pt]">
+		<!-- One column stacks the two tables and hides the second header, so it reads as one table. -->
+		<div
+			data-questions
+			data-columns={!measure ? settled.columns : undefined}
+			class="mt-4 grid grid-cols-2 gap-5 text-[9pt] data-[columns=1]:grid-cols-1 data-[columns=1]:gap-y-0 data-[columns=1]:[&>table:last-child>thead]:hidden"
+		>
 			{#each halves as half, h (h)}
-				<table class="w-full self-start leading-[1.3]">
+				<table class="w-full table-fixed self-start leading-[1.3]">
+					<colgroup>
+						<col class="w-[3.2em]" />
+						<col />
+						<col class="w-[3.4em]" />
+						<col class="w-[1.6em]" />
+					</colgroup>
 					<thead>
 						<tr class="border-b border-black text-left">
-							<th class="w-[3.2em]">Q</th>
+							<th>Q</th>
 							<th></th>
-							<th class="w-[3.4em] text-right">Marks</th>
-							<th class="w-[1.6em]"></th>
+							<th class="text-right">Marks</th>
+							<th></th>
 						</tr>
 					</thead>
 					{#each half as band, b (b)}

@@ -1,8 +1,9 @@
-// One side of A4 per student: when the feedback outgrows the page, the
-// feedback steps down to no less than MIN_SCALE (90%), and past that the page
-// is flagged with how many mm it runs over. Screen copies measure themselves
-// with a ResizeObserver; print copies reuse the settled scale. Print clips the
-// overflow; the flag never appears on paper.
+// One side of A4 per student. The question table takes one full-width column
+// when the page fits that way; otherwise two columns. When even two columns
+// outgrow the page, the feedback steps down to no less than MIN_SCALE (90%),
+// and past that the page is flagged with how many mm it runs over. Screen
+// copies measure themselves with a ResizeObserver; print copies reuse the
+// settled layout. Print clips the overflow; the flag never appears on paper.
 
 /** CSS pixels per millimetre at 96 dpi. */
 const PX_PER_MM = 96 / 25.4;
@@ -20,7 +21,13 @@ const SCALE_STEP = 0.025;
 export function feedbackFontSize(scale: number): string | undefined {
 	return scale >= 1 ? undefined : `${FEEDBACK_PT * scale}pt`;
 }
+
+/** The question table's layout: one full-width column, or two. */
+export type Columns = 1 | 2;
+
 export interface PageFit {
+	/** The question-table layout the page settled on. */
+	columns: Columns;
 	/** The feedback scale the page settled on. */
 	scale: number;
 	/** How far over the page the content runs, in whole mm. */
@@ -37,27 +44,33 @@ function overMmOf(overPx: number): number {
 }
 
 /**
- * Settle the feedback scale for one measured page: step down from full size
- * until the content fits or the minimum is reached, then record how far over
- * the page the content still runs. The sheet sets the scale on the live page
- * and reports back the resulting heights, so shrinking reflows for real.
+ * Settle the layout for one measured page. Fit order: one column at full
+ * feedback size; two columns at full size; two columns with the feedback
+ * stepping down to the minimum, then the mm still over. The sheet applies the
+ * layout and scale to the live page and reports back the resulting height, so
+ * every step reflows for real. The last call to `contentHeightAt` is always
+ * the settled layout.
  */
-export function settleFit(boxHeight: number, contentHeightAt: (scale: number) => number): PageFit {
+export function settleFit(
+	boxHeight: number,
+	contentHeightAt: (columns: Columns, scale: number) => number
+): PageFit {
+	if (contentHeightAt(1, 1) <= boxHeight) return { columns: 1, scale: 1, overMm: 0 };
 	let scale = 1;
-	let contentHeight = contentHeightAt(scale);
+	let contentHeight = contentHeightAt(2, scale);
 	while (contentHeight > boxHeight && scale > MIN_SCALE) {
 		scale = Math.round((scale - SCALE_STEP) * 1000) / 1000;
-		contentHeight = contentHeightAt(scale);
+		contentHeight = contentHeightAt(2, scale);
 	}
-	return { scale, overMm: overMmOf(contentHeight - boxHeight) };
+	return { columns: 2, scale, overMm: overMmOf(contentHeight - boxHeight) };
 }
 
 class ReportFitState {
-	/** Per student: the settled feedback scale and mm over. */
+	/** Per student: the settled layout, feedback scale and mm over. */
 	fits = $state<Record<string, PageFit>>({});
 
 	fitOf(id: string): PageFit {
-		return this.fits[id] ?? { scale: 1, overMm: 0 };
+		return this.fits[id] ?? { columns: 2, scale: 1, overMm: 0 };
 	}
 
 	setFit(id: string, fit: PageFit): void {

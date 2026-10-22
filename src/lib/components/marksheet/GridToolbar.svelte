@@ -10,6 +10,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
 	import EditBreakdownDialog from '$lib/components/marksheet/EditBreakdownDialog.svelte';
+	import UploadStudentsDialog from '$lib/components/marksheet/UploadStudentsDialog.svelte';
 	import { facilityDescription, facilityPercent } from '$lib/marksheet/analysis.js';
 	import {
 		entryName,
@@ -60,6 +61,7 @@
 	<Button variant="outline" size="xs" onclick={() => store.sortStudents('surname')}>
 		By surname
 	</Button>
+	<UploadStudentsDialog size="xs" />
 	{#if fallbacks.length > 0}
 		<Popover.Root>
 			<Popover.Trigger>

@@ -49,6 +49,7 @@ interface SeamWarning {
 interface SeamBody {
 	breakdown?: {
 		questions?: Array<Record<string, unknown>>;
+		aoDescriptions?: Array<{ ao: string; description: string | null }>;
 	};
 	warnings?: SeamWarning[];
 	usage?: {
@@ -494,6 +495,86 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		expect(seen?.spec?.text).toContain('Specification topic code');
 	});
 
+	describe('AO descriptions', () => {
+		const SPEC_PAGES = [
+			'AO1 Demonstrate knowledge and understanding',
+			'AO2 Apply knowledge and understanding to new situations',
+			'AO3 Analyse information to make judgements'
+		];
+		const FROM_SPEC = [
+			{ ao: 'AO1', description: 'Demonstrate knowledge and understanding' },
+			{ ao: 'AO2', description: 'Apply knowledge and understanding to new situations' },
+			{ ao: 'AO3', description: 'Analyse information to make judgements' }
+		];
+
+		function withSpec(): FormData {
+			setSpecFetch(
+				async () => new Response(buildPdfBytes(SPEC_PAGES) as unknown as BodyInit, { status: 200 })
+			);
+			const form = paperOnlyForm();
+			form.append(SPEC_URL_FIELD, 'https://example.com/spec.pdf');
+			return form;
+		}
+
+		it('stores a short description per AO, each traceable to the fixture spec wording', async () => {
+			let specSeen = '';
+			setModelTransport(async (input) => {
+				specSeen = input.spec?.text ?? '';
+				return stubResultWith({ ...stubBreakdown(), aoDescriptions: FROM_SPEC });
+			});
+
+			const { status, body } = await post(withSpec());
+
+			expect(status).toBe(200);
+			const descriptions = body.breakdown?.aoDescriptions ?? [];
+			expect(descriptions.map((d) => d.ao)).toEqual(['AO1', 'AO2', 'AO3']);
+			for (const { description } of descriptions) {
+				expect(description).not.toBeNull();
+				const words = (description as string).split(/\s+/);
+				expect(words.length).toBeLessThanOrEqual(10);
+				for (const word of words) expect(specSeen.toLowerCase()).toContain(word.toLowerCase());
+			}
+		});
+
+		it('keeps no description when no specification is attached, whatever the model returned', async () => {
+			setModelTransport(async () =>
+				stubResultWith({ ...stubBreakdown(), aoDescriptions: FROM_SPEC })
+			);
+
+			const { body } = await post(paperOnlyForm());
+
+			expect(body.breakdown?.aoDescriptions).toEqual([
+				{ ao: 'AO1', description: null },
+				{ ao: 'AO2', description: null },
+				{ ao: 'AO3', description: null }
+			]);
+		});
+
+		it('nulls empty, over-long and malformed descriptions and fills missing objectives', async () => {
+			setModelTransport(async () =>
+				stubResultWith({
+					...stubBreakdown(),
+					aoDescriptions: [
+						{ ao: 'AO1', description: '   ' },
+						{
+							ao: 'AO2',
+							description: 'one two three four five six seven eight nine ten eleven twelve thirteen'
+						},
+						{ ao: 'AO9', description: 'Not an objective' }
+					]
+				})
+			);
+
+			const { body } = await post(withSpec());
+
+			expect(body.breakdown?.aoDescriptions).toEqual([
+				{ ao: 'AO1', description: null },
+				{ ao: 'AO2', description: null },
+				{ ao: 'AO3', description: null }
+			]);
+		});
+	});
+
 	it('spec pages do not count toward the upload page ceiling', async () => {
 		let calls = 0;
 		setModelTransport(async () => {
@@ -662,7 +743,8 @@ describe('validateBreakdown v1 rules', () => {
 					commandWord: null,
 					ao: null
 				}
-			]
+			],
+			aoDescriptions: []
 		};
 		expect(validateBreakdown(breakdown)).toEqual([]);
 	});
@@ -711,6 +793,14 @@ describe('validateBreakdown v1 rules', () => {
 });
 
 describe('buildPromptText v1', () => {
+	it('tells the model to summarise each AO from the specification only, or return null', () => {
+		const prompt = buildPromptText({ paperText: 'p', markschemeText: null, useNativePdf: true });
+		expect(prompt).toContain('aoDescriptions');
+		expect(prompt).toContain('specification text ONLY');
+		expect(prompt).toContain('NEVER invent');
+		expect(prompt).toContain('Use null when no specification is provided');
+	});
+
 	it('instructs the v1 shape with either-input handling', () => {
 		const both = buildPromptText({
 			paperText: 'paper',

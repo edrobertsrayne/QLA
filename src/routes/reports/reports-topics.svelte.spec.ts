@@ -93,6 +93,36 @@ describe('topic names step', () => {
 		expect(stripOf('By skill')).toMatch(/AO3\s*2\/2/);
 	});
 
+	it('shows an AO description beside its code in By skill, never sending it to the model', async () => {
+		const doc = h556();
+		doc.topicNames = {
+			'5.1.1': 'Kinetic theory of gases',
+			'5.1.2': 'Gas pressure and temperature',
+			'5.2.1': 'Internal energy stores'
+		};
+		doc.breakdown.aoDescriptions = { AO3: 'Analyse information to make judgements' };
+		seed(doc);
+		const { stub } = stubFetch(() => ok());
+		openPage(ReportsPage);
+
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		await page.getByRole('button', { name: 'Next' }).click();
+		await skipGrades();
+		await page.getByRole('button', { name: 'Write 7 reports' }).click();
+
+		await vi.waitFor(() => expect(document.querySelectorAll('.report-sheet').length).toBe(14), {
+			timeout: 15000
+		});
+		const sheet = document.querySelector('main [data-report-id="ada"]');
+		const skills =
+			[...(sheet?.querySelectorAll('h3') ?? [])].find((h) => h.textContent === 'By skill')
+				?.parentElement?.textContent ?? '';
+		expect(skills).toMatch(/AO3 · Analyse information to make judgements\s*2\/2/);
+		// An objective with no description shows its code alone.
+		expect(skills).not.toMatch(/AO1 ·/);
+		expect(JSON.stringify(posted(stub))).not.toContain('Analyse information');
+	});
+
 	it('lets a failed proposal retry while hand typing still works', async () => {
 		seed(h556());
 		stubFetch(() =>

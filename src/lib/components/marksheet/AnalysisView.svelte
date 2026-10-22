@@ -228,13 +228,6 @@
 			Question analysis{heading === '' ? '' : ` — ${heading}`}
 		</h2>
 		<p class="text-sm text-muted-foreground">{facts}</p>
-		<!-- What the figures are, in the view's own words: a teacher who reads a
-		     number has to be able to say where it came from. -->
-		<p class="text-xs text-muted-foreground">
-			Facility = mean mark ÷ available marks, counted over non-absent students' marks at or below
-			the available marks. Red below {redBelow}%, amber {redBelow}% to below {greenFrom}%, green
-			{greenFrom}% and above.
-		</p>
 		{#if analysis.summary.invalid > 0}
 			<p class="text-xs text-destructive">
 				{count(analysis.summary.invalid, 'entry', 'entries')}

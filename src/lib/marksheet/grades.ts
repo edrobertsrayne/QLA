@@ -21,7 +21,10 @@ import { progressOf } from './students.js';
 /** One boundary row as typed: both fields are text until the dialog saves. */
 export interface BoundaryRow {
 	label: string;
+	/** The lowest raw mark, blank when the grade is not used. In % mode a valid `percent` sets it, blank text clears it, and other invalid text leaves it as it was. */
 	min: string;
+	/** What the teacher typed in % mode, kept so a half-typed value stays visible; unset until then. */
+	percent?: string;
 }
 
 /** One problem with the rows as typed, on the row it belongs to. */
@@ -45,6 +48,46 @@ export const GRADE_SCALES: { name: string; labels: string[] }[] = [
 	{ name: 'Working at', labels: ['Greater depth', 'Expected', 'Working towards'] },
 	{ name: 'Custom', labels: [] }
 ];
+
+/** The raw mark a percentage of the paper total stands for, rounded up so the student must reach at least that percentage. */
+export function percentToMarks(percent: number, paperTotal: number): number {
+	// Round off float noise first: 50% of 80 is 40, never 40.000000000000004 → 41.
+	return Math.ceil(Number(((percent * paperTotal) / 100).toFixed(9)));
+}
+
+/** A raw mark as a percentage of the paper total, unrounded; 0 when the paper has no marks. */
+export function marksToPercent(marks: number, paperTotal: number): number {
+	return paperTotal === 0 ? 0 : (marks * 100) / paperTotal;
+}
+
+/**
+ * A percentage for display: rounded down to one decimal place, no trailing zero (54/83 → "65", 40/80 → "50").
+ * Rounding down keeps the shown text from exceeding the real percentage, so it converts back to the same mark.
+ */
+export function formatPercent(percent: number): string {
+	// Same float-noise guard as percentToMarks.
+	return String(Math.floor(Number((percent * 10).toFixed(9))) / 10);
+}
+
+/** A typed percentage, 0 to 100 with optional decimals; null when it isn't one. */
+export function parsePercent(text: string): number | null {
+	const trimmed = text.trim();
+	if (!/^(\d+\.?\d*|\.\d+)$/.test(trimmed)) return null;
+	const value = Number(trimmed);
+	return value <= 100 ? value : null;
+}
+
+/** Problems with percentages typed in % mode: rows with something typed that isn't 0–100. */
+export function percentIssues(rows: readonly BoundaryRow[]): BoundaryIssue[] {
+	const issues: BoundaryIssue[] = [];
+	rows.forEach((row, index) => {
+		const text = row.percent?.trim() ?? '';
+		if (text !== '' && parsePercent(text) === null) {
+			issues.push({ index, field: 'min', message: 'Percentage from 0 to 100' });
+		}
+	});
+	return issues;
+}
 
 /** The below-lowest label as saved: trimmed, or the default when left blank. */
 export function belowLabelOf(raw: string): string {

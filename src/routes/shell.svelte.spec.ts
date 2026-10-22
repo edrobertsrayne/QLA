@@ -20,7 +20,8 @@ function parsed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return sharedParsed({
 		breakdown: {
 			entries: [entry('entry-1', '1a', '1', { specPoint: null, commandWord: null, ao: null })],
-			warnings: []
+			warnings: [],
+			aoDescriptions: {}
 		},
 		...overrides
 	});
@@ -80,7 +81,10 @@ describe('the breadcrumb', () => {
 
 	it('shows the label seeded from the uploaded filename', async () => {
 		marksheetStore().createFromParse(
-			parseRun({ breakdown: { questions: [] }, filenames: ['Year 10 Chemistry.pdf'] })
+			parseRun({
+				breakdown: { questions: [], aoDescriptions: [] },
+				filenames: ['Year 10 Chemistry.pdf']
+			})
 		);
 		openShell();
 

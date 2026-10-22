@@ -55,7 +55,7 @@ export function confirmed(overrides: Partial<MarksheetDocument> = {}): Marksheet
 			boundaries: null,
 			belowLowestLabel: 'U'
 		},
-		breakdown: { entries: [entry('entry-1', '2bii', '2')], warnings: [] },
+		breakdown: { entries: [entry('entry-1', '2bii', '2')], warnings: [], aoDescriptions: {} },
 		students: [],
 		marks: {},
 		topicNames: {},
@@ -96,7 +96,7 @@ export function question(overrides: Partial<ParsedQuestion> = {}): ParsedQuestio
 /** A finished parse run, as the upload page hands it to the store. */
 export function parseRun(overrides: Partial<CreateFromParseInput> = {}): CreateFromParseInput {
 	return {
-		breakdown: { questions: [question()] },
+		breakdown: { questions: [question()], aoDescriptions: [] },
 		warnings: [],
 		usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 },
 		filenames: ['10X Ph1.pdf'],

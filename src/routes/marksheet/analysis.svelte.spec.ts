@@ -16,7 +16,8 @@ describe('analysis', () => {
 						entry('entry-1', '1a', '1', { marks: 4 }),
 						entry('entry-2', '1b', '1', { marks: 4 })
 					],
-					warnings: []
+					warnings: [],
+					aoDescriptions: {}
 				},
 				students: [
 					student('student-1', 'Ada', 'Lovelace'),
@@ -93,7 +94,8 @@ describe('analysis', () => {
 					entry('entry-2', '1b', '1', { marks: 10 }),
 					entry('entry-3', '1c', '1', { marks: 10 })
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			marks: { 'student-1': { 'entry-1': 1, 'entry-2': 2, 'entry-3': 3 } }
 		});
@@ -110,7 +112,8 @@ describe('analysis', () => {
 					entry('entry-red', '1c', '1', { marks: 10 }),
 					entry('entry-unmarked', '1d', '1', { marks: 10 })
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			marks: { 'student-1': { 'entry-green': 9, 'entry-amber': 5, 'entry-red': 2 } }
 		});
@@ -153,7 +156,7 @@ describe('analysis', () => {
 		);
 		seed(
 			confirmed({
-				breakdown: { entries, warnings: [] },
+				breakdown: { entries, warnings: [], aoDescriptions: {} },
 				students: [student('student-1', 'Ada', 'Lovelace')],
 				marks: { 'student-1': { 'entry-40': 4 } }
 			})

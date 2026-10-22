@@ -13,7 +13,8 @@ function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocumen
 		paper: { ...confirmed().paper, className: '10C1' },
 		breakdown: {
 			entries: [entry('entry-1', '2bii', '2')],
-			warnings: []
+			warnings: [],
+			aoDescriptions: {}
 		},
 		students: [student('student-1', 'Ada', 'Lovelace')],
 		marks: { 'student-1': { 'entry-1': 3 } },

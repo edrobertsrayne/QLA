@@ -354,7 +354,8 @@ describe('createFromParse', () => {
 					ao: 'AO1'
 				}),
 				question({ ao: null })
-			]
+			],
+			aoDescriptions: []
 		},
 		warnings: [
 			{ questionId: '2bii', code: 'SUMMARY_LENGTH', message: '2 words; expected 3–8 words.' },
@@ -362,6 +363,27 @@ describe('createFromParse', () => {
 		],
 		usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30, estCost: 0.001 },
 		filenames: ['paper.pdf', 'markscheme.pdf']
+	});
+
+	it('stores the descriptions the parse found and skips the objectives it left null', () => {
+		const storage = fakeStorage();
+		const store = storeWith(storage);
+
+		store.createFromParse({
+			...input,
+			breakdown: {
+				...input.breakdown,
+				aoDescriptions: [
+					{ ao: 'AO1', description: 'Demonstrate knowledge and understanding' },
+					{ ao: 'AO2', description: null },
+					{ ao: 'AO3', description: '  ' }
+				]
+			}
+		});
+
+		expect(stored(storage).breakdown.aoDescriptions).toEqual({
+			AO1: 'Demonstrate knowledge and understanding'
+		});
 	});
 
 	it('writes an unconfirmed document with generated entry ids and re-keyed warnings', () => {
@@ -478,7 +500,7 @@ describe('createFromParse', () => {
 		};
 		store.createFromParse({
 			...input,
-			breakdown: { questions: [input.breakdown.questions[1], duplicate] },
+			breakdown: { questions: [input.breakdown.questions[1], duplicate], aoDescriptions: [] },
 			warnings: [
 				{ questionId: '2bii', code: 'DUPLICATE_ID', message: "Duplicate question id '2bii'." },
 				{ questionId: 'q[0]', code: 'EMPTY_ID', message: 'Entry q[0] has an empty question id.' }
@@ -732,7 +754,9 @@ describe('wipe', () => {
 	it('cancels a pending write so it cannot resurrect the document', () => {
 		const storage = fakeStorage();
 		const store = storeWith(storage);
-		store.createFromParse(parseRun({ breakdown: { questions: [] }, filenames: ['paper.pdf'] }));
+		store.createFromParse(
+			parseRun({ breakdown: { questions: [], aoDescriptions: [] }, filenames: ['paper.pdf'] })
+		);
 		store.setPaperLabel('10X');
 		store.wipe();
 
@@ -786,7 +810,7 @@ describe('taking a backup', () => {
 		store.load();
 		store.createFromParse(
 			parseRun({
-				breakdown: { questions: [question({ id: '3a' })] },
+				breakdown: { questions: [question({ id: '3a' })], aoDescriptions: [] },
 				filenames: ['new paper.pdf']
 			})
 		);
@@ -989,7 +1013,9 @@ describe('restoring a backup', () => {
 		const store = storeWith(fakeStorage());
 		store.dismissBackupReminder();
 
-		store.createFromParse(parseRun({ breakdown: { questions: [] }, filenames: ['paper.pdf'] }));
+		store.createFromParse(
+			parseRun({ breakdown: { questions: [], aoDescriptions: [] }, filenames: ['paper.pdf'] })
+		);
 
 		expect(store.backupReminderDismissed).toBe(false);
 	});

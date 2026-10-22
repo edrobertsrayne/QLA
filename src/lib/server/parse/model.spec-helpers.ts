@@ -37,7 +37,8 @@ export function stubBreakdown(): Breakdown {
 				commandWord: null,
 				ao: 'AO2'
 			}
-		]
+		],
+		aoDescriptions: []
 	};
 }
 
