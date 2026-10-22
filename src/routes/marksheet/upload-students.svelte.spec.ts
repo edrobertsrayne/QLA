@@ -74,4 +74,33 @@ describe('uploading a class list', () => {
 			.toBeDisabled();
 		expect(rowNames(screen)).toEqual(['Ada Lovelace']);
 	});
+
+	it('keeps the second file when the first finishes reading last', async () => {
+		seed(confirmed());
+		openPage(MarksheetPage);
+
+		await page.getByRole('button', { name: 'Upload CSV' }).last().click();
+		const input = page.getByLabelText('CSV file').element() as HTMLInputElement;
+		const firstRead = Promise.withResolvers<ArrayBuffer>();
+		const first = csvFile('h,h\nSlow,Reader');
+		const firstBytes = await first.arrayBuffer();
+		first.arrayBuffer = () => firstRead.promise;
+		const pick = (chosen: File): void => {
+			const transfer = new DataTransfer();
+			transfer.items.add(chosen);
+			input.files = transfer.files;
+			input.dispatchEvent(new Event('change', { bubbles: true }));
+		};
+
+		pick(first);
+		pick(csvFile('h,h\nFast,Reader'));
+		await expect.element(page.getByRole('button', { name: 'Add 1 student' })).toBeInTheDocument();
+		firstRead.resolve(firstBytes);
+		const settled = Promise.withResolvers<void>();
+		setTimeout(settled.resolve, 50);
+		await settled.promise;
+
+		await expect.element(page.getByTestId('csv-preview').getByText('Fast')).toBeInTheDocument();
+		expect(page.getByTestId('csv-preview').getByText('Slow').elements()).toHaveLength(0);
+	});
 });

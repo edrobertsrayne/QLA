@@ -31,18 +31,24 @@
 	const csv = $derived(file?.ok ? readStudentCsv(file.text, firstRowIsHeader) : file);
 	const plan = $derived(csv?.ok ? newNames(store.students, csv.names) : null);
 
+	// Reads finish in any order; only the latest pick may set `file`.
+	let latestPick = 0;
+
 	async function chooseFile(event: Event & { currentTarget: HTMLInputElement }): Promise<void> {
 		const chosen = event.currentTarget.files?.[0];
+		const pick = ++latestPick;
 		file = null;
 		if (!chosen) return;
+		let read: NonNullable<typeof file>;
 		try {
 			// Fatal decoding refuses a binary file rather than reading it as gibberish.
 			const text = new TextDecoder('utf-8', { fatal: true }).decode(await chosen.arrayBuffer());
-			file = { ok: true, text };
+			read = { ok: true, text };
 		} catch (failure) {
 			if (!(failure instanceof TypeError || failure instanceof DOMException)) throw failure;
-			file = { ok: false, error: 'That file is not readable text. Choose a .csv file.' };
+			read = { ok: false, error: 'That file is not readable text. Choose a .csv file.' };
 		}
+		if (pick === latestPick) file = read;
 	}
 
 	function reset(): void {
