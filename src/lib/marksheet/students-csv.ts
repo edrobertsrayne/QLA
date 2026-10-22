@@ -18,7 +18,7 @@ const BYTE_ORDER_MARK = '\uFEFF';
  * are trimmed. Blank lines come back as a record of one empty cell, so a
  * record's index is its row number in the file. Null when a quote never closes.
  */
-export function parseCsv(text: string): string[][] | null {
+function parseCsv(text: string): string[][] | null {
 	const source = text.startsWith(BYTE_ORDER_MARK) ? text.slice(1) : text;
 	const records: string[][] = [];
 	let record: string[] = [];

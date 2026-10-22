@@ -1,37 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import { newNames } from './students.js';
-import { parseCsv, readStudentCsv } from './students-csv.js';
+import { readStudentCsv } from './students-csv.js';
 
 const ada = { firstName: 'Ada', surname: 'Lovelace' };
 const grace = { firstName: 'Grace', surname: 'Hopper' };
 
-describe('parseCsv', () => {
+describe('readStudentCsv: how the text is split', () => {
 	it('reads quoted cells holding commas, doubled quotes and line breaks', () => {
-		expect(parseCsv('"Mary Ann",Evans\n"O""Brien",Liam\n"a,b","line\nbreak"')).toEqual([
-			['Mary Ann', 'Evans'],
-			['O"Brien', 'Liam'],
-			['a,b', 'line\nbreak']
-		]);
+		expect(readStudentCsv('"a,b","line\nbreak"\n"O""Brien",Liam', false)).toEqual({
+			ok: true,
+			names: [
+				{ firstName: 'a,b', surname: 'line\nbreak' },
+				{ firstName: 'O"Brien', surname: 'Liam' }
+			]
+		});
 	});
 
 	it('reads CRLF and LF alike, with or without a final line ending', () => {
-		expect(parseCsv('a,b\r\nc,d\r\n')).toEqual([
-			['a', 'b'],
-			['c', 'd']
-		]);
-		expect(parseCsv('a,b\nc,d')).toEqual(parseCsv('a,b\r\nc,d\r\n'));
+		expect(readStudentCsv('a,b\nc,d', false)).toEqual(readStudentCsv('a,b\r\nc,d\r\n', false));
 	});
 
 	it('drops a leading byte order mark and trims cells', () => {
-		expect(parseCsv('\uFEFF  Ada , Lovelace ')).toEqual([['Ada', 'Lovelace']]);
+		expect(readStudentCsv('\uFEFF  Ada , Lovelace ', false)).toEqual({ ok: true, names: [ada] });
 	});
 
-	it('keeps blank lines as records so row numbers match the file', () => {
-		expect(parseCsv('a,b\n\nc,d')).toEqual([['a', 'b'], [''], ['c', 'd']]);
-	});
-
-	it('is null when a quote never closes', () => {
-		expect(parseCsv('"Ada,Lovelace')).toBeNull();
+	it('refuses an unclosed quote, whatever rows come before it', () => {
+		expect(readStudentCsv('Ada,Lovelace\n"Grace,Hopper', false)).toEqual({
+			ok: false,
+			error: 'A quoted cell is never closed, so the file cannot be read.'
+		});
 	});
 });
 
@@ -106,10 +103,6 @@ describe('readStudentCsv', () => {
 			ok: false,
 			error: 'The file has no names after the header.'
 		});
-	});
-
-	it('refuses an unclosed quote', () => {
-		expect(readStudentCsv('"Ada,Lovelace', false).ok).toBe(false);
 	});
 });
 
