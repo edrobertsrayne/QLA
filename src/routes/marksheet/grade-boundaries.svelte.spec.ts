@@ -418,7 +418,8 @@ describe('marksheet grade columns', () => {
 			const doc = gradedClass({
 				breakdown: {
 					entries: total > 0 ? [entry('entry-1', '1a', '1', { marks: total })] : [],
-					warnings: []
+					warnings: [],
+					aoDescriptions: {}
 				}
 			});
 			doc.paper.boundaries = boundaries;
