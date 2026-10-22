@@ -13,10 +13,15 @@ import { ReportRun } from './report-run.svelte.js';
 
 /**
  * Open a step. The teacher's own moves push a history entry, so Back walks
- * the steps; an automatic move replaces the current one.
+ * the steps.
  */
-export function goToStep(step: ReportStep, automatic = false): void {
-	void goto(resolve(`/reports/${step}`), automatic ? { replaceState: true } : undefined);
+export function goToStep(step: ReportStep): void {
+	void goto(resolve(`/reports/${step}`));
+}
+
+/** Open a step in place of the current entry, for moves the app makes on its own. */
+export function replaceWithStep(step: ReportStep): void {
+	void goto(resolve(`/reports/${step}`), { replaceState: true });
 }
 
 export class ReportsFlow {
@@ -33,7 +38,7 @@ export class ReportsFlow {
 
 	constructor(store: MarksheetStore) {
 		// A finished run takes the teacher to Review on its own.
-		this.run = new ReportRun(store, () => goToStep('review', true));
+		this.run = new ReportRun(store, () => replaceWithStep('review'));
 		this.roster = $derived(store.document ? reportRoster(store.document, this.run.tiles) : []);
 		this.reviewIds = $derived(rowsOf(this.roster, 'review').map((row) => row.studentId));
 	}
