@@ -41,8 +41,11 @@ export interface AoDescription {
 	description: string | null;
 }
 
-/** Longest description kept, in words: the prompt asks for about 10, so 12 allows for rounding. */
-export const MAX_AO_DESCRIPTION_WORDS = 12;
+/** Words the parse prompt asks an AO description to stay within. */
+export const AO_DESCRIPTION_TARGET_WORDS = 10;
+
+/** Longest description kept, in words: two over the prompt's target, so a model that runs slightly long isn't thrown away. */
+export const MAX_AO_DESCRIPTION_WORDS = AO_DESCRIPTION_TARGET_WORDS + 2;
 
 /** Structured per-question breakdown of an upload. */
 export interface Breakdown {
