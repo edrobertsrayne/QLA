@@ -21,6 +21,13 @@ export function reportStepFrom(segment: string | undefined): ReportStep | null {
 	return REPORT_STEPS.find((step) => step.id === segment)?.id ?? null;
 }
 
+/** The page title of a step. Total: a step with no entry is a bug, so it throws. */
+export function stepTitleOf(step: ReportStep): string {
+	const found = REPORT_STEPS.find((item) => item.id === step);
+	if (!found) throw new Error(`Unknown report step: ${step}`);
+	return found.title;
+}
+
 export type AvailableStep = { id: ReportStep; label: string; title: string; locked: boolean };
 
 /**

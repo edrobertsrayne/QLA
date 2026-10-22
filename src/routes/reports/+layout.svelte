@@ -16,7 +16,7 @@
 	} from '$lib/components/report/reports-flow.svelte.js';
 	import { Button } from '$lib/components/ui/button';
 	import { marksheetStore } from '$lib/marksheet/index.js';
-	import { availableSteps, REPORT_STEPS, type ReportStep } from '$lib/marksheet/report-steps.js';
+	import { availableSteps, stepTitleOf, type ReportStep } from '$lib/marksheet/report-steps.js';
 
 	let { data, children }: { data: { step: ReportStep }; children: Snippet } = $props();
 
@@ -24,7 +24,7 @@
 	const document = $derived(store.document);
 	const steps = $derived(document ? availableSteps(document) : []);
 	const className = $derived(document?.paper.className ?? null);
-	const stepTitle = $derived(REPORT_STEPS.find((item) => item.id === data.step)?.title);
+	const stepTitle = $derived(stepTitleOf(data.step));
 	const title = $derived(`${className ? `${className} · ` : ''}Reports — ${stepTitle} · QLA`);
 
 	const flow = new ReportsFlow(store);
