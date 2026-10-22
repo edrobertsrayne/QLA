@@ -12,7 +12,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Table from '$lib/components/ui/table';
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
-	import { studentTotal, totalMarks } from '$lib/marksheet/document.js';
+	import { isWholeNumber, studentTotal, totalMarks } from '$lib/marksheet/document.js';
 	import {
 		belowLabelOf,
 		boundariesFrom,
@@ -60,7 +60,7 @@
 	function percentText(row: BoundaryRow): string {
 		if (row.percent !== undefined) return row.percent;
 		const min = row.min.trim();
-		return /^\d+$/.test(min) ? formatPercent(marksToPercent(Number(min), paperTotal)) : min;
+		return isWholeNumber(min) ? formatPercent(marksToPercent(Number(min), paperTotal)) : min;
 	}
 
 	function typePercent(row: BoundaryRow, text: string): void {
@@ -214,7 +214,7 @@
 										oninput={(event) => typePercent(row, event.currentTarget.value)}
 										aria-label="Lowest percentage for {row.label || `grade ${i + 1}`}"
 									/>
-									{#if !off && /^\d+$/.test(row.min)}
+									{#if isWholeNumber(row.min)}
 										<span class="text-xs tabular-nums text-muted-foreground">
 											→ {row.min}/{paperTotal}
 										</span>
