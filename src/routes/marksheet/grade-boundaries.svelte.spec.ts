@@ -448,7 +448,7 @@ describe('marksheet grade columns', () => {
 			openPage(MarksheetPage);
 			await page.getByRole('button', { name: 'Grade boundaries (2)' }).click();
 			await page.getByRole('radio', { name: '%' }).click();
-			await expect.element(page.getByLabelText('Lowest percentage for A')).toHaveValue('65.1');
+			await expect.element(page.getByLabelText('Lowest percentage for A')).toHaveValue('65');
 			await page.getByRole('radio', { name: 'Marks' }).click();
 			await expect.element(page.getByLabelText('Lowest mark for A')).toHaveValue('54');
 			await page.getByRole('radio', { name: '%' }).click();

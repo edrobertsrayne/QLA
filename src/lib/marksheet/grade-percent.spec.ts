@@ -29,9 +29,17 @@ describe('percentToMarks', () => {
 });
 
 describe('percent entry', () => {
-	it('shows a percentage to one decimal place', () => {
-		expect(formatPercent(marksToPercent(54, 83))).toBe('65.1');
+	it('shows a percentage rounded down to one decimal place', () => {
+		expect(formatPercent(marksToPercent(54, 83))).toBe('65');
 		expect(formatPercent(marksToPercent(40, 80))).toBe('50');
+	});
+	it('converts every shown percentage back to the same raw mark', () => {
+		for (let total = 1; total <= 200; total++) {
+			for (let marks = 0; marks <= total; marks++) {
+				const shown = Number(formatPercent(marksToPercent(marks, total)));
+				expect(percentToMarks(shown, total), `${marks}/${total}`).toBe(marks);
+			}
+		}
 	});
 	it('accepts 0 to 100 with decimals and rejects the rest', () => {
 		expect(parsePercent('52.5')).toBe(52.5);

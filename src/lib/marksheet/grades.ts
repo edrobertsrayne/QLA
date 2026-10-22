@@ -60,9 +60,13 @@ export function marksToPercent(marks: number, paperTotal: number): number {
 	return paperTotal === 0 ? 0 : (marks * 100) / paperTotal;
 }
 
-/** A percentage for display: one decimal place, no trailing zero (54/83 → "65.1", 40/80 → "50"). */
+/**
+ * A percentage for display: rounded down to one decimal place, no trailing zero (54/83 → "65", 40/80 → "50").
+ * Rounding down keeps the shown text from exceeding the real percentage, so it converts back to the same mark.
+ */
 export function formatPercent(percent: number): string {
-	return String(Number(percent.toFixed(1)));
+	// Same float-noise guard as percentToMarks.
+	return String(Math.floor(Number((percent * 10).toFixed(9))) / 10);
 }
 
 /** A typed percentage, 0 to 100 with optional decimals; null when it isn't one. */
