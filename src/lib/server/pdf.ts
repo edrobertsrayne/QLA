@@ -6,7 +6,7 @@
 // launched once and reused; each render gets its own throwaway context, so no
 // state crosses from one request to the next. HTML and PDFs are never logged.
 
-import { chromium, errors, type Browser } from 'playwright';
+import { chromium, type Browser } from 'playwright';
 
 /** The largest HTML body the PDF route reads: a whole class of reports is well under it. */
 export const MAX_PDF_HTML_BYTES = 8 * 1024 * 1024;
@@ -57,7 +57,7 @@ export async function renderPdf(html: string): Promise<Buffer> {
 		await context.route('**/*', (route) => route.abort());
 		const page = await context.newPage();
 		const render = async (): Promise<Buffer> => {
-			await page.setContent(html, { timeout: PDF_RENDER_TIMEOUT_MS });
+			await page.setContent(html);
 			return page.pdf({ preferCSSPageSize: true, format: 'A4', printBackground: true });
 		};
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -66,9 +66,6 @@ export async function renderPdf(html: string): Promise<Buffer> {
 		});
 		try {
 			return await Promise.race([render(), deadline]);
-		} catch (error) {
-			if (error instanceof errors.TimeoutError) throw new PdfTimeoutError();
-			throw error;
 		} finally {
 			clearTimeout(timer);
 		}
