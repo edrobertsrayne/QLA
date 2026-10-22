@@ -12,7 +12,7 @@ import { chromium, type Browser } from 'playwright';
 export const MAX_PDF_HTML_BYTES = 8 * 1024 * 1024;
 
 /** A PDF render may take this long before it is abandoned. */
-export const PDF_RENDER_TIMEOUT_MS = 30_000;
+const PDF_RENDER_TIMEOUT_MS = 30_000;
 
 /** The render was abandoned at the deadline. */
 export class PdfTimeoutError extends Error {
