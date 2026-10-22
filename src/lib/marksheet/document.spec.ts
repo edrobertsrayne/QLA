@@ -126,9 +126,8 @@ describe('reading a v2 document', () => {
 		expect(read(confirmed()).paper.belowLowestLabel).toBe('U');
 	});
 
-	it('reads a version 2 document, written before AO descriptions, with none', () => {
+	it('reads a document written before AO descriptions as having none', () => {
 		const written = JSON.parse(JSON.stringify(confirmed()));
-		written.schemaVersion = 2;
 		delete written.breakdown.aoDescriptions;
 
 		const document = parseStoredDocument(JSON.stringify(written));

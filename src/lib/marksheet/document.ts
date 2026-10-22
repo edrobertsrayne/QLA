@@ -16,14 +16,8 @@ export const STORAGE_KEY = 'qla:marksheet:v1';
 /** Keys unreadable documents are preserved under, suffixed with an ISO timestamp. */
 export const CORRUPT_KEY_PREFIX = 'qla:marksheet:corrupt:';
 
-/** The version we write. */
-export const DOCUMENT_SCHEMA_VERSION = 3;
-
-/**
- * Versions we know how to read. Version 2 predates AO descriptions and reads as
- * a document with none; anything else is treated as unreadable.
- */
-const READABLE_SCHEMA_VERSIONS: readonly number[] = [2, DOCUMENT_SCHEMA_VERSION];
+/** Only version we know how to read. Anything else is treated as unreadable. */
+export const DOCUMENT_SCHEMA_VERSION = 2;
 
 /** The label for a total below every grade boundary, when the paper has grades. */
 export const DEFAULT_BELOW_LOWEST_LABEL = 'U';
@@ -395,10 +389,7 @@ function parseReports(value: unknown): Record<string, StoredReport> | null {
  */
 function parseDocumentValue(value: unknown): MarksheetDocument | null {
 	if (!isRecord(value)) return null;
-	const schemaVersion = value['schemaVersion'];
-	if (typeof schemaVersion !== 'number' || !READABLE_SCHEMA_VERSIONS.includes(schemaVersion)) {
-		return null;
-	}
+	if (value['schemaVersion'] !== DOCUMENT_SCHEMA_VERSION) return null;
 
 	const createdAt = value['createdAt'];
 	const updatedAt = value['updatedAt'];
