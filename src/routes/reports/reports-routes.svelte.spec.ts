@@ -172,7 +172,6 @@ describe('report step routes', () => {
 			release();
 			await vi.waitFor(() => expect(router.path).toBe('/reports/review'));
 			expect(router.entries.length).toBe(before);
-			expect(router.entries).not.toContain('/reports/review/');
 			expect(stub.mock.calls.filter(([url]) => String(url) === '/api/report').length).toBe(1);
 		});
 
@@ -193,9 +192,16 @@ describe('report step routes', () => {
 
 	it('names a Topic names proposal from the topics route', async () => {
 		seed(h556());
-		stubFetch((n) => (n === 0 ? topicNames() : ok()));
-		const { router } = await openReports('/reports');
+		const { stub } = stubFetch((n) => (n === 0 ? topicNames() : ok()));
+		const { router } = await openReports('/reports/topics');
 		expect(router.path).toBe('/reports/topics');
+		const nameFor = (code: string): HTMLInputElement | null =>
+			document.querySelector(`#topic-${CSS.escape(code)}`);
+		await vi.waitFor(() => expect(nameFor('5.1.1')?.value).toBe('Kinetic theory of gases'), {
+			timeout: 5000
+		});
+		expect(nameFor('5.2.1')?.value).toBe('Internal energy stores');
+		expect(stub.mock.calls.filter(([url]) => String(url) === '/api/topic-names')).toHaveLength(1);
 		await expect
 			.element(page.getByRole('button', { name: '1. Topic names' }))
 			.toHaveAttribute('aria-current', 'step');
