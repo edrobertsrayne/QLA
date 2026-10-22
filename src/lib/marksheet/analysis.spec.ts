@@ -12,7 +12,11 @@ describe('analysis', () => {
 	/** A class of one entry, for tests about a single figure. */
 	function oneEntry(marks: number | null, overrides: Partial<MarksheetDocument> = {}) {
 		return analyse({
-			breakdown: { entries: [entry('entry-1', '1', '1', { marks })], warnings: [] },
+			breakdown: {
+				entries: [entry('entry-1', '1', '1', { marks })],
+				warnings: [],
+				aoDescriptions: {}
+			},
 			students: [student('student-1', 'Ada', 'Lovelace')],
 			...overrides
 		});
@@ -20,7 +24,11 @@ describe('analysis', () => {
 
 	it('reads facility as the mean counted mark over the available marks', () => {
 		const analysis = analyse({
-			breakdown: { entries: [entry('entry-1', '1', '1', { marks: 4 })], warnings: [] },
+			breakdown: {
+				entries: [entry('entry-1', '1', '1', { marks: 4 })],
+				warnings: [],
+				aoDescriptions: {}
+			},
 			students: [
 				student('student-1', 'Ada', 'Lovelace'),
 				student('student-2', 'Grace', 'Hopper'),
@@ -62,7 +70,8 @@ describe('analysis', () => {
 					entry('entry-4', '1d', '1', { marks: 10 }),
 					entry('entry-5', '1e', '1', { marks: 10 })
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			students: [student('student-1', 'Ada', 'Lovelace')],
 			marks: {
@@ -103,7 +112,11 @@ describe('analysis', () => {
 
 	it('leaves absent students out of every figure, and counts them again when the flag is cleared', () => {
 		const document = confirmed({
-			breakdown: { entries: [entry('entry-1', '1', '1', { marks: 4 })], warnings: [] },
+			breakdown: {
+				entries: [entry('entry-1', '1', '1', { marks: 4 })],
+				warnings: [],
+				aoDescriptions: {}
+			},
 			students: [
 				student('student-1', 'Ada', 'Lovelace'),
 				{ ...student('student-2', 'Grace', 'Hopper'), absent: true }
@@ -148,7 +161,11 @@ describe('analysis', () => {
 
 	it('leaves a mark above the available marks out of the figure rather than capping it, and flags the entry', () => {
 		const document = confirmed({
-			breakdown: { entries: [entry('entry-1', '1', '1', { marks: 4 })], warnings: [] },
+			breakdown: {
+				entries: [entry('entry-1', '1', '1', { marks: 4 })],
+				warnings: [],
+				aoDescriptions: {}
+			},
 			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
 			marks: { 'student-1': { 'entry-1': 2 }, 'student-2': { 'entry-1': 40 } }
 		});
@@ -222,7 +239,8 @@ describe('analysis', () => {
 					entry('entry-1', '1a', '1', { marks: 4 }),
 					entry('entry-2', '1b', '1', { marks: null })
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			students: [student('student-1', 'Ada', 'Lovelace')]
 		});
@@ -252,7 +270,8 @@ describe('analysis', () => {
 					entry('entry-amber', '1e', '1', { marks: 10 }),
 					entry('entry-red', '1f', '1', { marks: 10 })
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			students: [student('student-1', 'Ada', 'Lovelace')],
 			marks: {
@@ -282,7 +301,8 @@ describe('analysis', () => {
 				entries: Array.from({ length: 10 }, (_, index) =>
 					entry(`entry-${index + 1}`, `1${index}`, '1', { marks: 100 })
 				),
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			students: [student('student-1', 'Ada', 'Lovelace')],
 			marks: {
@@ -311,7 +331,8 @@ describe('analysis', () => {
 					entry('entry-2a', '2a', '2', { marks: 4 }),
 					entry('entry-2b', '2b', '2', { marks: 4 })
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			students: [student('student-1', 'Ada', 'Lovelace')],
 			marks: { 'student-1': { 'entry-2a': 4, 'entry-2b': 0 } }

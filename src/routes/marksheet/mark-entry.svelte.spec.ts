@@ -19,7 +19,8 @@ describe('mark entry', () => {
 			confirmed({
 				breakdown: {
 					entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
-					warnings: []
+					warnings: [],
+					aoDescriptions: {}
 				},
 				students: [
 					student('student-1', 'Ada', 'Lovelace'),
@@ -302,7 +303,8 @@ describe('mark entry', () => {
 					entries: Array.from({ length: 24 }, (_, index) =>
 						entry(`entry-${index + 1}`, `${index + 1}`, `${index + 1}`)
 					),
-					warnings: []
+					warnings: [],
+					aoDescriptions: {}
 				},
 				students: [student('student-1', 'Ada', 'Lovelace')]
 			})

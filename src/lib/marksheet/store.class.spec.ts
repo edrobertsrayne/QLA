@@ -333,7 +333,8 @@ describe('pasting a block', () => {
 			breakdownConfirmedAt: NOW.toISOString(),
 			breakdown: {
 				entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
 			...overrides
@@ -441,7 +442,8 @@ describe('what is on offer to undo', () => {
 						entry('entry-2', '1b', '1'),
 						entry('entry-3', '2a', '2')
 					],
-					warnings: []
+					warnings: [],
+					aoDescriptions: {}
 				}
 			},
 			offer: (store: MarksheetStore) => store.deleteEntry('entry-2'),

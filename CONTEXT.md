@@ -39,10 +39,13 @@ _Avoid_: Brief description, question content
 The instruction verb as printed in the paper (e.g. Explain). Verbatim, null when absent. No normalisation in the prototype.
 
 **Assessment objective**:
-One of hardcoded AO1 / AO2 / AO3 (shared across AQA/OCR GCSE and A-Level). Tagged per breakdown entry, null when unknowable. No board picker in the prototype.
+One of hardcoded AO1 / AO2 / AO3 (shared across AQA/OCR GCSE and A-Level). Tagged per breakdown entry, null when unknowable. No board picker in the prototype. May carry an **AO description**.
+
+**AO description**:
+A short, student-readable summary of an assessment objective (one phrase, about 10 words at most), lifted from the specification at parse, editable at breakdown review and shown beside the AO code in a report's By skill strip. Never inferred without a specification: with none attached, or one that does not define the AO, the AO has no description and the report shows the code alone. Stored with the breakdown (so it travels in backups), display only: never sent to the report model, and editing one does not make any report out of date.
 
 **Exam specification**:
-The exam board's syllabus document defining topic/skill codes. Optional for the prototype — the teacher may attach a link to the specification PDF, fetched fresh per run as extra grounding; `specPoint` entries stay verbatim lifts from the markscheme, never inferred from the spec.
+The exam board's syllabus document defining topic/skill codes. Optional for the prototype — the teacher may attach a link to the specification PDF, fetched fresh per run as extra grounding; `specPoint` entries stay verbatim lifts from the markscheme, never inferred from the spec. The spec's one other contribution is the **AO description**; the spec itself is never stored.
 _Avoid_: Spec (informal shorthand is fine in conversation, not as a defined term)
 
 **Question**:

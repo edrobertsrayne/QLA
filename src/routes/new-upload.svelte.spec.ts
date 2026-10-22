@@ -61,7 +61,8 @@ describe('the new-upload dialog', () => {
 			marksheet({
 				breakdown: {
 					entries: [entry('entry-1', '2bii', '2'), entry('entry-2', '3a', '3', { marks: 2 })],
-					warnings: []
+					warnings: [],
+					aoDescriptions: {}
 				},
 				students: [
 					student('student-1', 'Ada', 'Lovelace'),

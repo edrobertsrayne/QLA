@@ -21,7 +21,7 @@ function marksheet(lastExportedAt: string | null): MarksheetDocument {
 			boundaries: null,
 			belowLowestLabel: 'U'
 		},
-		breakdown: { entries: [], warnings: [] },
+		breakdown: { entries: [], warnings: [], aoDescriptions: {} },
 		students: [],
 		marks: {},
 		topicNames: {},

@@ -201,7 +201,8 @@ describe('needsAttention', () => {
 				entry('c', '2a', '2'),
 				entry('d', '2a', '2')
 			],
-			warnings
+			warnings,
+			aoDescriptions: {}
 		});
 
 		expect(items.map((item) => item.entry.id)).toEqual(['a', 'b', 'c', 'd']);
@@ -212,7 +213,9 @@ describe('needsAttention', () => {
 	});
 
 	it('leaves out an entry the parse was happy with', () => {
-		expect(needsAttention({ entries: [entry('a', '1a', '1')], warnings: [] })).toEqual([]);
+		expect(
+			needsAttention({ entries: [entry('a', '1a', '1')], warnings: [], aoDescriptions: {} })
+		).toEqual([]);
 	});
 });
 

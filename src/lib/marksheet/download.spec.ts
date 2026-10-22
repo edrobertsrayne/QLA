@@ -36,7 +36,8 @@ function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocumen
 					original: null
 				}
 			],
-			warnings: []
+			warnings: [],
+			aoDescriptions: {}
 		},
 		students: [{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false }],
 		marks: { 'student-1': { 'entry-1': 3 } },
@@ -93,7 +94,8 @@ describe('marksCsvFile', () => {
 					{ ...base.breakdown.entries[0], id: 'entry-2bii', label: '2bii', marks: 4 },
 					{ ...(other ?? base.breakdown.entries[0]), id: 'entry-3a', label: '3a', marks: 2 }
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			students: [
 				{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false },

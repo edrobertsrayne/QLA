@@ -29,6 +29,7 @@ import {
 	marksOverMax,
 	putMark,
 	removeMark,
+	type AoDescriptions,
 	type BreakdownEntry,
 	type EntryValues,
 	type MarksheetDocument,
@@ -77,6 +78,17 @@ export interface CreateFromParseInput {
 function trimOrNull(value: string | null): string | null {
 	const trimmed = value?.trim() ?? '';
 	return trimmed === '' ? null : trimmed;
+}
+
+/** Sets a trimmed AO description, or removes the key when it is blank. */
+function applyAoDescription(
+	descriptions: AoDescriptions,
+	ao: AssessmentObjective,
+	text: string | null
+): void {
+	const trimmed = trimOrNull(text);
+	if (trimmed === null) delete descriptions[ao];
+	else descriptions[ao] = trimmed;
 }
 
 export class MarksheetStore {
@@ -192,6 +204,11 @@ export class MarksheetStore {
 			questionId: entryIdFor(warning.questionId)
 		}));
 
+		const aoDescriptions: AoDescriptions = {};
+		for (const { ao, description } of input.breakdown.aoDescriptions) {
+			applyAoDescription(aoDescriptions, ao, description);
+		}
+
 		const document: MarksheetDocument = {
 			schemaVersion: DOCUMENT_SCHEMA_VERSION,
 			createdAt: at.toISOString(),
@@ -206,7 +223,7 @@ export class MarksheetStore {
 				boundaries: null,
 				belowLowestLabel: DEFAULT_BELOW_LOWEST_LABEL
 			},
-			breakdown: { entries, warnings },
+			breakdown: { entries, warnings, aoDescriptions },
 			students: [],
 			marks: {},
 			topicNames: {},
@@ -305,6 +322,18 @@ export class MarksheetStore {
 		this.#editEntries([entryId], (entry) => {
 			entry.ao = ao;
 		});
+	}
+
+	/**
+	 * Describe an assessment objective for the report's By skill strip. A blank
+	 * description clears it. Display only: reports are written without it, so it
+	 * leaves every report current.
+	 */
+	setAoDescription(ao: AssessmentObjective, description: string): void {
+		const document = this.#editable();
+		if (!document) return;
+		applyAoDescription(document.breakdown.aoDescriptions, ao, description);
+		this.#mutated();
 	}
 
 	/**

@@ -8,7 +8,8 @@ function pasteSheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocume
 	return confirmed({
 		breakdown: {
 			entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
-			warnings: []
+			warnings: [],
+			aoDescriptions: {}
 		},
 		students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
 		...overrides
