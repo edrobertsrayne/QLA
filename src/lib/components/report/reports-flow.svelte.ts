@@ -4,7 +4,7 @@
 
 import { goto } from '$app/navigation';
 import { resolve } from '$app/paths';
-import { getContext, setContext, tick } from 'svelte';
+import { createContext, tick } from 'svelte';
 import { ModelList } from '$lib/components/parse/model-list.svelte.js';
 import type { MarksheetStore } from '$lib/marksheet/store.svelte.js';
 import type { ReportStep } from '$lib/marksheet/report-steps.js';
@@ -60,14 +60,4 @@ export class ReportsFlow {
 	}
 }
 
-const KEY = Symbol('reports-flow');
-
-export function provideReportsFlow(flow: ReportsFlow): void {
-	setContext(KEY, flow);
-}
-
-export function reportsFlow(): ReportsFlow {
-	const flow = getContext<ReportsFlow | undefined>(KEY);
-	if (!flow) throw new Error('Report steps render inside the /reports layout.');
-	return flow;
-}
+export const [reportsFlow, provideReportsFlow] = createContext<ReportsFlow>();
