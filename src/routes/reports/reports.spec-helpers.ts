@@ -153,7 +153,7 @@ export function readyTiles(): number {
 
 export function failedTiles(): Element[] {
 	return [...document.querySelectorAll('[data-tile-for]')].filter(
-		(tile) => tile.querySelector('.text-muted-foreground')?.textContent === 'Failed'
+		(tile) => tile.querySelector('.sr-only')?.textContent === 'Failed:'
 	);
 }
 

@@ -138,7 +138,7 @@ The student-readable name for a specification point (e.g. "Transverse and longit
 _Avoid_: Spec title, topic label
 
 **Grade boundary**:
-The minimum total mark on this paper for a grade (e.g. 6 at 52), typed in by the teacher for each paper. Optional: a paper without grade boundaries gives no grades. Always in raw marks on one paper, never a percentage or a total across several papers.
+The minimum total mark on this paper for a grade (e.g. 6 at 52), typed in by the teacher for each paper. Optional: a paper without grade boundaries gives no grades. Always stored in raw marks on one paper, never a total across several papers. The teacher may type one as a percentage of the paper total; it is converted on entry by rounding up (65% of 83 marks is 54), and only the raw mark is kept.
 _Avoid_: Cut-off, threshold (thresholds belong to RAG bands)
 
 **Grade**:
