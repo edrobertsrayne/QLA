@@ -45,8 +45,8 @@ function shareOf(gained: number, available: number): { share: number; band: RagB
 	return { share, band: facilityBand(share) };
 }
 
-function toRow(totals: RollupTotals, description: string | null = null): RollupRow {
-	return { ...totals, description, ...shareOf(totals.gained, totals.available) };
+function toRow(totals: RollupTotals): RollupRow {
+	return { ...totals, description: null, ...shareOf(totals.gained, totals.available) };
 }
 
 /** The description of the assessment objective a roll-up row is named for, if it has one. */
@@ -83,12 +83,11 @@ export function reportFiguresFor(
 		total,
 		available,
 		percent: available === 0 ? 0 : Math.round((total / available) * 100),
-		topics: rollupBy(rows, (row) => topicNamesFor(document, row.entry.specPoint)).map((totals) =>
-			toRow(totals)
-		),
-		aos: rollupBy(rows, (row) => (row.entry.ao ? [row.entry.ao] : [])).map((totals) =>
-			toRow(totals, descriptionOf(document, totals.name))
-		),
+		topics: rollupBy(rows, (row) => topicNamesFor(document, row.entry.specPoint)).map(toRow),
+		aos: rollupBy(rows, (row) => (row.entry.ao ? [row.entry.ao] : [])).map((totals) => ({
+			...toRow(totals),
+			description: descriptionOf(document, totals.name),
+		})),
 		entries: rows.map(({ entry, gained, available }) => ({
 			entryId: entry.id,
 			label: entry.label,
