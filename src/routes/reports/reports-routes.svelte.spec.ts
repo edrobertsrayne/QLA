@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
+import { goto } from '$app/navigation';
 import { cleanup } from 'vitest-browser-svelte';
 import { seed } from '$lib/marksheet/fixtures.spec-helpers.js';
 import {
@@ -173,6 +174,30 @@ describe('report step routes', () => {
 			await vi.waitFor(() => expect(router.path).toBe('/reports/review'));
 			expect(router.entries.length).toBe(before);
 			expect(stub.mock.calls.filter(([url]) => String(url) === '/api/report').length).toBe(1);
+		});
+
+		it('does not pull the teacher back when a run finishes after they left /reports', async () => {
+			seed(solo());
+			let release: () => void = () => {};
+			const held = new Promise<void>((resolve) => (release = resolve));
+			stubFetch(async () => {
+				await held;
+				return ok();
+			});
+			const { router } = await openReports('/reports/who');
+			await page.getByRole('button', { name: 'Write 1 report' }).click();
+			await expect
+				.element(page.getByRole('heading', { name: 'Writing 0 of 1…' }))
+				.toBeInTheDocument();
+
+			// Leaving /reports tears the layout down; the router would now be on /marksheet.
+			cleanup();
+			const calls = vi.mocked(goto).mock.calls.length;
+			release();
+			await new Promise((resolve) => setTimeout(resolve, 200));
+
+			expect(vi.mocked(goto).mock.calls.length).toBe(calls);
+			expect(router.path).toBe('/reports/writing');
 		});
 
 		it('walks Back from Review to the step before it', async () => {

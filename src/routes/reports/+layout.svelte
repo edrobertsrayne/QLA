@@ -7,7 +7,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { onMount, type Snippet } from 'svelte';
+	import { onDestroy, onMount, type Snippet } from 'svelte';
 	import PrintRoot from '$lib/components/report/PrintRoot.svelte';
 	import {
 		goToStep,
@@ -30,6 +30,7 @@
 	const flow = new ReportsFlow(store);
 	provideReportsFlow(flow);
 	onMount(() => void flow.models.load());
+	onDestroy(() => flow.detach());
 </script>
 
 <svelte:window onafterprint={() => (flow.printing = null)} />

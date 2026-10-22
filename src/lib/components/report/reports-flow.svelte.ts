@@ -36,11 +36,21 @@ export class ReportsFlow {
 	/** Pages the printer gets; null means not printing, so every visible page shows for measuring. */
 	printing = $state<string[] | null>(null);
 
+	/** False once the teacher has left /reports: a run still finishing there moves no one. */
+	#attached = true;
+
 	constructor(store: MarksheetStore) {
-		// A finished run takes the teacher to Review on its own.
-		this.run = new ReportRun(store, () => replaceWithStep('review'));
+		// A finished run takes the teacher to Review on its own, while they are still in /reports.
+		this.run = new ReportRun(store, () => {
+			if (this.#attached) replaceWithStep('review');
+		});
 		this.roster = $derived(store.document ? reportRoster(store.document, this.run.tiles) : []);
 		this.reviewIds = $derived(rowsOf(this.roster, 'review').map((row) => row.studentId));
+	}
+
+	/** The teacher has left /reports. The run keeps writing into the store, but navigates nowhere. */
+	detach(): void {
+		this.#attached = false;
 	}
 
 	writeNew(ids: string[]): void {
