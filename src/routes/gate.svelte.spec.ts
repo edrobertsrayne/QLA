@@ -51,10 +51,24 @@ describe('boot gate', () => {
 	it('keeps the report flow on a confirmed breakdown', () => {
 		seed(parsed({ breakdownConfirmedAt: NOW }));
 		expect(redirectFrom('/reports')).toBeNull();
+		expect(redirectFrom('/reports/review')).toBeNull();
 
 		marksheetStore().wipe();
 		seed(parsed({ breakdownConfirmedAt: null }));
 		expect(redirectFrom('/reports')).toMatchObject({ status: 307, location: '/breakdown' });
+		expect(redirectFrom('/reports/review')).toMatchObject({ status: 307, location: '/breakdown' });
+	});
+
+	it('keeps the analysis on a confirmed breakdown and sends an unconfirmed one to upload', () => {
+		seed(parsed({ breakdownConfirmedAt: NOW }));
+		expect(redirectFrom('/marksheet/analysis')).toBeNull();
+
+		marksheetStore().wipe();
+		seed(parsed({ breakdownConfirmedAt: null }));
+		expect(redirectFrom('/marksheet/analysis')).toMatchObject({
+			status: 307,
+			location: '/breakdown'
+		});
 	});
 
 	it('sends nothing stored on any route to upload', () => {

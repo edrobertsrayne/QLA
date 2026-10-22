@@ -7,7 +7,7 @@ import { marksheetStore } from '$lib/marksheet/index.js';
 import { sentHtml, stubPdfFetch } from '../pdf.spec-helpers.js';
 import { openPage } from '../spec-helpers.js';
 import './marksheet.spec-helpers.js';
-import MarksheetPage from './+page.svelte';
+import AnalysisPage from './analysis/+page.svelte';
 
 afterEach(() => {
 	cleanup();
@@ -46,11 +46,11 @@ function seedAnalysis() {
 			marks: { s1: { 'entry-1': 0, 'entry-2': 4 }, s2: { 'entry-1': 1, 'entry-2': 4 } }
 		})
 	);
-	openPage(MarksheetPage);
+	// The analysis route, as the router opens it.
+	openPage(AnalysisPage, { data: { entry: null } });
 }
 
 async function openAnalysis() {
-	await page.getByRole('button', { name: 'View analysis' }).click();
 	await expect.element(page.getByTestId('analysis-view')).toBeInTheDocument();
 }
 

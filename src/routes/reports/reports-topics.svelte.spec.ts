@@ -3,8 +3,6 @@ import { page } from 'vitest/browser';
 import { cleanup } from 'vitest-browser-svelte';
 import { readSeeded, seed } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
-import { openPage } from '../spec-helpers.js';
-import ReportsPage from './+page.svelte';
 import {
 	plain,
 	h556,
@@ -13,7 +11,8 @@ import {
 	topicNames,
 	skipGrades,
 	writeFor,
-	posted
+	posted,
+	openReports
 } from './reports.spec-helpers.js';
 
 afterEach(() => {
@@ -25,7 +24,7 @@ describe('topic names step', () => {
 	it('auto-proposes on arrival, never overwrites a typed name, and gates Next on blanks', async () => {
 		seed(h556());
 		const { stub } = stubFetch(() => topicNames());
-		openPage(ReportsPage);
+		await openReports();
 
 		// Auto-proposal on arrival fills every code.
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
@@ -66,7 +65,7 @@ describe('topic names step', () => {
 		};
 		seed(doc);
 		stubFetch(() => ok());
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		await page.getByRole('button', { name: 'Next' }).click();
@@ -103,7 +102,7 @@ describe('topic names step', () => {
 		doc.breakdown.aoDescriptions = { AO3: 'Analyse information to make judgements' };
 		seed(doc);
 		const { stub } = stubFetch(() => ok());
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		await page.getByRole('button', { name: 'Next' }).click();
@@ -131,7 +130,7 @@ describe('topic names step', () => {
 				{ status: 502 }
 			)
 		);
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('alert')).toBeInTheDocument();
 		// Hand typing still works while the proposal fails.
@@ -145,7 +144,7 @@ describe('topic names step', () => {
 	it('skips the step and makes no proposal call when no entry carries a code', async () => {
 		seed(plain());
 		const { stub } = stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 		await skipGrades();
 
 		await expect
@@ -158,7 +157,7 @@ describe('topic names step', () => {
 	it('persists names across a reload', async () => {
 		seed(h556());
 		stubFetch(() => topicNames({ '5.1.1': 'First proposal' }));
-		const first = openPage(ReportsPage);
+		const first = (await openReports()).screen;
 
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		const nameFor = (code: string): HTMLInputElement | null =>
@@ -171,7 +170,7 @@ describe('topic names step', () => {
 		expect(readSeeded().topicNames['5.1.2']).toBe('Hand typed');
 
 		first.unmount();
-		const second = openPage(ReportsPage);
+		const second = (await openReports()).screen;
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		const again = (code: string): HTMLInputElement | null =>
 			second.container.querySelector(`#topic-${CSS.escape(code)}`);
@@ -197,7 +196,7 @@ describe('review fixes', () => {
 				? Response.json({ error: { message: 'Proposal unavailable.' } }, { status: 502 })
 				: ok()
 		);
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		for (const step of [/Who gets one/, /Writing/, /Review and print/]) {
@@ -220,7 +219,7 @@ describe('review fixes', () => {
 		};
 		seed(doc);
 		const { stub } = stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		await page.getByRole('button', { name: 'Next' }).click();
 		await skipGrades();

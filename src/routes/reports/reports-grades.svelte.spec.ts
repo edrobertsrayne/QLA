@@ -7,8 +7,15 @@ import { generationInputFor } from '$lib/marksheet/report-input.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { openPage } from '../spec-helpers.js';
 import MarksheetPage from '../marksheet/+page.svelte';
-import ReportsPage from './+page.svelte';
-import { plain, h556, solo, stubFetch, topicNames, skipGrades } from './reports.spec-helpers.js';
+import {
+	plain,
+	h556,
+	solo,
+	stubFetch,
+	topicNames,
+	skipGrades,
+	openReports
+} from './reports.spec-helpers.js';
 
 afterEach(() => {
 	cleanup();
@@ -73,7 +80,7 @@ describe('grades on reports', () => {
 	it('shows grade and marks to next on each page, Top grade at the top', async () => {
 		seed(writtenPair());
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		const ada = document.querySelector('main [data-report-id="ada"]');
@@ -96,7 +103,7 @@ describe('grades on reports', () => {
 		];
 		seed(doc);
 		const { stub } = stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		// No specification points: the flow starts at the Grades step.
 		await skipGrades();
@@ -118,7 +125,7 @@ describe('grades on reports', () => {
 	it('omits every grade cell when the paper has no boundaries', async () => {
 		seed(soloWritten());
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		expect(document.querySelector('main [data-testid="report-grade"]')).toBeNull();
@@ -128,7 +135,7 @@ describe('grades on reports', () => {
 	it('walks Topic names, Grades, Who gets one when the paper has codes', async () => {
 		seed(h556());
 		stubFetch(() => topicNames());
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		await page.getByRole('button', { name: 'Next' }).click();
@@ -146,7 +153,7 @@ describe('grades on reports', () => {
 	it('saving in the Grades step updates the marksheet columns', async () => {
 		seed(h556());
 		stubFetch(() => topicNames());
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		await page.getByRole('button', { name: 'Next' }).click();
@@ -187,7 +194,7 @@ describe('grades on reports', () => {
 		doc.paper.boundaries = [{ label: 'B', minimum: 5 }];
 		seed(doc);
 		stubFetch(() => topicNames());
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		await page.getByRole('button', { name: 'Next' }).click();

@@ -6,9 +6,7 @@ import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { seed } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { sentHtml, stubPdfFetch } from '../pdf.spec-helpers.js';
-import { openPage } from '../spec-helpers.js';
-import ReportsPage from './+page.svelte';
-import { plain, writeFor } from './reports.spec-helpers.js';
+import { openReports, plain, writeFor } from './reports.spec-helpers.js';
 
 afterEach(() => {
 	cleanup();
@@ -20,18 +18,18 @@ function pagesOf(html: string): string[] {
 	return [...html.matchAll(/data-report-id="([^"]+)"/g)].map((match) => match[1]);
 }
 
-function openWritten(ids: string[]) {
+async function openWritten(ids: string[]) {
 	const doc = plain();
 	writeFor(doc, ids);
 	seed(doc);
 	const stub = stubPdfFetch();
-	openPage(ReportsPage);
+	await openReports('/reports/review');
 	return stub;
 }
 
 describe('report PDF downloads', () => {
 	it('downloads one report as a PDF of just that page', async () => {
-		const stub = openWritten(['ada', 'bo']);
+		const stub = await openWritten(['ada', 'bo']);
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		const file = captureDownload();
 
@@ -59,7 +57,7 @@ describe('report PDF downloads', () => {
 		if (fay) fay.absent = true;
 		seed(doc);
 		const stub = stubPdfFetch();
-		openPage(ReportsPage);
+		await openReports('/reports/review');
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		const file = captureDownload();
 
@@ -74,7 +72,7 @@ describe('report PDF downloads', () => {
 	});
 
 	it('downloads separate PDFs in a zip, one correctly named file per student', async () => {
-		const stub = openWritten(['ada', 'bo']);
+		const stub = await openWritten(['ada', 'bo']);
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		const file = captureDownload();
 
@@ -93,7 +91,7 @@ describe('report PDF downloads', () => {
 	});
 
 	it('inlines the fonts once for a whole zip, not once per student', async () => {
-		const stub = openWritten(['ada', 'bo']);
+		const stub = await openWritten(['ada', 'bo']);
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		const file = captureDownload();
 
@@ -115,7 +113,7 @@ describe('report PDF downloads', () => {
 		doc.marks['ada'] = { 'entry-1': 1, 'entry-2': 1 };
 		seed(doc);
 		const stub = stubPdfFetch();
-		openPage(ReportsPage);
+		await openReports('/reports/review');
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		captureDownload();
 
@@ -143,7 +141,7 @@ describe('report PDF downloads', () => {
 				{ status: 504 }
 			);
 		});
-		openPage(ReportsPage);
+		await openReports('/reports/review');
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		const file = captureDownload();
 
