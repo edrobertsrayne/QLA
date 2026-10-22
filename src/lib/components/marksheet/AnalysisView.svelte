@@ -9,7 +9,10 @@
 	import { onMount, tick } from 'svelte';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import DownloadIcon from '@lucide/svelte/icons/download';
 	import PrinterIcon from '@lucide/svelte/icons/printer';
+	import { toast } from 'svelte-sonner';
+	import { ApiFailure } from '$lib/api-error.js';
 	import { Button } from '$lib/components/ui/button';
 	import * as Table from '$lib/components/ui/table';
 	import {
@@ -21,7 +24,9 @@
 		type RagBand
 	} from '$lib/marksheet/analysis.js';
 	import { entryName } from '$lib/marksheet/breakdown.js';
-	import { marksheetStore } from '$lib/marksheet/index.js';
+	import { analysisPdfFilename, saveBlob } from '$lib/marksheet/download.js';
+	import { exportAnalysisNow, marksheetStore } from '$lib/marksheet/index.js';
+	import { fetchPdf, printDocumentHtml } from '$lib/print-pdf.js';
 	import { count, agree } from '$lib/prose.js';
 	import { cn } from '$lib/utils.js';
 
@@ -39,6 +44,35 @@
 	const paper = $derived(store.document?.paper ?? null);
 	/** Green is the band a teacher is least likely to act on, so it starts folded. */
 	let greenOpen = $state(false);
+
+	let view = $state<HTMLElement>();
+	let makingPdf = $state(false);
+
+	/**
+	 * The analysis as a PDF, every section in it: green is unfolded for the
+	 * moment the page is read, so the file does not depend on what is open on
+	 * screen. Each section keeps its band in its heading, so a greyscale copy
+	 * still reads. The paper margin is the analysis's own: unlike a report it
+	 * has no page of its own to fill.
+	 */
+	async function downloadPdf(): Promise<void> {
+		if (!view || !store.document) return;
+		makingPdf = true;
+		const wasOpen = greenOpen;
+		try {
+			greenOpen = true;
+			await tick();
+			const html = await printDocumentHtml(view, '@page { size: A4; margin: 12mm; }');
+			greenOpen = wasOpen;
+			saveBlob(analysisPdfFilename(store.document, new Date()), await fetchPdf(html));
+		} catch (error) {
+			if (!(error instanceof ApiFailure)) throw error;
+			toast.error(error.message);
+		} finally {
+			greenOpen = wasOpen;
+			makingPdf = false;
+		}
+	}
 
 	/** The bands, each worst first, in the order a teacher reads them. */
 	const sections = $derived.by(() => {
@@ -180,13 +214,20 @@
 	</Table.Root>
 {/snippet}
 
-<div class="mx-auto max-w-5xl space-y-4" data-testid="analysis-view">
+<div class="mx-auto max-w-5xl space-y-4" data-testid="analysis-view" bind:this={view}>
 	<div class="flex flex-wrap items-center gap-2 print:hidden">
 		<Button variant="ghost" size="sm" onclick={onBack}>
 			<ArrowLeftIcon class="size-4" /> Back to marksheet
 		</Button>
 		<Button variant="outline" size="sm" class="ml-auto" onclick={() => window.print()}>
 			<PrinterIcon class="size-4" /> Print
+		</Button>
+		<Button variant="outline" size="sm" disabled={makingPdf} onclick={() => void downloadPdf()}>
+			<DownloadIcon class="size-4" />
+			{makingPdf ? 'Preparing PDF…' : 'Download PDF'}
+		</Button>
+		<Button variant="outline" size="sm" onclick={exportAnalysisNow}>
+			<DownloadIcon class="size-4" /> Download CSV
 		</Button>
 	</div>
 

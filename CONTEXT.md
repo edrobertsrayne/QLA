@@ -117,6 +117,10 @@ _Avoid_: Save, export, download
 A one-way CSV of a marksheet's marks for use elsewhere. Lossy: it cannot be restored from.
 _Avoid_: Backup, save, download
 
+**Analysis export**:
+A one-way file of the analysis figures: a CSV of one row per breakdown entry, or a PDF of the analysis view with every band shown. Lossy: it cannot be restored from, and it leaves the backup's age alone.
+_Avoid_: Backup, save, download
+
 **New upload**:
 The destructive action that discards everything stored for the paper (breakdown, marksheet, topic names, grade boundaries and reports) and returns to uploading a fresh assessment paper and/or markscheme. Only exists once something is stored.
 _Avoid_: Reset, clear, start over

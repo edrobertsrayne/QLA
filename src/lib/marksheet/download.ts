@@ -6,7 +6,10 @@
 // Downloads folder as well as in the app, because that is where they are picked
 // up at restore time.
 
+import { analyseMarksheet, facilityPercent, notScoredLabel } from './analysis.js';
+import { entryName } from './breakdown.js';
 import { CORRUPT_KEY_PREFIX, totalMarks, type MarksheetDocument } from './document.js';
+import { studentName, type StudentName } from './students.js';
 
 /** A file the browser will save: its name, its body, and what it is. */
 export interface QlaFile {
@@ -33,6 +36,23 @@ function dayStamp(at: Date): string {
 	const month = String(at.getMonth() + 1).padStart(2, '0');
 	const day = String(at.getDate()).padStart(2, '0');
 	return `${at.getFullYear()}-${month}-${day}`;
+}
+
+/** `qla-<kind>-<paper>-<day>.<extension>`: how every export of the current paper is named. */
+function exportFilename(
+	kind: string,
+	document: MarksheetDocument,
+	now: Date,
+	extension: string,
+	...also: string[]
+): string {
+	return [
+		'qla',
+		kind,
+		slugOr(document.paper.label, 'marksheet'),
+		...also,
+		`${dayStamp(now)}.${extension}`
+	].join('-');
 }
 
 /**
@@ -92,6 +112,81 @@ export function marksCsvFile(document: MarksheetDocument): QlaFile {
 	};
 }
 
+/**
+ * The analysis figures as a spreadsheet reads them: one row per breakdown
+ * entry, in breakdown order, every entry included. A missing field is an empty
+ * cell. Lossy and one-way like the marks export, and like it, it takes no part
+ * in the backup: nothing here marks a backup as taken.
+ */
+export function analysisCsvFile(document: MarksheetDocument, now: Date): QlaFile {
+	const rows = analyseMarksheet(document).entries.map((row) => [
+		entryName(row.entry),
+		row.entry.questionNumber,
+		row.entry.summary,
+		row.entry.marks === null ? '' : String(row.entry.marks),
+		row.entry.specPoint ?? '',
+		row.entry.ao ?? '',
+		row.facility === null ? '' : String(facilityPercent(row.facility)),
+		row.mean === null ? '' : row.mean.toFixed(2),
+		row.band ?? '',
+		String(row.coverage.marked),
+		String(row.coverage.of),
+		row.coverage.partMarked ? 'yes' : 'no',
+		String(row.overMax),
+		row.notScored === null ? '' : notScoredLabel(row)
+	]);
+	return {
+		filename: exportFilename('analysis', document, now, 'csv'),
+		text:
+			[
+				[
+					'Question',
+					'Q number',
+					'Summary',
+					'Available marks',
+					'Spec point',
+					'AO',
+					'Facility %',
+					'Mean mark',
+					'Band',
+					'Marked',
+					'Of',
+					'Part-marked',
+					'Over-max marks',
+					'Not-scored reason'
+				],
+				...rows
+			]
+				.map((row) => row.map(csvCell).join(','))
+				.join('\r\n') + '\r\n',
+		type: 'text/csv'
+	};
+}
+
+/** The name of one student's report PDF. */
+export function reportPdfFilename(
+	document: MarksheetDocument,
+	student: StudentName,
+	now: Date
+): string {
+	return exportFilename('report', document, now, 'pdf', slugOr(studentName(student), 'student'));
+}
+
+/** The name of the one PDF holding every visible report. */
+export function reportsPdfFilename(document: MarksheetDocument, now: Date): string {
+	return exportFilename('reports', document, now, 'pdf');
+}
+
+/** The name of the zip of one PDF per report. */
+export function reportsZipFilename(document: MarksheetDocument, now: Date): string {
+	return exportFilename('reports', document, now, 'zip');
+}
+
+/** The name of the analysis PDF. */
+export function analysisPdfFilename(document: MarksheetDocument, now: Date): string {
+	return exportFilename('analysis', document, now, 'pdf');
+}
+
 /** The raw text of a document this app could not read, out of its preserved copy. */
 export function corruptFile(preservedKey: string | null, raw: string): QlaFile {
 	const stamp = preservedKey?.startsWith(CORRUPT_KEY_PREFIX)
@@ -110,10 +205,15 @@ export function corruptFile(preservedKey: string | null, raw: string): QlaFile {
  * task as the click that started it.
  */
 export function saveFile(file: QlaFile): void {
-	const url = URL.createObjectURL(new Blob([file.text], { type: file.type }));
+	saveBlob(file.filename, new Blob([file.text], { type: file.type }));
+}
+
+/** Hand a binary file (a PDF, a zip) to the browser, the same way. */
+export function saveBlob(filename: string, blob: Blob): void {
+	const url = URL.createObjectURL(blob);
 	const link = document.createElement('a');
 	link.href = url;
-	link.download = file.filename;
+	link.download = filename;
 	link.rel = 'noopener';
 	document.body.append(link);
 	link.click();

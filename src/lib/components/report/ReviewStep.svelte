@@ -16,6 +16,7 @@
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import { isFlagged, reportFit } from './report-fit.svelte.js';
 	import { railStatus, rowsOf, type RosterRow } from './report-roster.js';
+	import type { ReportDownload } from './report-pdf.js';
 	import type { ReportRun } from './report-run.svelte.js';
 	import ReportSheet from './ReportSheet.svelte';
 
@@ -23,14 +24,19 @@
 		document,
 		roster,
 		run,
+		downloading,
 		onprint,
+		ondownload,
 		onrewrite,
 		onwritemore
 	}: {
 		document: MarksheetDocument;
 		roster: RosterRow[];
 		run: ReportRun;
+		/** Who the PDF being made is for (a student's id or `all`), or null when none is. */
+		downloading: string | null;
 		onprint: (ids: string[]) => void;
+		ondownload: (ids: string[], kind: ReportDownload) => void;
 		onrewrite: (ids: string[]) => void;
 		onwritemore: (ids: string[]) => void;
 	} = $props();
@@ -89,13 +95,23 @@
 		);
 	};
 
-	/** Pages a print would send that the teacher should know about first. */
-	interface PrintWarning {
+	/** How pages leave the app, in the words the warning uses for each. */
+	const DELIVERY = {
+		print: { verb: 'Print', cutter: 'print' },
+		download: { verb: 'Download', cutter: 'the PDF' }
+	} as const;
+
+	/** Pages a print or a download would send that the teacher should know about first. */
+	interface DeliveryWarning {
 		ids: string[];
 		outOfDate: number;
 		overflow: number;
+		delivery: keyof typeof DELIVERY;
+		proceed: () => void;
 	}
-	let pendingPrint = $state<PrintWarning | null>(null);
+	let pendingDelivery = $state<DeliveryWarning | null>(null);
+	/** Download all is waiting to be told One PDF or Separate PDFs. */
+	let choosingDownload = $state(false);
 
 	/** Out-of-date pages among `ids` that a rewrite may touch: edited ones only when opted in. */
 	const rewritableOf = (ids: string[]): string[] =>
@@ -104,13 +120,17 @@
 				outOfDateChanges(id).length > 0 && (includeEdited || document.reports[id]?.edit === null)
 		);
 
-	/** Print asks first when an out-of-date or overflowing page would go to the printer. */
-	function askPrint(ids: string[]): void {
+	/** Print and Download ask first when an out-of-date or overflowing page would go out. */
+	function askFirst(ids: string[], delivery: keyof typeof DELIVERY, proceed: () => void): void {
 		const outOfDate = ids.filter((id) => outOfDateChanges(id).length > 0).length;
 		const overflow = ids.filter((id) => isFlagged(fit.fitOf(id))).length;
-		if (outOfDate === 0 && overflow === 0) onprint(ids);
-		else pendingPrint = { ids, outOfDate, overflow };
+		if (outOfDate === 0 && overflow === 0) proceed();
+		else pendingDelivery = { ids, outOfDate, overflow, delivery, proceed };
 	}
+
+	const askPrint = (ids: string[]): void => askFirst(ids, 'print', () => onprint(ids));
+	const askDownload = (ids: string[], kind: ReportDownload): void =>
+		askFirst(ids, 'download', () => ondownload(ids, kind));
 
 	function jumpTo(studentId: string): void {
 		globalThis.document
@@ -123,6 +143,13 @@
 	<aside class="sticky top-4 w-56 shrink-0 space-y-3 self-start">
 		<Button disabled={reviewIds.length === 0} onclick={() => askPrint(reviewIds)}>
 			Print all {reviewIds.length}
+		</Button>
+		<Button
+			variant="outline"
+			disabled={reviewIds.length === 0 || downloading !== null}
+			onclick={() => (choosingDownload = true)}
+		>
+			{downloading === 'all' ? 'Preparing PDFs…' : `Download all ${reviewIds.length}`}
 		</Button>
 		{#if outOfDateIds.length > 0 && !run.running}
 			{@const skipped = includeEdited ? 0 : editedOutOfDateIds.length}
@@ -178,6 +205,14 @@
 				<div class="flex flex-wrap items-center gap-2">
 					<Button variant="outline" size="sm" onclick={() => askPrint([id])}>Print this page</Button
 					>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={downloading !== null}
+						onclick={() => askDownload([id], 'page')}
+					>
+						{downloading === id ? 'Preparing PDF…' : 'Download PDF'}
+					</Button>
 					{#if document.reports[id].edit !== null}
 						<Badge variant="secondary">edited</Badge>
 						<Button variant="outline" size="sm" onclick={() => store.revertReport(id)}
@@ -238,8 +273,25 @@
 		onclose={() => (confirmRewrite = null)}
 	/>
 {/if}
-{#if pendingPrint}
-	{@const { ids, outOfDate, overflow } = pendingPrint}
+{#if choosingDownload}
+	<ConfirmDialog
+		title="Download all {reviewIds.length}"
+		description="Save the reports as one PDF, a page each, or as a separate PDF for each student in a zip."
+		actions={[
+			{ label: 'One PDF', onclick: () => askDownload(reviewIds, 'one') },
+			{
+				label: 'Separate PDFs (zip)',
+				variant: 'outline',
+				onclick: () => askDownload(reviewIds, 'zip')
+			},
+			{ label: 'Cancel', variant: 'outline', onclick: () => {} }
+		]}
+		onclose={() => (choosingDownload = false)}
+	/>
+{/if}
+{#if pendingDelivery}
+	{@const { ids, outOfDate, overflow, delivery, proceed } = pendingDelivery}
+	{@const { verb, cutter } = DELIVERY[delivery]}
 	<ConfirmDialog
 		title={outOfDate > 0 && overflow > 0
 			? 'Out-of-date and overflowing reports'
@@ -252,13 +304,13 @@
 				: []),
 			...(overflow > 0
 				? [
-						`${count(overflow, 'report')} ${agree(overflow, 'runs', 'run')} over the page; print cuts the overflow off.`
+						`${count(overflow, 'report')} ${agree(overflow, 'runs', 'run')} over the page; ${cutter} cuts the overflow off.`
 					]
 				: []),
-			'Print anyway?'
+			`${verb} anyway?`
 		].join(' ')}
 		actions={[
-			{ label: 'Print anyway', onclick: () => onprint(ids) },
+			{ label: `${verb} anyway`, onclick: proceed },
 			...(rewritableOf(ids).length > 0
 				? [
 						{
@@ -270,6 +322,6 @@
 				: []),
 			{ label: 'Keep editing', variant: 'outline', onclick: () => {} }
 		]}
-		onclose={() => (pendingPrint = null)}
+		onclose={() => (pendingDelivery = null)}
 	/>
 {/if}
