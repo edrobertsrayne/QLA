@@ -86,7 +86,7 @@ export function reportFiguresFor(
 		topics: rollupBy(rows, (row) => topicNamesFor(document, row.entry.specPoint)).map(toRow),
 		aos: rollupBy(rows, (row) => (row.entry.ao ? [row.entry.ao] : [])).map((totals) => ({
 			...toRow(totals),
-			description: descriptionOf(document, totals.name),
+			description: descriptionOf(document, totals.name)
 		})),
 		entries: rows.map(({ entry, gained, available }) => ({
 			entryId: entry.id,
