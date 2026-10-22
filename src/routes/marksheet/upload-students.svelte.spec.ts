@@ -14,7 +14,7 @@ describe('uploading a class list', () => {
 		seed(confirmed());
 		const screen = openPage(MarksheetPage);
 
-		await page.getByRole('button', { name: 'Upload CSV' }).first().click();
+		await page.getByRole('button', { name: 'Upload CSV' }).last().click();
 		await page
 			.getByLabelText('CSV file')
 			.upload(csvFile('First name,Last name\r\n"Mary Ann",Evans\r\nGrace,Hopper\r\n'));
@@ -27,7 +27,7 @@ describe('uploading a class list', () => {
 		seed(confirmed());
 		const screen = openPage(MarksheetPage);
 
-		await page.getByRole('button', { name: 'Upload CSV' }).first().click();
+		await page.getByRole('button', { name: 'Upload CSV' }).last().click();
 		await page.getByLabelText('CSV file').upload(csvFile('First name,Last name\nAda,Lovelace'));
 		await expect.element(page.getByRole('button', { name: 'Add 1 student' })).toBeInTheDocument();
 		await page.getByLabelText('First row is a header').click();
