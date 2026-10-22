@@ -24,8 +24,9 @@
 	const store = marksheetStore();
 	let open = $state(false);
 	let firstRowIsHeader = $state(true);
+	type FileRead = { ok: true; text: string } | { ok: false; error: string };
 	/** The chosen file's text, or why it could not be read; null before one is chosen. */
-	let file = $state<{ ok: true; text: string } | { ok: false; error: string } | null>(null);
+	let file = $state<FileRead | null>(null);
 
 	// Re-read whenever the header box changes: the box, not the content, decides row 1.
 	const csv = $derived(file?.ok ? readStudentCsv(file.text, firstRowIsHeader) : file);
@@ -39,7 +40,7 @@
 		const pick = ++latestPick;
 		file = null;
 		if (!chosen) return;
-		let read: NonNullable<typeof file>;
+		let read: FileRead;
 		try {
 			// Fatal decoding refuses a binary file rather than reading it as gibberish.
 			const text = new TextDecoder('utf-8', { fatal: true }).decode(await chosen.arrayBuffer());
