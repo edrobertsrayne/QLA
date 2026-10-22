@@ -459,6 +459,51 @@ describe('marksheet grade columns', () => {
 			]);
 		});
 
+		it('clears a boundary when its % field is emptied, so Save drops it', async () => {
+			seedPaper(83, [
+				{ label: 'A', minimum: 54 },
+				{ label: 'B', minimum: 31 }
+			]);
+			openPage(MarksheetPage);
+			await page.getByRole('button', { name: 'Grade boundaries (2)' }).click();
+			await page.getByRole('radio', { name: '%' }).click();
+
+			await userEvent.fill(page.getByLabelText('Lowest percentage for A', { exact: true }), '');
+			await expect.element(page.getByText('→ 54/83')).not.toBeInTheDocument();
+			await expect
+				.element(page.getByTestId('grade-boundaries-footer'))
+				.toHaveTextContent('1 grade');
+			await page.getByRole('button', { name: 'Save boundaries' }).click();
+			expect(marksheetStore().document?.paper.boundaries).toEqual([{ label: 'B', minimum: 31 }]);
+		});
+
+		it('restores the stored mark when switching back to Marks after invalid % text', async () => {
+			seedPaper(83, [
+				{ label: 'A', minimum: 54 },
+				{ label: 'B', minimum: 31 }
+			]);
+			openPage(MarksheetPage);
+			await page.getByRole('button', { name: 'Grade boundaries (2)' }).click();
+			await page.getByRole('radio', { name: '%' }).click();
+
+			await userEvent.fill(page.getByLabelText('Lowest percentage for A', { exact: true }), 'abc');
+			await expect
+				.element(page.getByTestId('grade-boundaries-footer'))
+				.toHaveTextContent('1 problem to fix');
+			await page.getByRole('radio', { name: 'Marks' }).click();
+			await expect
+				.element(page.getByLabelText('Lowest mark for A', { exact: true }))
+				.toHaveValue('54');
+			await expect
+				.element(page.getByTestId('grade-boundaries-footer'))
+				.toHaveTextContent('2 grades');
+			await page.getByRole('button', { name: 'Save boundaries' }).click();
+			expect(marksheetStore().document?.paper.boundaries).toEqual([
+				{ label: 'A', minimum: 54 },
+				{ label: 'B', minimum: 31 }
+			]);
+		});
+
 		it('flags out-of-range and non-numeric percentages and blocks Save', async () => {
 			seedPaper(83, null);
 			openPage(MarksheetPage);

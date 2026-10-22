@@ -21,7 +21,7 @@ import { progressOf } from './students.js';
 /** One boundary row as typed: both fields are text until the dialog saves. */
 export interface BoundaryRow {
 	label: string;
-	/** The lowest raw mark; in % mode, what `percent` converts to. */
+	/** The lowest raw mark, blank when the grade is not used. In % mode a valid `percent` sets it, blank text clears it, and other invalid text leaves it as it was. */
 	min: string;
 	/** What the teacher typed in % mode, kept so a half-typed value stays visible; unset until then. */
 	percent?: string;

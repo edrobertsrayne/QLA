@@ -66,10 +66,12 @@
 	function typePercent(row: BoundaryRow, text: string): void {
 		row.percent = text;
 		const percent = parsePercent(text);
-		// Invalid text leaves the stored raw mark alone: switching back to
-		// Marks must restore exactly what was there, and the percent issue
-		// blocks Save until the teacher fixes or abandons the text.
+		// Blank clears the boundary, as Marks mode does. Other invalid text
+		// leaves the stored raw mark alone: switching back to Marks must
+		// restore exactly what was there, and the percent issue blocks Save
+		// until the teacher fixes or abandons the text.
 		if (percent !== null) row.min = String(percentToMarks(percent, paperTotal));
+		else if (text.trim() === '') row.min = '';
 	}
 	/** Start the working copy from one scale, keeping marks typed against carried-over labels. */
 	function pick(name: string): void {
