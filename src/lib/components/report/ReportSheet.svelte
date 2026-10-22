@@ -135,8 +135,8 @@
 	function measureFit(box: HTMLElement) {
 		if (!measure) return;
 		const content = box.firstElementChild as HTMLElement | null;
-		const feedback = content?.querySelector('[data-feedback]') as HTMLElement | null;
-		const questions = content?.querySelector('[data-questions]') as HTMLElement | null;
+		const feedback = content?.querySelector<HTMLElement>('[data-feedback]');
+		const questions = content?.querySelector<HTMLElement>('[data-questions]');
 		if (!content || !feedback || !questions) return;
 		const settle = () => {
 			fit.setFit(
