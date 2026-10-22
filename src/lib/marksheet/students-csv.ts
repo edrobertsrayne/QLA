@@ -71,7 +71,7 @@ function parseCsv(text: string): string[][] | null {
  * rejects the whole file, named by its row number in the file.
  */
 export function readStudentCsv(text: string, firstRowIsHeader: boolean): StudentCsv {
-	if (text.trim() === '' || text === BYTE_ORDER_MARK)
+	if (text.trim() === '')
 		return { ok: false, error: 'The file is empty.' };
 	const records = parseCsv(text);
 	if (records === null) {
