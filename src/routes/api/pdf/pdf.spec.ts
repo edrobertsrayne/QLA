@@ -9,7 +9,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { getDocumentProxy, extractText } from 'unpdf';
 import { POST } from './+server';
-import { MAX_PDF_HTML_BYTES, closePdfBrowser } from '$lib/server/pdf';
+import { MAX_CONCURRENT_PDF_RENDERS, MAX_PDF_HTML_BYTES, closePdfBrowser } from '$lib/server/pdf';
 
 function post(html: string | ReadableStream<Uint8Array>): Promise<Response> {
 	const request = new Request('http://localhost/api/pdf', {
@@ -54,6 +54,24 @@ describe('POST /api/pdf', () => {
 		const { text } = await textOf(response);
 		expect(text).toContain('shown');
 		expect(text).not.toContain('screen only');
+	});
+
+	it('refuses renders beyond the concurrency limit with a retryable 503, and serves them again after', async () => {
+		const extra = 2;
+		const responses = await Promise.all(
+			Array.from({ length: MAX_CONCURRENT_PDF_RENDERS + extra }, () => post('<p>busy</p>'))
+		);
+
+		const statuses = responses.map((response) => response.status).sort();
+		expect(statuses).toEqual([
+			...Array<number>(MAX_CONCURRENT_PDF_RENDERS).fill(200),
+			...Array<number>(extra).fill(503)
+		]);
+		const refused = responses.find((response) => response.status === 503);
+		expect(await refused?.json()).toMatchObject({
+			error: { code: 'PDF_BUSY', retryable: true }
+		});
+		expect((await post('<p>again</p>')).status).toBe(200);
 	});
 
 	describe('hardening', () => {

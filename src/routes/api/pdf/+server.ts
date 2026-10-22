@@ -6,7 +6,7 @@
 // Request bodies and PDFs are never logged, matching `/api/report`.
 
 import type { RequestHandler } from './$types';
-import { MAX_PDF_HTML_BYTES, PdfTimeoutError, renderPdf } from '$lib/server/pdf';
+import { MAX_PDF_HTML_BYTES, PdfBusyError, PdfTimeoutError, renderPdf } from '$lib/server/pdf';
 import { failure } from '$lib/server/structured-route';
 
 const INVALID_INPUT_CODE = 'INVALID_PDF_INPUT';
@@ -57,6 +57,9 @@ export const POST: RequestHandler = async ({ request }) => {
 			headers: { 'Content-Type': 'application/pdf', 'Cache-Control': 'no-store' }
 		});
 	} catch (error) {
+		if (error instanceof PdfBusyError) {
+			return failure(503, { code: 'PDF_BUSY', message: error.message, retryable: true });
+		}
 		if (!(error instanceof PdfTimeoutError)) throw error;
 		return failure(504, { code: 'PDF_RENDER_TIMEOUT', message: error.message, retryable: true });
 	}

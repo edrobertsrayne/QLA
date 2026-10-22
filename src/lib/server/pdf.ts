@@ -14,6 +14,18 @@ export const MAX_PDF_HTML_BYTES = 8 * 1024 * 1024;
 /** A PDF render may take this long before it is abandoned. */
 const PDF_RENDER_TIMEOUT_MS = 30_000;
 
+/** At most this many renders run at once; each holds a browser context and a copy of the HTML. */
+export const MAX_CONCURRENT_PDF_RENDERS = 2;
+
+/** Every render slot is taken; the caller may try again shortly. */
+export class PdfBusyError extends Error {
+	constructor() {
+		super('The server is busy making PDFs. Try again in a moment.');
+	}
+}
+
+let activeRenders = 0;
+
 /** The render was abandoned at the deadline. */
 export class PdfTimeoutError extends Error {
 	constructor() {
@@ -49,6 +61,16 @@ export async function closePdfBrowser(): Promise<void> {
 
 /** One PDF of `html`: the page size the document asks for, A4 when it asks for none. */
 export async function renderPdf(html: string): Promise<Buffer> {
+	if (activeRenders >= MAX_CONCURRENT_PDF_RENDERS) throw new PdfBusyError();
+	activeRenders++;
+	try {
+		return await render(html);
+	} finally {
+		activeRenders--;
+	}
+}
+
+async function render(html: string): Promise<Buffer> {
 	const context = await (
 		await sharedBrowser()
 	).newContext({ javaScriptEnabled: false, offline: true, serviceWorkers: 'block' });
@@ -56,7 +78,7 @@ export async function renderPdf(html: string): Promise<Buffer> {
 		// Offline already refuses the network; routing makes the refusal explicit.
 		await context.route('**/*', (route) => route.abort());
 		const page = await context.newPage();
-		const render = async (): Promise<Buffer> => {
+		const draw = async (): Promise<Buffer> => {
 			await page.setContent(html);
 			return page.pdf({ preferCSSPageSize: true, format: 'A4', printBackground: true });
 		};
@@ -65,7 +87,7 @@ export async function renderPdf(html: string): Promise<Buffer> {
 			timer = setTimeout(() => reject(new PdfTimeoutError()), PDF_RENDER_TIMEOUT_MS);
 		});
 		try {
-			return await Promise.race([render(), deadline]);
+			return await Promise.race([draw(), deadline]);
 		} finally {
 			clearTimeout(timer);
 		}
