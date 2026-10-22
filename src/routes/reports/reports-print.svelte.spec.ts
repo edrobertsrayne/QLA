@@ -89,9 +89,9 @@ describe('one-page fit', () => {
 
 	/** Every copy of Ada's question table: screen and print alike. */
 	function layouts(): (string | null)[] {
-		return [...document.querySelectorAll('[data-report-id="ada"] [data-questions]')].map((table) =>
-			table instanceof HTMLElement ? (table.dataset.columns ?? null) : null
-		);
+		return [
+			...document.querySelectorAll<HTMLElement>('[data-report-id="ada"] [data-questions]')
+		].map((table) => table.dataset.columns ?? null);
 	}
 
 	it('switches the question table between one and two columns as feedback grows and shrinks, in screen and print alike', async () => {
