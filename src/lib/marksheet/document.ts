@@ -16,8 +16,14 @@ export const STORAGE_KEY = 'qla:marksheet:v1';
 /** Keys unreadable documents are preserved under, suffixed with an ISO timestamp. */
 export const CORRUPT_KEY_PREFIX = 'qla:marksheet:corrupt:';
 
-/** Only version we know how to read. Anything else is treated as unreadable. */
-export const DOCUMENT_SCHEMA_VERSION = 2;
+/**
+ * The version this app writes. v2 documents, written before changes were
+ * tracked, are still read; anything else is treated as unreadable.
+ */
+export const DOCUMENT_SCHEMA_VERSION = 3;
+
+/** The version written before `firstUnbackedChangeAt` existed. */
+const EARLIER_SCHEMA_VERSION = 2;
 
 /** The label for a total below every grade boundary, when the paper has grades. */
 export const DEFAULT_BELOW_LOWEST_LABEL = 'U';
@@ -148,6 +154,12 @@ export interface MarksheetDocument {
 	breakdownConfirmedAt: string | null;
 	/** Last backup download. Marks export never touches it. */
 	lastExportedAt: string | null;
+	/**
+	 * The oldest change the last backup does not hold, or null when it holds
+	 * every change. A document that has never been backed up is changed from
+	 * `createdAt`, whatever this records.
+	 */
+	firstUnbackedChangeAt: string | null;
 	paper: StoredPaper;
 	breakdown: StoredBreakdown;
 	/** Array order is display order. */
@@ -383,13 +395,34 @@ function parseReports(value: unknown): Record<string, StoredReport> | null {
 }
 
 /**
+ * The oldest change not yet in a backup. A v2 document kept none: it is
+ * unbacked exactly while its last write is later than its last backup, and the
+ * last write is the one moment it can name for that change.
+ */
+function parseFirstUnbackedChangeAt(
+	value: unknown,
+	schemaVersion: unknown,
+	updatedAt: string,
+	lastExportedAt: string | null
+): string | null | undefined {
+	if (schemaVersion === EARLIER_SCHEMA_VERSION) {
+		if (lastExportedAt === null) return null;
+		return Date.parse(updatedAt) > Date.parse(lastExportedAt) ? updatedAt : null;
+	}
+	return isStringOrNull(value) ? value : undefined;
+}
+
+/**
  * The one "is this a valid document" check, shared by boot-time load and
  * restore. Returns a fresh document with only known fields, or null when the
  * value is not a document we can read (wrong version included).
  */
 function parseDocumentValue(value: unknown): MarksheetDocument | null {
 	if (!isRecord(value)) return null;
-	if (value['schemaVersion'] !== DOCUMENT_SCHEMA_VERSION) return null;
+	const schemaVersion = value['schemaVersion'];
+	if (schemaVersion !== EARLIER_SCHEMA_VERSION && schemaVersion !== DOCUMENT_SCHEMA_VERSION) {
+		return null;
+	}
 
 	const createdAt = value['createdAt'];
 	const updatedAt = value['updatedAt'];
@@ -397,6 +430,13 @@ function parseDocumentValue(value: unknown): MarksheetDocument | null {
 	const lastExportedAt = value['lastExportedAt'];
 	if (typeof createdAt !== 'string' || typeof updatedAt !== 'string') return null;
 	if (!isStringOrNull(breakdownConfirmedAt) || !isStringOrNull(lastExportedAt)) return null;
+	const firstUnbackedChangeAt = parseFirstUnbackedChangeAt(
+		value['firstUnbackedChangeAt'],
+		schemaVersion,
+		updatedAt,
+		lastExportedAt
+	);
+	if (firstUnbackedChangeAt === undefined) return null;
 
 	const paper = value['paper'];
 	if (!isRecord(paper)) return null;
@@ -451,6 +491,7 @@ function parseDocumentValue(value: unknown): MarksheetDocument | null {
 		updatedAt,
 		breakdownConfirmedAt,
 		lastExportedAt,
+		firstUnbackedChangeAt,
 		paper: {
 			label,
 			className,

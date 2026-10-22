@@ -8,7 +8,6 @@
 	import { resolve } from '$app/paths';
 	import MarksheetGrid from '$lib/components/marksheet/MarksheetGrid.svelte';
 	import ReportBanner from '$lib/components/report/ReportBanner.svelte';
-	import BackupCard from '$lib/components/shell/BackupCard.svelte';
 	import PaperLabelInput from '$lib/components/shell/PaperLabelInput.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { totalMarks } from '$lib/marksheet/document.js';
@@ -59,7 +58,6 @@
 				<p class="text-sm text-muted-foreground">{summary}</p>
 			</div>
 		</div>
-		<BackupCard />
 	</header>
 
 	<ReportBanner />

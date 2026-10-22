@@ -112,11 +112,10 @@ export class MarksheetStore {
 	 */
 	pasteNotice = $state<PasteResult | null>(null);
 	/**
-	 * Whether the teacher has said "remind me later" this session. It is not
-	 * part of the document — a reload asks again, because the risk is still
-	 * there — and it goes with the document it was about.
+	 * Whether this session's one backup nudge toast has been shown. It is about
+	 * the document in hand, so a new document asks again; a reload starts over.
 	 */
-	backupReminderDismissed = $state(false);
+	backupNudgeShown = $state(false);
 
 	constructor(deps: MarksheetStoreDeps) {
 		this.#now = deps.now;
@@ -215,6 +214,7 @@ export class MarksheetStore {
 			updatedAt: at.toISOString(),
 			breakdownConfirmedAt: null,
 			lastExportedAt: null,
+			firstUnbackedChangeAt: null,
 			paper: {
 				label: labelFromFilename(input.filenames[0]),
 				className: null,
@@ -399,8 +399,14 @@ export class MarksheetStore {
 		const document = this.document;
 		if (!undoable || !document) return false;
 
-		// A backup taken since the change is not taken back with it.
+		// A backup taken since the change is not taken back with it, nor is the
+		// change it holds: a moment the backup already covers is not unbacked.
 		this.document = { ...undoable.before, lastExportedAt: document.lastExportedAt };
+		const marker = this.document.firstUnbackedChangeAt;
+		const backedUpAt = this.document.lastExportedAt;
+		if (marker !== null && backedUpAt !== null && Date.parse(marker) <= Date.parse(backedUpAt)) {
+			this.document.firstUnbackedChangeAt = null;
+		}
 		this.#mutated();
 		return true;
 	}
@@ -643,6 +649,7 @@ export class MarksheetStore {
 
 		const at = this.#now().toISOString();
 		document.lastExportedAt = at;
+		document.firstUnbackedChangeAt = null;
 		document.updatedAt = at;
 		this.#persistence.writeNow();
 		return backupFile(document, this.#now());
@@ -715,10 +722,6 @@ export class MarksheetStore {
 		);
 	}
 
-	/** Say no to the reminder for this session. The next document asks again. */
-	dismissBackupReminder(): void {
-		this.backupReminderDismissed = true;
-	}
 	/**
 	 * Adopt a document read from a backup file, and say whether it was taken —
 	 * not when this browser already holds a document (replacing one is the
@@ -726,11 +729,12 @@ export class MarksheetStore {
 	 * app is left exactly as it was. Unreachable marks are dropped on the way
 	 * in, exactly as they would be on the next boot, and the document reaches
 	 * storage at once rather than on the debounce: it is the teacher's only copy
-	 * until they back up again.
+	 * until they back up again. The file is a backup, so whatever change it
+	 * records as unbacked is held by the copy being restored.
 	 */
 	restoreBackup(document: MarksheetDocument): boolean {
 		if (this.document) return false;
-		this.#adopt(dropUnreachable(document));
+		this.#adopt({ ...dropUnreachable(document), firstUnbackedChangeAt: null });
 		this.#persistence.writeNow();
 		return true;
 	}
@@ -805,7 +809,7 @@ export class MarksheetStore {
 		this.pasteNotice = null;
 		this.unreadable = null;
 		this.runUsage = null;
-		this.backupReminderDismissed = false;
+		this.backupNudgeShown = false;
 	}
 
 	/**
@@ -841,7 +845,13 @@ export class MarksheetStore {
 		// with it the account of the paste the undo was offering.
 		this.undoable = null;
 		this.pasteNotice = null;
-		document.updatedAt = this.#now().toISOString();
+		const at = this.#now().toISOString();
+		document.updatedAt = at;
+		// The first change after a backup starts the clock on what a backup would
+		// save; later changes leave that moment where it is.
+		if (document.lastExportedAt !== null && document.firstUnbackedChangeAt === null) {
+			document.firstUnbackedChangeAt = at;
+		}
 		this.#persistence.changed();
 	}
 }

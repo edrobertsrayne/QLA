@@ -5,7 +5,7 @@ import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import { confirmed, entry, parseRun, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
-import { openShell } from './spec-helpers.js';
+import { openShell, waitForToast } from './spec-helpers.js';
 
 /** A confirmed document with a class, a student and a mark: the state a marksheet exists in. */
 function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
@@ -160,9 +160,7 @@ describe('status bar', () => {
 
 		toast('Breakdown stored', { description: '1 entry saved in this browser.' });
 
-		await vi.waitFor(() => {
-			const element = document.querySelector<HTMLElement>('[data-sonner-toast]');
-			if (!element) throw new Error('no toast on screen');
+		await waitForToast((element) => {
 			const clearance =
 				bar(screen).getBoundingClientRect().top - element.getBoundingClientRect().bottom;
 			expect(clearance).toBeGreaterThanOrEqual(0);

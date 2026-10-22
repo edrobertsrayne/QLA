@@ -8,6 +8,16 @@ import type { CreateFromParseInput } from './store.svelte.js';
 
 export const NOW = '2026-01-01T10:00:00.000Z';
 
+/** The fixture moment as a Date, for specs that age one. */
+export const NOW_DATE = new Date(NOW);
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A moment `days` before the fixture moment, to the second, so an age edge is testable. */
+export function ago(days: number, seconds = 0): string {
+	return new Date(NOW_DATE.getTime() - days * DAY_MS - seconds * 1000).toISOString();
+}
+
 export function entry(
 	id: string,
 	label: string,
@@ -47,6 +57,7 @@ export function confirmed(overrides: Partial<MarksheetDocument> = {}): Marksheet
 		updatedAt: NOW,
 		breakdownConfirmedAt: NOW,
 		lastExportedAt: null,
+		firstUnbackedChangeAt: null,
 		paper: {
 			label: '10X Ph1',
 			className: null,
@@ -67,6 +78,14 @@ export function confirmed(overrides: Partial<MarksheetDocument> = {}): Marksheet
 /** A parse nobody has confirmed: the state the breakdown page exists for. */
 export function parsed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({ breakdownConfirmedAt: null, ...overrides });
+}
+
+/** A document as version 2 stored it: the earlier schema, without the unbacked-change field. */
+export function writtenAsV2(document: MarksheetDocument): Record<string, unknown> {
+	const written: Record<string, unknown> = JSON.parse(JSON.stringify(document));
+	written.schemaVersion = 2;
+	delete written.firstUnbackedChangeAt;
+	return written;
 }
 
 export function seed(stored: MarksheetDocument): void {

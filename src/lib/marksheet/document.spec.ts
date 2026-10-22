@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	DOCUMENT_SCHEMA_VERSION,
 	dropOrphanedTopicNames,
 	dropUnreachableMarks,
 	dropUnreachableReports,
@@ -8,7 +9,8 @@ import {
 	type EntryValues,
 	type MarksheetDocument
 } from './document.js';
-import { confirmed, entry, parsed, student } from './fixtures.spec-helpers.js';
+import { backupState } from './backup.js';
+import { ago, confirmed, entry, parsed, student, writtenAsV2 } from './fixtures.spec-helpers.js';
 
 /** A document as storage hands it back: serialised, then read. */
 function read(document: MarksheetDocument): MarksheetDocument {
@@ -81,7 +83,7 @@ describe('dropping unreachable marks', () => {
 		});
 	});
 });
-describe('reading a v2 document', () => {
+describe('reading a document with boundaries, topic names and reports', () => {
 	it('reads grade boundaries, topic names and reports back unchanged', () => {
 		const document = confirmed({
 			paper: {
@@ -176,6 +178,60 @@ describe('reading a v2 document', () => {
 	it('treats an empty below-lowest label as unreadable rather than correcting it', () => {
 		const written = JSON.parse(JSON.stringify(confirmed()));
 		written.paper.belowLowestLabel = '';
+
+		expect(parseStoredDocument(JSON.stringify(written))).toBeNull();
+	});
+});
+
+describe('reading changes since the last backup', () => {
+	it('reads the oldest unbacked change back unchanged', () => {
+		const document = confirmed({
+			lastExportedAt: '2026-01-01T10:00:00.000Z',
+			firstUnbackedChangeAt: '2026-01-02T09:00:00.000Z'
+		});
+
+		expect(read(document).firstUnbackedChangeAt).toBe('2026-01-02T09:00:00.000Z');
+	});
+
+	it('reads a v2 document whose last write came after its backup as unbacked from that write', () => {
+		const written = writtenAsV2(
+			confirmed({
+				lastExportedAt: '2026-01-01T09:00:00.000Z',
+				updatedAt: '2026-01-01T10:00:00.000Z'
+			})
+		);
+
+		const document = parseStoredDocument(JSON.stringify(written));
+
+		expect(document?.schemaVersion).toBe(DOCUMENT_SCHEMA_VERSION);
+		expect(document?.firstUnbackedChangeAt).toBe('2026-01-01T10:00:00.000Z');
+	});
+
+	it('reads a v2 document whose last write was its backup as having nothing unbacked', () => {
+		const written = writtenAsV2(confirmed({ lastExportedAt: '2026-01-01T10:00:00.000Z' }));
+
+		expect(parseStoredDocument(JSON.stringify(written))?.firstUnbackedChangeAt).toBeNull();
+	});
+
+	it('reads a v2 document that was never backed up as changed from its creation', () => {
+		const document = parseStoredDocument(
+			JSON.stringify(writtenAsV2(confirmed({ createdAt: ago(3) })))
+		);
+		if (!document) throw new Error('not a document');
+
+		expect(backupState(document)).toEqual({ kind: 'never', changedAt: new Date(ago(3)) });
+	});
+
+	it('treats an unbacked-change moment of the wrong shape as unreadable', () => {
+		const written = JSON.parse(JSON.stringify(confirmed()));
+		written.firstUnbackedChangeAt = 3;
+
+		expect(parseStoredDocument(JSON.stringify(written))).toBeNull();
+	});
+
+	it('treats a current document with no unbacked-change field as unreadable', () => {
+		const written = JSON.parse(JSON.stringify(confirmed()));
+		delete written.firstUnbackedChangeAt;
 
 		expect(parseStoredDocument(JSON.stringify(written))).toBeNull();
 	});
