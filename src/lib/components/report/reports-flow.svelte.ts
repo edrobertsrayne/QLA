@@ -9,6 +9,8 @@ import { ModelList } from '$lib/components/parse/model-list.svelte.js';
 import type { MarksheetStore } from '$lib/marksheet/store.svelte.js';
 import type { ReportStep } from '$lib/marksheet/report-steps.js';
 import { reportRoster, rowsOf, type RosterRow } from './report-roster.js';
+import { downloadReports, type ReportDownload } from './report-pdf.js';
+import { toastPdfFailure } from '$lib/print-pdf.js';
 import { ReportRun } from './report-run.svelte.js';
 
 /**
@@ -35,11 +37,18 @@ export class ReportsFlow {
 	modelCustom = $state(false);
 	/** Pages the printer gets; null means not printing, so every visible page shows for measuring. */
 	printing = $state<string[] | null>(null);
+	/** The print copies of the visible pages, which a PDF is made from; set by the layout's `PrintRoot`. */
+	printRoot = $state<HTMLElement>();
+	/** The PDF being made, or null when none is. */
+	downloading = $state<ReportDownload | null>(null);
 
 	/** False once the teacher has left /reports: a run still finishing there moves no one. */
 	#attached = true;
 
+	readonly #store: MarksheetStore;
+
 	constructor(store: MarksheetStore) {
+		this.#store = store;
 		// A finished run takes the teacher to Review on its own, while they are still in /reports.
 		this.run = new ReportRun(store, () => {
 			if (this.#attached) replaceWithStep('review');
@@ -72,6 +81,23 @@ export class ReportsFlow {
 		this.printing = ids;
 		await tick();
 		window.print();
+	}
+
+	async download(request: ReportDownload): Promise<void> {
+		this.downloading = request;
+		try {
+			await toastPdfFailure(() => {
+				const document = this.#store.document;
+				if (!document || !this.printRoot) {
+					throw new Error('The report pages are not ready to download');
+				}
+				// A timestamp for the file name, not reactive state.
+				// eslint-disable-next-line svelte/prefer-svelte-reactivity
+				return downloadReports(this.printRoot, document, request, new Date());
+			});
+		} finally {
+			this.downloading = null;
+		}
 	}
 }
 

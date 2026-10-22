@@ -32,7 +32,7 @@ function parsedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDo
 
 /** A document whose entries and warnings are the point of the test. */
 function documentOf(entries: BreakdownEntry[], warnings: StoredWarning[] = []): MarksheetDocument {
-	return parsedDocument({ breakdown: { entries, warnings } });
+	return parsedDocument({ breakdown: { entries, warnings, aoDescriptions: {} } });
 }
 
 /** How many marks the marksheet holds now, as the store has them. */
@@ -95,6 +95,34 @@ describe('breakdown page', () => {
 				ao: 'AO3'
 			});
 		});
+	});
+
+	it('edits a description for each AO the paper uses, and a blank clears it', async () => {
+		seed(
+			parsedDocument({
+				breakdown: {
+					...parsed().breakdown,
+					aoDescriptions: { AO2: 'Apply knowledge to new situations' }
+				}
+			})
+		);
+		openPage(BreakdownPage);
+
+		// Only the objectives an entry carries have a field.
+		await expect
+			.element(page.getByLabelText('AO2', { exact: true }))
+			.toHaveValue('Apply knowledge to new situations');
+		expect(document.querySelector('#ao-description-AO1')).toBeNull();
+
+		await page.getByLabelText('AO2', { exact: true }).fill('Use ideas in unfamiliar contexts');
+		await vi.waitFor(() =>
+			expect(readSeeded().breakdown.aoDescriptions).toEqual({
+				AO2: 'Use ideas in unfamiliar contexts'
+			})
+		);
+
+		await page.getByLabelText('AO2', { exact: true }).fill('');
+		await vi.waitFor(() => expect(readSeeded().breakdown.aoDescriptions).toEqual({}));
 	});
 
 	it('empties a spec point or command word to none', async () => {

@@ -39,10 +39,13 @@ _Avoid_: Brief description, question content
 The instruction verb as printed in the paper (e.g. Explain). Verbatim, null when absent. No normalisation in the prototype.
 
 **Assessment objective**:
-One of hardcoded AO1 / AO2 / AO3 (shared across AQA/OCR GCSE and A-Level). Tagged per breakdown entry, null when unknowable. No board picker in the prototype.
+One of hardcoded AO1 / AO2 / AO3 (shared across AQA/OCR GCSE and A-Level). Tagged per breakdown entry, null when unknowable. No board picker in the prototype. May carry an **AO description**.
+
+**AO description**:
+A short, student-readable summary of an assessment objective (one phrase, about 10 words at most), lifted from the specification at parse, editable at breakdown review and shown beside the AO code in a report's By skill strip. Never inferred without a specification: with none attached, or one that does not define the AO, the AO has no description and the report shows the code alone. Stored with the breakdown (so it travels in backups), display only: never sent to the report model, and editing one does not make any report out of date.
 
 **Exam specification**:
-The exam board's syllabus document defining topic/skill codes. Optional for the prototype — the teacher may attach a link to the specification PDF, fetched fresh per run as extra grounding; `specPoint` entries stay verbatim lifts from the markscheme, never inferred from the spec.
+The exam board's syllabus document defining topic/skill codes. Optional for the prototype — the teacher may attach a link to the specification PDF, fetched fresh per run as extra grounding; `specPoint` entries stay verbatim lifts from the markscheme, never inferred from the spec. The spec's one other contribution is the **AO description**; the spec itself is never stored.
 _Avoid_: Spec (informal shorthand is fine in conversation, not as a defined term)
 
 **Question**:
@@ -117,6 +120,10 @@ _Avoid_: Save, export, download
 A one-way CSV of a marksheet's marks for use elsewhere. Lossy: it cannot be restored from.
 _Avoid_: Backup, save, download
 
+**Analysis export**:
+A one-way file of the analysis figures: a CSV of one row per breakdown entry, or a PDF of the analysis view with every band shown. Lossy: it cannot be restored from, and it leaves the backup's age alone.
+_Avoid_: Backup, save, download
+
 **New upload**:
 The destructive action that discards everything stored for the paper (breakdown, marksheet, topic names, grade boundaries and reports) and returns to uploading a fresh assessment paper and/or markscheme. Only exists once something is stored.
 _Avoid_: Reset, clear, start over
@@ -138,7 +145,7 @@ The student-readable name for a specification point (e.g. "Transverse and longit
 _Avoid_: Spec title, topic label
 
 **Grade boundary**:
-The minimum total mark on this paper for a grade (e.g. 6 at 52), typed in by the teacher for each paper. Optional: a paper without grade boundaries gives no grades. Always in raw marks on one paper, never a percentage or a total across several papers.
+The minimum total mark on this paper for a grade (e.g. 6 at 52), typed in by the teacher for each paper. Optional: a paper without grade boundaries gives no grades. Always stored in raw marks on one paper, never a total across several papers. The teacher may type one as a percentage of the paper total; it is converted on entry by rounding up (65% of 83 marks is 54), and only the raw mark is kept.
 _Avoid_: Cut-off, threshold (thresholds belong to RAG bands)
 
 **Grade**:

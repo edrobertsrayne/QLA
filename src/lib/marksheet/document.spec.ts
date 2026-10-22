@@ -22,7 +22,11 @@ const ORIGIN: EntryValues = entryValuesOf(entry('entry-1', '2bii', '2'));
 describe('reading a stored document', () => {
 	it('reads the parse’s own values back with an entry that records them', () => {
 		const document = parsed({
-			breakdown: { entries: [entry('e', '2b', '2', { original: ORIGIN })], warnings: [] }
+			breakdown: {
+				entries: [entry('e', '2b', '2', { original: ORIGIN })],
+				warnings: [],
+				aoDescriptions: {}
+			}
 		});
 
 		expect(read(document).breakdown.entries[0].original).toEqual(ORIGIN);
@@ -30,7 +34,11 @@ describe('reading a stored document', () => {
 
 	it('reads an entry that records no parse values as added by the teacher', () => {
 		const document = parsed({
-			breakdown: { entries: [entry('e', '', '', { original: null })], warnings: [] }
+			breakdown: {
+				entries: [entry('e', '', '', { original: null })],
+				warnings: [],
+				aoDescriptions: {}
+			}
 		});
 
 		expect(read(document).breakdown.entries[0].original).toBeNull();
@@ -118,6 +126,32 @@ describe('reading a v2 document', () => {
 		expect(read(confirmed()).paper.belowLowestLabel).toBe('U');
 	});
 
+	it('reads a document written before AO descriptions as having none', () => {
+		const written = JSON.parse(JSON.stringify(confirmed()));
+		delete written.breakdown.aoDescriptions;
+
+		const document = parseStoredDocument(JSON.stringify(written));
+
+		expect(document?.breakdown.aoDescriptions).toEqual({});
+		expect(document?.breakdown.entries).toEqual(confirmed().breakdown.entries);
+	});
+
+	it('reads AO descriptions back as stored', () => {
+		const document = confirmed();
+		document.breakdown.aoDescriptions = { AO1: 'Recall facts', AO3: 'Evaluate evidence' };
+
+		expect(read(document)).toEqual(document);
+	});
+
+	it('treats AO descriptions of the wrong shape as unreadable', () => {
+		for (const aoDescriptions of [['AO1'], { AO9: 'Unknown' }, { AO1: 3 }]) {
+			const written = JSON.parse(JSON.stringify(confirmed()));
+			written.breakdown.aoDescriptions = aoDescriptions;
+
+			expect(parseStoredDocument(JSON.stringify(written))).toBeNull();
+		}
+	});
+
 	it('treats a v1 document as unreadable, like any other version', () => {
 		const written = JSON.parse(JSON.stringify(confirmed()));
 		written.schemaVersion = 1;
@@ -173,7 +207,8 @@ describe('dropping what no longer exists', () => {
 					entry('entry-2', '3a', '3', { specPoint: '5.2.1/5.2.2' }),
 					entry('entry-3', '4a', '4', { specPoint: null })
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			topicNames: {
 				'5.1.1': 'Waves',

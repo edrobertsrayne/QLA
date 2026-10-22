@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CORRUPT_KEY_PREFIX, DOCUMENT_SCHEMA_VERSION } from './document.js';
 import type { MarksheetDocument } from './document.js';
-import { backupFile, corruptFile, marksCsvFile } from './download.js';
+import {
+	analysisCsvFile,
+	backupFile,
+	corruptFile,
+	exportFilename,
+	marksCsvFile,
+	reportPdfFilename
+} from './download.js';
 
 // Local time, so the day on the file is the day the teacher saw whatever the
 // machine's timezone is.
@@ -36,7 +43,8 @@ function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocumen
 					original: null
 				}
 			],
-			warnings: []
+			warnings: [],
+			aoDescriptions: {}
 		},
 		students: [{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false }],
 		marks: { 'student-1': { 'entry-1': 3 } },
@@ -93,7 +101,8 @@ describe('marksCsvFile', () => {
 					{ ...base.breakdown.entries[0], id: 'entry-2bii', label: '2bii', marks: 4 },
 					{ ...(other ?? base.breakdown.entries[0]), id: 'entry-3a', label: '3a', marks: 2 }
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			students: [
 				{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false },
@@ -151,5 +160,189 @@ describe('corruptFile', () => {
 			text: 'not json at all',
 			type: 'application/json'
 		});
+	});
+});
+
+/** A minimal RFC 4180 reader: quoted cells may hold commas, quotes and line breaks. */
+function parseCsv(text: string): string[][] {
+	const rows: string[][] = [];
+	let row: string[] = [];
+	let cell = '';
+	let quoted = false;
+	for (let i = 0; i < text.length; i++) {
+		const char = text[i];
+		if (quoted) {
+			if (char === '"' && text[i + 1] === '"') {
+				cell += '"';
+				i++;
+			} else if (char === '"') quoted = false;
+			else cell += char;
+		} else if (char === '"') quoted = true;
+		else if (char === ',') {
+			row.push(cell);
+			cell = '';
+		} else if (char === '\r' && text[i + 1] === '\n') {
+			row.push(cell);
+			rows.push(row);
+			row = [];
+			cell = '';
+			i++;
+		} else cell += char;
+	}
+	return rows;
+}
+
+describe('analysisCsvFile', () => {
+	const NASTY = 'Explain "why", then\nshow working';
+
+	/** Entries in an order band order would scramble: green, then red, then not scored. */
+	function analysed(): MarksheetDocument {
+		const base = marksheet();
+		const entry = base.breakdown.entries[0];
+		return {
+			...base,
+			breakdown: {
+				entries: [
+					{ ...entry, id: 'e-green', label: '1a', questionNumber: '1', marks: 4, summary: NASTY },
+					{
+						...entry,
+						id: 'e-red',
+						label: '1b',
+						questionNumber: '1',
+						marks: 4,
+						summary: 'Red one',
+						specPoint: null,
+						ao: null
+					},
+					{
+						...entry,
+						id: 'e-none',
+						label: '2',
+						questionNumber: '',
+						marks: null,
+						summary: 'No marks given',
+						specPoint: null,
+						ao: null
+					}
+				],
+				warnings: [],
+				aoDescriptions: {}
+			},
+			students: [
+				{ id: 's1', firstName: 'Ada', surname: 'Lovelace', absent: false },
+				{ id: 's2', firstName: 'Grace', surname: 'Hopper', absent: false }
+			],
+			marks: { s1: { 'e-green': 4, 'e-red': 1 }, s2: { 'e-green': 3, 'e-red': 9 } }
+		};
+	}
+
+	it('has the header, then one row per entry in breakdown order', () => {
+		const rows = parseCsv(analysisCsvFile(analysed(), NOW).text);
+
+		expect(rows[0]).toEqual([
+			'Question',
+			'Q number',
+			'Summary',
+			'Available marks',
+			'Spec point',
+			'AO',
+			'Facility %',
+			'Mean mark',
+			'Band',
+			'Marked',
+			'Of',
+			'Part-marked',
+			'Over-max marks',
+			'Not-scored reason'
+		]);
+		expect(rows.slice(1).map((row) => row[0])).toEqual(['1a', '1b', '2']);
+	});
+
+	it('fills figures for scored entries and leaves unscored ones empty', () => {
+		const [, green, red, none] = parseCsv(analysisCsvFile(analysed(), NOW).text);
+
+		expect(green).toEqual([
+			'1a',
+			'1',
+			NASTY,
+			'4',
+			'3.2.1.4',
+			'AO1',
+			'88',
+			'3.50',
+			'green',
+			'2',
+			'2',
+			'no',
+			'0',
+			''
+		]);
+		// 9 is above the 4 available: kept in the sheet, counted as over-max, left out of the figures.
+		expect(red).toEqual([
+			'1b',
+			'1',
+			'Red one',
+			'4',
+			'',
+			'',
+			'25',
+			'1.00',
+			'red',
+			'2',
+			'2',
+			'no',
+			'1',
+			''
+		]);
+		expect(none).toEqual([
+			'2',
+			'',
+			'No marks given',
+			'',
+			'',
+			'',
+			'',
+			'',
+			'',
+			'0',
+			'2',
+			'no',
+			'0',
+			'No available marks'
+		]);
+	});
+
+	it('survives a CSV parser: commas, quotes and line breaks in a summary', () => {
+		const rows = parseCsv(analysisCsvFile(analysed(), NOW).text);
+
+		expect(rows[1][2]).toBe(NASTY);
+		expect(rows.every((row) => row.length === 14)).toBe(true);
+	});
+
+	it('is named by paper and day', () => {
+		const file = analysisCsvFile(analysed(), NOW);
+
+		expect(file.filename).toBe('qla-analysis-10x-ph1-2026-01-01.csv');
+		expect(file.type).toBe('text/csv');
+	});
+});
+
+describe('PDF filenames', () => {
+	it('follow the report and analysis conventions', () => {
+		const document = marksheet();
+		const ada = document.students[0];
+
+		expect(reportPdfFilename(document, ada, NOW)).toBe(
+			'qla-report-10x-ph1-ada-lovelace-2026-01-01.pdf'
+		);
+		expect(exportFilename('reports', document, NOW, 'pdf')).toBe(
+			'qla-reports-10x-ph1-2026-01-01.pdf'
+		);
+		expect(exportFilename('reports', document, NOW, 'zip')).toBe(
+			'qla-reports-10x-ph1-2026-01-01.zip'
+		);
+		expect(exportFilename('analysis', document, NOW, 'pdf')).toBe(
+			'qla-analysis-10x-ph1-2026-01-01.pdf'
+		);
 	});
 });

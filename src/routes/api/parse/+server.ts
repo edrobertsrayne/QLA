@@ -20,7 +20,11 @@ import {
 	INVALID_SPEC_URL_CODE,
 	SPEC_UNREADABLE_CODE
 } from '$lib/server/parse/schema';
-import { applyQuestionNumberFallback, validateBreakdown } from '$lib/server/parse/validate';
+import {
+	applyAoDescriptionChecks,
+	applyQuestionNumberFallback,
+	validateBreakdown
+} from '$lib/server/parse/validate';
 import {
 	MODEL_ERROR_CODE,
 	MODEL_RETRYABLE_CODE,
@@ -270,6 +274,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Warnings never block: the breakdown goes back intact with HTTP 200.
 	const warnings = validateBreakdown(parsed);
 	applyQuestionNumberFallback(parsed);
+	applyAoDescriptionChecks(parsed, specDoc !== undefined);
 
 	if (!useNativePdf) {
 		warnings.push(buildDiagramUnverifiedWarning());

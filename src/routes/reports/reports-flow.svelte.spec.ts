@@ -190,6 +190,8 @@ describe('reports flow', () => {
 		await vi.waitFor(() => expect(reportCalls(stub)).toBe(11), { timeout: 15000 });
 		await vi.waitFor(() => expect(failedTiles()).toHaveLength(2), { timeout: 5000 });
 		await vi.waitFor(() => expect(hasButton('Retry failed')).toBe(true), { timeout: 5000 });
+		// Dequeued last, yet listed first: failures sit above every other tile.
+		expect([...document.querySelectorAll('[data-tile-for]')].slice(0, 2)).toEqual(failedTiles());
 
 		// Retrying one keeps the other's failure on screen, and holds Review back.
 		await page.getByRole('button', { name: 'Retry', exact: true }).first().click();
@@ -222,12 +224,7 @@ describe('reports flow', () => {
 
 		await page.getByRole('button', { name: 'Write 1 report' }).click();
 
-		await vi.waitFor(
-			() => expect(page.getByText('Failed', { exact: true }).query()).not.toBeNull(),
-			{
-				timeout: 5000
-			}
-		);
+		await vi.waitFor(() => expect(failedTiles()).toHaveLength(1), { timeout: 5000 });
 		await vi.waitFor(() => expect(hasButton('Retry failed')).toBe(true), { timeout: 5000 });
 		await expect.element(page.getByRole('button', { name: 'Review 0' })).toBeInTheDocument();
 		await new Promise((resolve) => setTimeout(resolve, 1200));

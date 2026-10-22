@@ -12,6 +12,8 @@
 		{document}
 		roster={flow.roster}
 		run={flow.run}
+		downloading={flow.downloading}
+		ondownload={(request) => void flow.download(request)}
 		onprint={(ids) => void flow.print(ids)}
 		onrewrite={(ids) => flow.rewriteHere(ids)}
 		onwritemore={(ids) => flow.writeAgain(ids)}

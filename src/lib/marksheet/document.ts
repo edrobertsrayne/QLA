@@ -91,10 +91,18 @@ export interface StoredStudent {
 	absent: boolean;
 }
 
-/** The breakdown as stored: its entries, and the findings the parse left beside them. */
+/** A short, student-readable description per assessment objective that has one. */
+export type AoDescriptions = Partial<Record<AssessmentObjective, string>>;
+
+/**
+ * The breakdown as stored: its entries, the findings the parse left beside
+ * them, and the AO descriptions lifted from the specification. The
+ * descriptions are display only: reports are written without them.
+ */
 export interface StoredBreakdown {
 	entries: BreakdownEntry[];
 	warnings: StoredWarning[];
+	aoDescriptions: AoDescriptions;
 }
 
 /** One breakdown entry's figures as a report was written from them. */
@@ -227,6 +235,19 @@ function parseEntry(value: unknown): BreakdownEntry | null {
 		...entryValuesOf(value),
 		original: original === null ? null : entryValuesOf(original ?? value)
 	};
+}
+
+/** Absent in a document written before descriptions existed: none. `null` means invalid. */
+function parseAoDescriptions(value: unknown): AoDescriptions | null {
+	if (value === undefined) return {};
+	if (!isRecord(value)) return null;
+	const descriptions: AoDescriptions = {};
+	for (const [key, description] of Object.entries(value)) {
+		const ao = assessmentObjectiveOf(key);
+		if (ao === null || typeof description !== 'string') return null;
+		descriptions[ao] = description;
+	}
+	return descriptions;
 }
 
 function parseWarning(value: unknown): StoredWarning | null {
@@ -407,6 +428,8 @@ function parseDocumentValue(value: unknown): MarksheetDocument | null {
 	const entries = parseAll(rawEntries, parseEntry);
 	const warnings = parseAll(rawWarnings, parseWarning);
 	if (!entries || !warnings) return null;
+	const aoDescriptions = parseAoDescriptions(breakdown['aoDescriptions']);
+	if (!aoDescriptions) return null;
 
 	const rawStudents = value['students'];
 	if (!Array.isArray(rawStudents)) return null;
@@ -436,7 +459,7 @@ function parseDocumentValue(value: unknown): MarksheetDocument | null {
 			boundaries,
 			belowLowestLabel
 		},
-		breakdown: { entries, warnings },
+		breakdown: { entries, warnings, aoDescriptions },
 		students,
 		marks,
 		topicNames,

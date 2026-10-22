@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { STORAGE_KEY, entryValuesOf, markCount } from './document.js';
 import type { MarksheetDocument, StoredBreakdown } from './document.js';
 import { entry, parsed, student } from './fixtures.spec-helpers.js';
+import { changedInputFields, generationInputFor } from './report-input.js';
 import {
 	NOW,
 	documentWrites,
@@ -55,7 +56,8 @@ describe('breakdown edits', () => {
 		const { store } = openStore({
 			breakdown: {
 				entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			}
 		});
 
@@ -122,7 +124,8 @@ describe('breakdown edits', () => {
 					entry('entry-2', '1b', '1'),
 					entry('entry-3', '2a', '2')
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			}
 		});
 
@@ -175,7 +178,8 @@ describe('breakdown structure', () => {
 				entry('entry-2', '1b', '1'),
 				entry('entry-3', '2a', '2')
 			],
-			warnings: []
+			warnings: [],
+			aoDescriptions: {}
 		}
 	};
 
@@ -238,7 +242,7 @@ describe('breakdown structure', () => {
 	});
 
 	it('adds a row at the end of a breakdown with no entries', () => {
-		const { store } = openStore({ breakdown: { entries: [], warnings: [] } });
+		const { store } = openStore({ breakdown: { entries: [], warnings: [], aoDescriptions: {} } });
 
 		const id = idOf(store.appendEntry());
 
@@ -272,7 +276,8 @@ describe('breakdown structure', () => {
 					{ questionId: 'entry-2', code: 'SUMMARY_LENGTH', message: 'Two words.' },
 					{ questionId: 'entry-3', code: 'MARKS_UNKNOWN', message: 'No marks read.' },
 					{ questionId: null, code: 'SPEC_UNREADABLE', message: 'No specification.' }
-				]
+				],
+				aoDescriptions: {}
 			}
 		});
 
@@ -297,7 +302,8 @@ describe('breakdown structure', () => {
 				warnings: [
 					{ questionId: 'entry-2', code: 'SUMMARY_LENGTH', message: 'Two words.' },
 					{ questionId: null, code: 'SPEC_UNREADABLE', message: 'No specification.' }
-				]
+				],
+				aoDescriptions: {}
 			}
 		});
 
@@ -448,7 +454,8 @@ describe('confirm breakdown', () => {
 					entry('entry-1', '1a', '1', { marks: 3 }),
 					entry('entry-2', '2bii', '2', { marks: null })
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			}
 		});
 
@@ -472,7 +479,8 @@ describe('confirm breakdown', () => {
 					entry('entry-2', '2bii', '2'),
 					entry('entry-3', '   ', '3')
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			}
 		});
 
@@ -488,7 +496,11 @@ describe('confirm breakdown', () => {
 
 	it('confirms once the blockers are fixed', () => {
 		const { store } = openStore({
-			breakdown: { entries: [entry('entry-1', '', '1', { marks: null })], warnings: [] }
+			breakdown: {
+				entries: [entry('entry-1', '', '1', { marks: null })],
+				warnings: [],
+				aoDescriptions: {}
+			}
 		});
 		expect(store.confirmBreakdown()).toBe(false);
 
@@ -638,5 +650,51 @@ describe('what changing the breakdown costs the marks', () => {
 		});
 		const row = store.analysis.entries.find((one) => one.entry.id === 'entry-1');
 		expect(row?.overMax).toBe(1);
+	});
+});
+
+describe('AO descriptions', () => {
+	it('sets, trims and clears a description, writing it with the document', () => {
+		vi.useFakeTimers();
+		try {
+			const { store, storage } = openStore();
+
+			store.setAoDescription('AO2', '  Apply knowledge to new situations ');
+			vi.advanceTimersByTime(500);
+			expect(stored(storage).breakdown.aoDescriptions).toEqual({
+				AO2: 'Apply knowledge to new situations'
+			});
+
+			// A blank clears it rather than storing an empty description.
+			store.setAoDescription('AO2', '   ');
+			vi.advanceTimersByTime(500);
+			expect(stored(storage).breakdown.aoDescriptions).toEqual({});
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is part of the breakdown, so a confirmed one refuses the edit', () => {
+		const { store } = openStore({ breakdownConfirmedAt: NOW.toISOString() });
+
+		store.setAoDescription('AO2', 'Apply knowledge');
+
+		expect(store.document?.breakdown.aoDescriptions).toEqual({});
+	});
+
+	it('leaves a report current: the generation input carries no description', () => {
+		const { store } = openStore({
+			students: [student('student-1', 'Ada', 'Lovelace')],
+			marks: { 'student-1': { 'entry-1': 3 } }
+		});
+		const before = generationInputFor(store.document!, 'student-1');
+		expect(before).not.toBeNull();
+
+		store.setAoDescription('AO2', 'Apply knowledge to new situations');
+
+		const after = generationInputFor(store.document!, 'student-1');
+		expect(after).toEqual(before);
+		expect(changedInputFields(before!, after!)).toEqual([]);
+		expect(JSON.stringify(after)).not.toContain('Apply knowledge');
 	});
 });

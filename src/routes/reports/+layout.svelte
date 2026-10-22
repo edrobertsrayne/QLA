@@ -66,5 +66,5 @@
 </main>
 
 {#if document}
-	<PrintRoot {document} ids={flow.printing ?? flow.reviewIds} />
+	<PrintRoot {document} ids={flow.printing ?? flow.reviewIds} bind:root={flow.printRoot} />
 {/if}

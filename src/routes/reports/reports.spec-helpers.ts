@@ -49,7 +49,7 @@ export function plain(over: Partial<MarksheetDocument> = {}): MarksheetDocument 
 	marks['di'] = { 'entry-1': 1 };
 	marks['ed'] = { 'entry-1': 9, 'entry-2': 1 };
 	return confirmed({
-		breakdown: { entries, warnings: [] },
+		breakdown: { entries, warnings: [], aoDescriptions: {} },
 		students: names.map(([id, first, last, absent]) => student(id, first, last, absent)),
 		marks,
 		...over
@@ -160,7 +160,7 @@ export function readyTiles(): number {
 
 export function failedTiles(): Element[] {
 	return [...document.querySelectorAll('[data-tile-for]')].filter(
-		(tile) => tile.querySelector('.text-muted-foreground')?.textContent === 'Failed'
+		(tile) => tile.querySelector('.sr-only')?.textContent === 'Failed:'
 	);
 }
 

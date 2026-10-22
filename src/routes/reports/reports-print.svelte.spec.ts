@@ -30,7 +30,7 @@ describe('one-page fit', () => {
 		const marks: Record<string, number> = {};
 		for (const candidate of entries) marks[candidate.id] = 3;
 		const doc = confirmed({
-			breakdown: { entries, warnings: [] },
+			breakdown: { entries, warnings: [], aoDescriptions: {} },
 			students: [student('ada', 'Ada', 'Lovelace')],
 			marks: { ada: marks }
 		});
@@ -85,6 +85,33 @@ describe('one-page fit', () => {
 		await expect.element(page.getByText(/mm over the page/, { exact: false })).toBeInTheDocument();
 	});
 
+	/** Every copy of Ada's question table: screen and print alike. */
+	function layouts(): (string | null)[] {
+		return [
+			...document.querySelectorAll<HTMLElement>('[data-report-id="ada"] [data-questions]')
+		].map((table) => table.dataset.columns ?? null);
+	}
+
+	it('switches the question table between one and two columns as feedback grows and shrinks, in screen and print alike', async () => {
+		const doc = fitting();
+		doc.breakdown.entries = doc.breakdown.entries.slice(0, 14);
+		seed(doc);
+		stubFetch();
+		await openReports();
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		await expect.poll(layouts).toEqual(expect.arrayContaining(['1']));
+		expect(new Set(layouts())).toEqual(new Set(['1']));
+
+		await page.getByLabelText('Area for improvement 1 for Ada Lovelace').fill(proseWords(300));
+		await page.getByLabelText('Strength 1 for Ada Lovelace').click();
+		await expect.poll(() => new Set(layouts())).toEqual(new Set(['2']));
+
+		await page.getByLabelText('Area for improvement 1 for Ada Lovelace').fill('Check units');
+		await page.getByLabelText('Strength 1 for Ada Lovelace').click();
+		await expect.poll(() => new Set(layouts())).toEqual(new Set(['1']));
+	});
+
 	it('fits generated feedback for a 44-entry, 10-topic paper at 100%', async () => {
 		// The layout prototype's sample shape, rebuilt as rows: 44 entries over
 		// 9 questions, 10 topic codes plus skills. Summaries render truncated to
@@ -117,7 +144,7 @@ describe('one-page fit', () => {
 		const marks: Record<string, number> = {};
 		for (const candidate of entries) marks[candidate.id] = 2;
 		const doc = confirmed({
-			breakdown: { entries, warnings: [] },
+			breakdown: { entries, warnings: [], aoDescriptions: {} },
 			students: [student('ada', 'Ada', 'Lovelace')],
 			marks: { ada: marks },
 			topicNames

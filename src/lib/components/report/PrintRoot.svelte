@@ -6,7 +6,11 @@
 	import type { MarksheetDocument } from '$lib/marksheet/document.js';
 	import ReportSheet from './ReportSheet.svelte';
 
-	let { document: doc, ids }: { document: MarksheetDocument; ids: string[] } = $props();
+	let {
+		document: doc,
+		ids,
+		root = $bindable()
+	}: { document: MarksheetDocument; ids: string[]; root?: HTMLElement } = $props();
 
 	function portal(node: HTMLElement) {
 		document.body.appendChild(node);
@@ -14,7 +18,7 @@
 	}
 </script>
 
-<div class="print-root" data-testid="print-root" {@attach portal}>
+<div class="print-root" data-testid="print-root" bind:this={root} {@attach portal}>
 	{#each ids as id (id)}
 		{@const report = doc.reports[id]}
 		{#if report}
