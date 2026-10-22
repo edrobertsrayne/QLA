@@ -24,32 +24,29 @@
 	const store = marksheetStore();
 	let open = $state(false);
 	let firstRowIsHeader = $state(true);
-	/** The chosen file's text, or null before one is chosen or when it could not be read. */
-	let text = $state<string | null>(null);
-	let unreadable = $state<string | null>(null);
+	/** The chosen file's text, or why it could not be read; null before one is chosen. */
+	let file = $state<{ ok: true; text: string } | { ok: false; error: string } | null>(null);
 
 	// Re-read whenever the header box changes: the box, not the content, decides row 1.
-	const csv = $derived(text === null ? null : readStudentCsv(text, firstRowIsHeader));
+	const csv = $derived(file?.ok ? readStudentCsv(file.text, firstRowIsHeader) : file);
 	const plan = $derived(csv?.ok ? newNames(store.document?.students ?? [], csv.names) : null);
-	const error = $derived(unreadable ?? (csv && !csv.ok ? csv.error : null));
 
 	async function chooseFile(event: Event & { currentTarget: HTMLInputElement }): Promise<void> {
-		const file = event.currentTarget.files?.[0];
-		text = null;
-		unreadable = null;
-		if (!file) return;
+		const chosen = event.currentTarget.files?.[0];
+		file = null;
+		if (!chosen) return;
 		try {
 			// Fatal decoding refuses a binary file rather than reading it as gibberish.
-			text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+			const text = new TextDecoder('utf-8', { fatal: true }).decode(await chosen.arrayBuffer());
+			file = { ok: true, text };
 		} catch (failure) {
 			if (!(failure instanceof TypeError || failure instanceof DOMException)) throw failure;
-			unreadable = 'That file is not readable text. Choose a .csv file.';
+			file = { ok: false, error: 'That file is not readable text. Choose a .csv file.' };
 		}
 	}
 
 	function reset(): void {
-		text = null;
-		unreadable = null;
+		file = null;
 		firstRowIsHeader = true;
 	}
 
@@ -80,8 +77,8 @@
 			<Checkbox id="csv-header" bind:checked={firstRowIsHeader} />
 			<Label for="csv-header">First row is a header</Label>
 		</div>
-		{#if error}
-			<p class="text-sm text-destructive" role="alert" data-testid="csv-error">{error}</p>
+		{#if csv && !csv.ok}
+			<p class="text-sm text-destructive" role="alert" data-testid="csv-error">{csv.error}</p>
 		{:else if csv?.ok}
 			<Table.Root data-testid="csv-preview">
 				<Table.Header>
