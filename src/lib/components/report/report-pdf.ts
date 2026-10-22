@@ -3,12 +3,7 @@
 // and settled, edits included), so a PDF carries what Print would print.
 
 import { zipSync } from 'fflate';
-import {
-	reportPdfFilename,
-	reportsPdfFilename,
-	reportsZipFilename,
-	saveBlob
-} from '$lib/marksheet/download.js';
+import { exportFilename, reportPdfFilename, saveBlob } from '$lib/marksheet/download.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import { fetchPdf, printDocumentHtml } from '$lib/print-pdf.js';
 
@@ -65,7 +60,7 @@ async function downloadZip(
 	}
 	// A PDF is already compressed: storing it keeps the zip quick and no bigger.
 	saveBlob(
-		reportsZipFilename(document, now),
+		exportFilename('reports', document, now, 'zip'),
 		new Blob([zipSync(files, { level: 0 })], { type: 'application/zip' })
 	);
 }
@@ -85,7 +80,10 @@ export async function downloadReports(
 			return;
 		}
 		case 'one':
-			saveBlob(reportsPdfFilename(document, now), await pdfOf(printRoot, download.ids));
+			saveBlob(
+				exportFilename('reports', document, now, 'pdf'),
+				await pdfOf(printRoot, download.ids)
+			);
 			return;
 		case 'zip':
 			await downloadZip(printRoot, document, download.ids, now);

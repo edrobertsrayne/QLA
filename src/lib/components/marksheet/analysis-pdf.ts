@@ -1,7 +1,7 @@
 // The analysis as a PDF file: the view as the page shows it, sent to the
 // server to be rendered.
 
-import { analysisPdfFilename, saveBlob } from '$lib/marksheet/download.js';
+import { exportFilename, saveBlob } from '$lib/marksheet/download.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import { fetchPdf, printDocumentHtml } from '$lib/print-pdf.js';
 
@@ -26,5 +26,5 @@ export async function downloadAnalysisPdf(
 	} finally {
 		restore();
 	}
-	saveBlob(analysisPdfFilename(document, now), await fetchPdf(html));
+	saveBlob(exportFilename('analysis', document, now, 'pdf'), await fetchPdf(html));
 }

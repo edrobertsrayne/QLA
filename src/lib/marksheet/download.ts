@@ -39,7 +39,7 @@ function dayStamp(at: Date): string {
 }
 
 /** `qla-<kind>-<paper>-<day>.<extension>`: how every export of the current paper is named. */
-function exportFilename(
+export function exportFilename(
 	kind: string,
 	document: MarksheetDocument,
 	now: Date,
@@ -170,21 +170,6 @@ export function reportPdfFilename(
 	now: Date
 ): string {
 	return exportFilename('report', document, now, 'pdf', slugOr(studentName(student), 'student'));
-}
-
-/** The name of the one PDF holding every visible report. */
-export function reportsPdfFilename(document: MarksheetDocument, now: Date): string {
-	return exportFilename('reports', document, now, 'pdf');
-}
-
-/** The name of the zip of one PDF per report. */
-export function reportsZipFilename(document: MarksheetDocument, now: Date): string {
-	return exportFilename('reports', document, now, 'zip');
-}
-
-/** The name of the analysis PDF. */
-export function analysisPdfFilename(document: MarksheetDocument, now: Date): string {
-	return exportFilename('analysis', document, now, 'pdf');
 }
 
 /** The raw text of a document this app could not read, out of its preserved copy. */

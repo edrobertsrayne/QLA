@@ -3,13 +3,11 @@ import { CORRUPT_KEY_PREFIX, DOCUMENT_SCHEMA_VERSION } from './document.js';
 import type { MarksheetDocument } from './document.js';
 import {
 	analysisCsvFile,
-	analysisPdfFilename,
 	backupFile,
 	corruptFile,
+	exportFilename,
 	marksCsvFile,
-	reportPdfFilename,
-	reportsPdfFilename,
-	reportsZipFilename
+	reportPdfFilename
 } from './download.js';
 
 // Local time, so the day on the file is the day the teacher saw whatever the
@@ -334,8 +332,14 @@ describe('PDF filenames', () => {
 		expect(reportPdfFilename(document, ada, NOW)).toBe(
 			'qla-report-10x-ph1-ada-lovelace-2026-01-01.pdf'
 		);
-		expect(reportsPdfFilename(document, NOW)).toBe('qla-reports-10x-ph1-2026-01-01.pdf');
-		expect(reportsZipFilename(document, NOW)).toBe('qla-reports-10x-ph1-2026-01-01.zip');
-		expect(analysisPdfFilename(document, NOW)).toBe('qla-analysis-10x-ph1-2026-01-01.pdf');
+		expect(exportFilename('reports', document, NOW, 'pdf')).toBe(
+			'qla-reports-10x-ph1-2026-01-01.pdf'
+		);
+		expect(exportFilename('reports', document, NOW, 'zip')).toBe(
+			'qla-reports-10x-ph1-2026-01-01.zip'
+		);
+		expect(exportFilename('analysis', document, NOW, 'pdf')).toBe(
+			'qla-analysis-10x-ph1-2026-01-01.pdf'
+		);
 	});
 });
