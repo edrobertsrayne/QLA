@@ -21,13 +21,13 @@ export function reportStepFrom(segment: string | undefined): ReportStep | null {
 	return REPORT_STEPS.find((step) => step.id === segment)?.id ?? null;
 }
 
+export type AvailableStep = { id: ReportStep; label: string; title: string; locked: boolean };
+
 /**
  * The steps this paper has: Topic names exists only when the paper has topic
  * codes, and a blocking topic-name gap locks every step after it.
  */
-export function availableSteps(
-	document: MarksheetDocument
-): { id: ReportStep; label: string; title: string; locked: boolean }[] {
+export function availableSteps(document: MarksheetDocument): AvailableStep[] {
 	const hasTopics = topicCodesOf(document).length > 0;
 	const blocked = topicNameGaps(document).blocked;
 	return REPORT_STEPS.filter((step) => hasTopics || step.id !== 'topics').map((step) => ({
@@ -48,5 +48,5 @@ export function stepAllowed(document: MarksheetDocument, step: ReportStep): bool
 export function landingStep(document: MarksheetDocument): ReportStep {
 	if (topicNameGaps(document).blocked) return 'topics';
 	if (Object.keys(document.reports).length > 0) return 'review';
-	return topicCodesOf(document).length > 0 ? 'topics' : 'grades';
+	return availableSteps(document)[0].id;
 }
