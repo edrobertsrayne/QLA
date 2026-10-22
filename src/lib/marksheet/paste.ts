@@ -43,6 +43,8 @@ export interface PasteResult {
 	/** Stored marks above their entry's available marks, which the grid flags. */
 	overMax: number;
 	studentsAdded: number;
+	/** Uploaded names left out because the class already had them. */
+	duplicatesSkipped: number;
 	/** Rows past the class with no name to give a student. */
 	rowsDropped: number;
 	/** Pasted columns past the last entry, with no column to land in. */
@@ -58,6 +60,7 @@ export function emptyPasteResult(): PasteResult {
 		marksCleared: 0,
 		overMax: 0,
 		studentsAdded: 0,
+		duplicatesSkipped: 0,
 		rowsDropped: 0,
 		columnsClipped: 0,
 		refused: []
@@ -236,6 +239,9 @@ export function describePaste(result: PasteResult): { summary: string; losses: s
 	}
 	if (result.studentsAdded > 0) {
 		parts.push(`added ${count(result.studentsAdded, 'student')}`);
+	}
+	if (result.duplicatesSkipped > 0) {
+		parts.push(`skipped ${count(result.duplicatesSkipped, 'duplicate')}`);
 	}
 	let summary = 'Nothing was pasted.';
 	if (parts.length > 0) {

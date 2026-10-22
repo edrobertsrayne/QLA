@@ -43,6 +43,30 @@ export function readName(text: string): StudentName | null {
 	return studentName(name) === '' ? null : name;
 }
 
+/** A name's identity for the duplicate rule: trimmed, case-insensitive, both parts. */
+function nameKey(name: StudentName): string {
+	return JSON.stringify([name.firstName.trim().toLowerCase(), name.surname.trim().toLowerCase()]);
+}
+
+/**
+ * The names an upload adds to a class: those not already in it, and not
+ * repeated earlier in the upload itself. Only file upload de-duplicates;
+ * pasting and adding one at a time take names as they come.
+ */
+export function newNames(
+	existing: readonly StudentName[],
+	uploaded: readonly StudentName[]
+): { added: StudentName[]; skipped: number } {
+	const seen = new Set(existing.map(nameKey));
+	const added = uploaded.filter((name) => {
+		const key = nameKey(name);
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+	return { added, skipped: uploaded.length - added.length };
+}
+
 /** A new student on this device, unmarked and present. */
 export function newStudent(name: StudentName): StoredStudent {
 	return { id: localId(), firstName: name.firstName, surname: name.surname, absent: false };

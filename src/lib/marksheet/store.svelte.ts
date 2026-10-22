@@ -45,6 +45,7 @@ import {
 	type Unreadable
 } from './persistence.svelte.js';
 import {
+	newNames,
 	newStudent,
 	sortStudentsByName,
 	studentName,
@@ -469,6 +470,28 @@ export class MarksheetStore {
 	 */
 	pasteNames(names: string): number {
 		return this.pasteMarks(textGrid(names), { kind: 'names', studentId: null }).studentsAdded;
+	}
+
+	/**
+	 * Add the students an uploaded class list names to the end of the class,
+	 * skipping those the class already has, and keep the account of it for the
+	 * notice beside the grid. One undo takes the whole upload back.
+	 */
+	addStudentsFromUpload(names: readonly StudentName[]): PasteResult {
+		let result = emptyPasteResult();
+		this.#commit((document) => {
+			const { added, skipped } = newNames(document.students, names);
+			document.students.push(...added.map(newStudent));
+			result = {
+				...result,
+				changed: added.length > 0,
+				studentsAdded: added.length,
+				duplicatesSkipped: skipped
+			};
+			return result.changed ? { kind: 'mark-paste' } : null;
+		});
+		this.pasteNotice = result.changed || result.duplicatesSkipped > 0 ? result : null;
+		return result;
 	}
 
 	/**
