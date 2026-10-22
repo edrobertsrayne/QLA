@@ -30,13 +30,9 @@
 	const flow = new ReportsFlow(store);
 	provideReportsFlow(flow);
 	onMount(() => void flow.models.load());
-
-	onMount(() => {
-		const reset = () => (flow.printing = null);
-		window.addEventListener('afterprint', reset);
-		return () => window.removeEventListener('afterprint', reset);
-	});
 </script>
+
+<svelte:window onafterprint={() => (flow.printing = null)} />
 
 <svelte:head>
 	<title>{title}</title>
