@@ -39,7 +39,8 @@ function seedAnalysis() {
 						ao: null
 					})
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			students: [student('s1', 'Ada', 'Lovelace'), student('s2', 'Grace', 'Hopper')],
 			marks: { s1: { 'entry-1': 0, 'entry-2': 4 }, s2: { 'entry-1': 1, 'entry-2': 4 } }

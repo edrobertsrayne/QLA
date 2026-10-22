@@ -225,7 +225,8 @@ describe('analysisCsvFile', () => {
 						ao: null
 					}
 				],
-				warnings: []
+				warnings: [],
+				aoDescriptions: {}
 			},
 			students: [
 				{ id: 's1', firstName: 'Ada', surname: 'Lovelace', absent: false },
