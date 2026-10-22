@@ -3,7 +3,7 @@
 
 import { goto } from '$app/navigation';
 import { resolve } from '$app/paths';
-import { marksCsvFile, saveFile } from './download.js';
+import { analysisCsvFile, marksCsvFile, saveFile } from './download.js';
 import type { DocumentStorage } from './persistence.svelte.js';
 import { MarksheetStore } from './store.svelte.js';
 
@@ -65,4 +65,13 @@ export function backUpNow(): boolean {
 export function exportMarksNow(): void {
 	const document = marksheetStore().document;
 	if (document) saveFile(marksCsvFile(document));
+}
+
+/**
+ * Hand the analysis figures to the browser as a spreadsheet. Like the marks
+ * export it is one-way and leaves the backup's age alone.
+ */
+export function exportAnalysisNow(): void {
+	const document = marksheetStore().document;
+	if (document) saveFile(analysisCsvFile(document, new Date()));
 }

@@ -14,6 +14,7 @@
 	import TopicNamesStep from '$lib/components/report/TopicNamesStep.svelte';
 	import WhoStep from '$lib/components/report/WhoStep.svelte';
 	import WritingStep from '$lib/components/report/WritingStep.svelte';
+	import { downloadReports, type ReportDownload } from '$lib/components/report/report-pdf.js';
 	import { reportRoster, rowsOf } from '$lib/components/report/report-roster.js';
 	import { ReportRun } from '$lib/components/report/report-run.svelte.js';
 	import { Button } from '$lib/components/ui/button';
@@ -21,6 +22,7 @@
 	import { boundariesOf } from '$lib/marksheet/grades.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { topicNameGaps } from '$lib/marksheet/report-rollup.js';
+	import { toastPdfFailure } from '$lib/print-pdf.js';
 
 	type Step = 'topics' | 'grades' | 'who' | 'writing' | 'review';
 
@@ -93,6 +95,24 @@
 		printing = ids;
 		await tick();
 		window.print();
+	}
+
+	/** The print copies of the visible pages, which a PDF is made from. */
+	let printRoot = $state<HTMLElement>();
+
+	/** The PDF being made, or null when none is. */
+	let downloading = $state<ReportDownload | null>(null);
+
+	async function download(request: ReportDownload): Promise<void> {
+		downloading = request;
+		try {
+			await toastPdfFailure(() => {
+				if (!document || !printRoot) throw new Error('The report pages are not ready to download');
+				return downloadReports(printRoot, document, request, new Date());
+			});
+		} finally {
+			downloading = null;
+		}
 	}
 
 	onMount(() => {
@@ -173,7 +193,9 @@
 			{document}
 			{roster}
 			{run}
+			{downloading}
 			onprint={(ids) => void print(ids)}
+			ondownload={(request) => void download(request)}
 			onrewrite={rewriteHere}
 			onwritemore={writeAgain}
 		/>
@@ -181,5 +203,5 @@
 </main>
 
 {#if document}
-	<PrintRoot {document} ids={printing ?? reviewIds} />
+	<PrintRoot {document} ids={printing ?? reviewIds} bind:root={printRoot} />
 {/if}

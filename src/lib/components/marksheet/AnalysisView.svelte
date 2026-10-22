@@ -9,6 +9,7 @@
 	import { onMount, tick } from 'svelte';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import DownloadIcon from '@lucide/svelte/icons/download';
 	import PrinterIcon from '@lucide/svelte/icons/printer';
 	import { Button } from '$lib/components/ui/button';
 	import * as Table from '$lib/components/ui/table';
@@ -21,7 +22,9 @@
 		type RagBand
 	} from '$lib/marksheet/analysis.js';
 	import { entryName } from '$lib/marksheet/breakdown.js';
-	import { marksheetStore } from '$lib/marksheet/index.js';
+	import { downloadAnalysisPdf } from './analysis-pdf.js';
+	import { exportAnalysisNow, marksheetStore } from '$lib/marksheet/index.js';
+	import { toastPdfFailure } from '$lib/print-pdf.js';
 	import { count, agree } from '$lib/prose.js';
 	import { cn } from '$lib/utils.js';
 
@@ -39,6 +42,29 @@
 	const paper = $derived(store.document?.paper ?? null);
 	/** Green is the band a teacher is least likely to act on, so it starts folded. */
 	let greenOpen = $state(false);
+
+	let view = $state<HTMLElement>();
+	let makingPdf = $state(false);
+
+	/** Green unfolded for the moment the page is read, so the file does not depend on what is open on screen. */
+	async function unfoldGreen(): Promise<() => void> {
+		const wasOpen = greenOpen;
+		greenOpen = true;
+		await tick();
+		return () => (greenOpen = wasOpen);
+	}
+
+	async function downloadPdf(): Promise<void> {
+		const document = store.document;
+		const element = view;
+		if (!element || !document) return;
+		makingPdf = true;
+		try {
+			await toastPdfFailure(() => downloadAnalysisPdf(element, document, new Date(), unfoldGreen));
+		} finally {
+			makingPdf = false;
+		}
+	}
 
 	/** The bands, each worst first, in the order a teacher reads them. */
 	const sections = $derived.by(() => {
@@ -180,13 +206,20 @@
 	</Table.Root>
 {/snippet}
 
-<div class="mx-auto max-w-5xl space-y-4" data-testid="analysis-view">
+<div class="mx-auto max-w-5xl space-y-4" data-testid="analysis-view" bind:this={view}>
 	<div class="flex flex-wrap items-center gap-2 print:hidden">
 		<Button variant="ghost" size="sm" onclick={onBack}>
 			<ArrowLeftIcon class="size-4" /> Back to marksheet
 		</Button>
 		<Button variant="outline" size="sm" class="ml-auto" onclick={() => window.print()}>
 			<PrinterIcon class="size-4" /> Print
+		</Button>
+		<Button variant="outline" size="sm" disabled={makingPdf} onclick={() => void downloadPdf()}>
+			<DownloadIcon class="size-4" />
+			{makingPdf ? 'Preparing PDF…' : 'Download PDF'}
+		</Button>
+		<Button variant="outline" size="sm" onclick={exportAnalysisNow}>
+			<DownloadIcon class="size-4" /> Download CSV
 		</Button>
 	</div>
 
