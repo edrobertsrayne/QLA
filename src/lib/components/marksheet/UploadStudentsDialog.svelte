@@ -29,7 +29,7 @@
 
 	// Re-read whenever the header box changes: the box, not the content, decides row 1.
 	const csv = $derived(file?.ok ? readStudentCsv(file.text, firstRowIsHeader) : file);
-	const plan = $derived(csv?.ok ? newNames(store.document?.students ?? [], csv.names) : null);
+	const plan = $derived(csv?.ok ? newNames(store.students, csv.names) : null);
 
 	async function chooseFile(event: Event & { currentTarget: HTMLInputElement }): Promise<void> {
 		const chosen = event.currentTarget.files?.[0];
