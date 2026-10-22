@@ -90,7 +90,7 @@
 	const draft = $derived(boundariesFrom(rows));
 	const issues = $derived.by(() => [
 		...boundaryIssues(rows, below, paperTotal),
-		...(mode === 'percent' ? percentIssues(rows) : [])
+		...percentIssues(rows)
 	]);
 	const issueFor = $derived.by(() => {
 		const byIndex: BoundaryIssue[][] = rows.map(() => []);
