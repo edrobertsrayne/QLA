@@ -65,12 +65,15 @@ async function pageCss(): Promise<string> {
 }
 
 /**
- * The self-contained document for `body`. `extraCss` comes last, so it wins:
- * a document whose own print styles set no page margin asks for one here.
+ * Make the self-contained document for any body, from the page's CSS and fonts
+ * read once: a download of many documents inlines the fonts once, not per
+ * document. `extraCss` comes last, so it wins: a document whose own print
+ * styles set no page margin asks for one here.
  */
-export async function printDocumentHtml(body: Element, extraCss = ''): Promise<string> {
+export async function documentPrinter(extraCss = ''): Promise<(body: Element) => string> {
 	const css = await pageCss();
-	return `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>${css}\n${extraCss}</style></head><body>${body.outerHTML}</body></html>`;
+	return (body) =>
+		`<!doctype html><html lang="en"><head><meta charset="utf-8"><style>${css}\n${extraCss}</style></head><body>${body.outerHTML}</body></html>`;
 }
 
 /** The PDF the server renders for `html`; rejects with an `ApiFailure` when it cannot. */

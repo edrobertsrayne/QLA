@@ -92,6 +92,23 @@ describe('report PDF downloads', () => {
 		]);
 	});
 
+	it('inlines the fonts once for a whole zip, not once per student', async () => {
+		const stub = openWritten(['ada', 'bo']);
+		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
+		const file = captureDownload();
+
+		await page.getByRole('button', { name: 'Download all 2' }).click();
+		await page.getByRole('button', { name: 'Separate PDFs (zip)' }).click();
+
+		await vi.waitFor(() => expect(file.filename()).toMatch(/\.zip$/));
+		expect(sentHtml(stub)).toHaveLength(2);
+		const fonts = stub.mock.calls
+			.map(([url]) => String(url))
+			.filter((url) => /\.woff2?(\?|$)/.test(url));
+		expect(fonts.length).toBeGreaterThan(0);
+		expect(new Set(fonts).size).toBe(fonts.length);
+	});
+
 	it('asks first, as Print does, when a report is out of date', async () => {
 		const doc = plain();
 		writeFor(doc, ['ada']);

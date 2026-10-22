@@ -3,7 +3,7 @@
 
 import { exportFilename, saveBlob } from '$lib/marksheet/download.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import { fetchPdf, printDocumentHtml } from '$lib/print-pdf.js';
+import { fetchPdf, documentPrinter } from '$lib/print-pdf.js';
 
 /**
  * Render `view` and save the file. `unfold` opens everything the view folds
@@ -22,7 +22,7 @@ export async function downloadAnalysisPdf(
 	const restore = await unfold();
 	let html: string;
 	try {
-		html = await printDocumentHtml(view, '@page { size: A4; margin: 12mm; }');
+		html = (await documentPrinter('@page { size: A4; margin: 12mm; }'))(view);
 	} finally {
 		restore();
 	}

@@ -5,7 +5,7 @@
 import { zipSync } from 'fflate';
 import { exportFilename, reportPdfFilename, saveBlob } from '$lib/marksheet/download.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import { fetchPdf, printDocumentHtml } from '$lib/print-pdf.js';
+import { fetchPdf, documentPrinter } from '$lib/print-pdf.js';
 
 /**
  * What a download is of: one student's page as its own PDF, every report in
@@ -38,8 +38,10 @@ function studentOf(document: MarksheetDocument, id: string): MarksheetDocument['
 	return student;
 }
 
-function pdfOf(printRoot: HTMLElement, ids: string[]): Promise<Blob> {
-	return printDocumentHtml(rootOf(printRoot, ids)).then(fetchPdf);
+type Printer = (body: Element) => string;
+
+function pdfOf(printer: Printer, printRoot: HTMLElement, ids: string[]): Promise<Blob> {
+	return fetchPdf(printer(rootOf(printRoot, ids)));
 }
 
 /** A name not already taken: `-2`, `-3`… before the extension, for students who share a name. */
@@ -57,13 +59,14 @@ async function downloadZip(
 	ids: string[],
 	now: Date
 ): Promise<void> {
+	const printer = await documentPrinter();
 	const taken = new Set<string>();
 	const files: Record<string, Uint8Array> = {};
 	// One at a time: the server renders them in its one shared browser anyway.
 	for (const id of ids) {
 		const student = studentOf(document, id);
 		const name = distinctName(reportPdfFilename(document, student, now), taken);
-		files[name] = new Uint8Array(await (await pdfOf(printRoot, [id])).arrayBuffer());
+		files[name] = new Uint8Array(await (await pdfOf(printer, printRoot, [id])).arrayBuffer());
 	}
 	// A PDF is already compressed: storing it keeps the zip quick and no bigger.
 	saveBlob(
@@ -82,13 +85,16 @@ export async function downloadReports(
 	switch (download.kind) {
 		case 'page': {
 			const student = studentOf(document, download.id);
-			saveBlob(reportPdfFilename(document, student, now), await pdfOf(printRoot, [download.id]));
+			saveBlob(
+				reportPdfFilename(document, student, now),
+				await pdfOf(await documentPrinter(), printRoot, [download.id])
+			);
 			return;
 		}
 		case 'one':
 			saveBlob(
 				exportFilename('reports', document, now, 'pdf'),
-				await pdfOf(printRoot, download.ids)
+				await pdfOf(await documentPrinter(), printRoot, download.ids)
 			);
 			return;
 		case 'zip':
