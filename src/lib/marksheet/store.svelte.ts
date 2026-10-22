@@ -477,7 +477,7 @@ export class MarksheetStore {
 	 * skipping those the class already has, and keep the account of it for the
 	 * notice beside the grid. One undo takes the whole upload back.
 	 */
-	addStudentsFromUpload(names: readonly StudentName[]): PasteResult {
+	addStudentsFromUpload(names: readonly StudentName[]): void {
 		let result = emptyPasteResult();
 		this.#commit((document) => {
 			const { added, skipped } = newNames(document.students, names);
@@ -490,8 +490,7 @@ export class MarksheetStore {
 			};
 			return result.changed ? { kind: 'mark-paste' } : null;
 		});
-		this.pasteNotice = result.changed || result.duplicatesSkipped > 0 ? result : null;
-		return result;
+		this.pasteNotice = result.changed ? result : null;
 	}
 
 	/**

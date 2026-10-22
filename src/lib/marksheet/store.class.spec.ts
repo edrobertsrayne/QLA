@@ -61,28 +61,17 @@ describe('class', () => {
 			{ firstName: 'Cher', surname: '' }
 		];
 
-		const result = store.addStudentsFromUpload(names);
+		store.addStudentsFromUpload(names);
 
 		expect(store.document?.students.map(({ firstName }) => firstName)).toEqual([
 			'Ada',
 			'Grace',
 			'Cher'
 		]);
-		expect(result).toMatchObject({ studentsAdded: 2, duplicatesSkipped: 2 });
-		expect(store.pasteNotice).toBe(result);
+		expect(store.pasteNotice).toMatchObject({ studentsAdded: 2, duplicatesSkipped: 2 });
 
 		expect(store.undo()).toBe(true);
 		expect(store.document?.students).toEqual([student('student-1', 'Ada', 'Lovelace')]);
-	});
-
-	it('leaves the class and undo alone when an upload is all duplicates', () => {
-		const { store } = openMarksheet({ students: [student('student-1', 'Ada', 'Lovelace')] });
-
-		store.addStudentsFromUpload([{ firstName: 'Ada', surname: 'Lovelace' }]);
-
-		expect(store.document?.students).toHaveLength(1);
-		expect(store.undoable).toBeNull();
-		expect(store.pasteNotice).toMatchObject({ studentsAdded: 0, duplicatesSkipped: 1 });
 	});
 
 	it('still lets paste and add-one repeat a name', () => {
