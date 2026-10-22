@@ -12,10 +12,15 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Table from '$lib/components/ui/table';
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
-	import { studentTotal, totalMarks } from '$lib/marksheet/document.js';
+	import { isWholeNumber, studentTotal, totalMarks } from '$lib/marksheet/document.js';
 	import {
 		belowLabelOf,
 		boundariesFrom,
+		formatPercent,
+		marksToPercent,
+		parsePercent,
+		percentIssues,
+		percentToMarks,
 		boundariesOf,
 		boundaryIssues,
 		gradeOf,
@@ -42,6 +47,32 @@
 	/** Which scale the working copy was started from; Custom makes labels editable. */
 	let scale = $state(initial.scale);
 
+	/** Whether `min` is typed as raw marks or as a percentage of the paper total. */
+	let mode = $state<'marks' | 'percent'>('marks');
+
+	function setMode(next: 'marks' | 'percent'): void {
+		mode = next;
+		// Boundaries are raw marks; only what the teacher types in % mode converts.
+		if (next === 'marks') for (const row of rows) delete row.percent;
+	}
+
+	/** The % input's text: what was typed, else the stored mark worked out again. */
+	function percentText(row: BoundaryRow): string {
+		if (row.percent !== undefined) return row.percent;
+		const min = row.min.trim();
+		return isWholeNumber(min) ? formatPercent(marksToPercent(Number(min), paperTotal)) : min;
+	}
+
+	function typePercent(row: BoundaryRow, text: string): void {
+		row.percent = text;
+		const percent = parsePercent(text);
+		// Blank clears the boundary, as Marks mode does. Other invalid text
+		// leaves the stored raw mark alone: switching back to Marks must
+		// restore exactly what was there, and the percent issue blocks Save
+		// until the teacher fixes or abandons the text.
+		if (percent !== null) row.min = String(percentToMarks(percent, paperTotal));
+		else if (text.trim() === '') row.min = '';
+	}
 	/** Start the working copy from one scale, keeping marks typed against carried-over labels. */
 	function pick(name: string): void {
 		scale = name;
@@ -57,7 +88,10 @@
 
 	/** The boundaries Save would store: blank and unawarded rows left out. */
 	const draft = $derived(boundariesFrom(rows));
-	const issues = $derived.by(() => boundaryIssues(rows, below, paperTotal));
+	const issues = $derived.by(() => [
+		...boundaryIssues(rows, below, paperTotal),
+		...percentIssues(rows)
+	]);
 	const issueFor = $derived.by(() => {
 		const byIndex: BoundaryIssue[][] = rows.map(() => []);
 		for (const issue of issues) byIndex[issue.index]?.push(issue);
@@ -95,7 +129,11 @@
 </script>
 
 <div class="space-y-4 text-sm">
-	<p class="text-xs text-muted-foreground">Raw marks out of {paperTotal}.</p>
+	<p class="text-xs text-muted-foreground">
+		{mode === 'percent'
+			? `Percentages of ${paperTotal} marks, rounded up to a whole mark.`
+			: `Raw marks out of ${paperTotal}.`}
+	</p>
 	<div class="space-y-1.5">
 		<p class="text-xs text-muted-foreground">Grade scale</p>
 		<ToggleGroup.Root
@@ -115,6 +153,23 @@
 		</ToggleGroup.Root>
 	</div>
 
+	<div class="space-y-1.5">
+		<p class="text-xs text-muted-foreground">Enter boundaries as</p>
+		<ToggleGroup.Root
+			type="single"
+			size="sm"
+			variant="outline"
+			aria-label="Boundary entry"
+			value={mode}
+			onValueChange={(next) => {
+				if (next === 'marks' || next === 'percent') setMode(next);
+			}}
+		>
+			<ToggleGroup.Item value="marks">Marks</ToggleGroup.Item>
+			<ToggleGroup.Item value="percent" disabled={paperTotal === 0}>%</ToggleGroup.Item>
+		</ToggleGroup.Root>
+	</div>
+
 	{#if scale === ''}
 		<p class="text-muted-foreground">Pick a scale to start, or Custom to name your own grades.</p>
 	{:else}
@@ -122,7 +177,11 @@
 			<Table.Header class="text-left text-xs text-muted-foreground">
 				<Table.Row>
 					<Table.Head class="w-36 pb-1 font-normal">Grade</Table.Head>
-					<Table.Head class="w-24 pb-1 font-normal">Lowest mark</Table.Head>
+					<Table.Head
+						class={mode === 'percent' ? 'w-40 pb-1 font-normal' : 'w-24 pb-1 font-normal'}
+					>
+						{mode === 'percent' ? 'Lowest %' : 'Lowest mark'}
+					</Table.Head>
 					<Table.Head class="w-20 pb-1 font-normal">Students</Table.Head>
 					<Table.Head><span class="sr-only">Problems</span></Table.Head>
 				</Table.Row>
@@ -142,16 +201,37 @@
 							{/if}
 						</Table.Cell>
 						<Table.Cell class="py-0.5 pr-2">
-							<Input
-								class={cn(
-									'h-8 w-20 tabular-nums',
-									rowIssues.some((issue) => issue.field === 'min') && 'border-destructive'
-								)}
-								inputmode="numeric"
-								placeholder={scale === 'Custom' ? '' : 'not used'}
-								bind:value={row.min}
-								aria-label="Lowest mark for {row.label || `grade ${i + 1}`}"
-							/>
+							{#if mode === 'percent'}
+								<div class="flex items-center gap-2">
+									<Input
+										class={cn(
+											'h-8 w-20 tabular-nums',
+											rowIssues.some((issue) => issue.field === 'min') && 'border-destructive'
+										)}
+										inputmode="decimal"
+										placeholder={scale === 'Custom' ? '' : 'not used'}
+										value={percentText(row)}
+										oninput={(event) => typePercent(row, event.currentTarget.value)}
+										aria-label="Lowest percentage for {row.label || `grade ${i + 1}`}"
+									/>
+									{#if isWholeNumber(row.min)}
+										<span class="text-xs tabular-nums text-muted-foreground">
+											→ {row.min}/{paperTotal}
+										</span>
+									{/if}
+								</div>
+							{:else}
+								<Input
+									class={cn(
+										'h-8 w-20 tabular-nums',
+										rowIssues.some((issue) => issue.field === 'min') && 'border-destructive'
+									)}
+									inputmode="numeric"
+									placeholder={scale === 'Custom' ? '' : 'not used'}
+									bind:value={row.min}
+									aria-label="Lowest mark for {row.label || `grade ${i + 1}`}"
+								/>
+							{/if}
 						</Table.Cell>
 						<Table.Cell
 							class="py-0.5 text-xs tabular-nums text-muted-foreground"
@@ -193,7 +273,8 @@
 			<p class="text-xs text-muted-foreground">Every grade blank reads as “not used”.</p>
 		{/if}
 		<p class="text-xs text-muted-foreground">
-			Top grade first, in raw marks. Leave a grade blank if this paper doesn't award it.
+			Top grade first, {mode === 'percent' ? 'as percentages' : 'in raw marks'}. Leave a grade blank
+			if this paper doesn't award it.
 		</p>
 	{/if}
 </div>
