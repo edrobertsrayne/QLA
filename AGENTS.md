@@ -40,3 +40,5 @@ GitHub issues in `edrobertsrayne/QLA`, managed with the `gh` CLI. See `docs/agen
 ## Commits
 
 [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): description`, where type is one of `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `build`, `ci`. Write the description in lowercase and the imperative (`add`). Mark a breaking change with `!` or a `BREAKING CHANGE:` footer.
+
+Changes to agent skills (`.agents/skills/`, `skills-lock.json`) are a `chore`, not a `feat`.
