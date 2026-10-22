@@ -289,13 +289,19 @@
 			class="mt-4 grid grid-cols-2 gap-5 text-[9pt] data-[columns=1]:grid-cols-1 data-[columns=1]:gap-y-0 data-[columns=1]:[&>table:last-child>thead]:hidden"
 		>
 			{#each halves as half, h (h)}
-				<table class="w-full self-start leading-[1.3]">
+				<table class="w-full table-fixed self-start leading-[1.3]">
+					<colgroup>
+						<col class="w-[3.2em]" />
+						<col />
+						<col class="w-[3.4em]" />
+						<col class="w-[1.6em]" />
+					</colgroup>
 					<thead>
 						<tr class="border-b border-black text-left">
-							<th class="w-[3.2em]">Q</th>
+							<th>Q</th>
 							<th></th>
-							<th class="w-[3.4em] text-right">Marks</th>
-							<th class="w-[1.6em]"></th>
+							<th class="text-right">Marks</th>
+							<th></th>
 						</tr>
 					</thead>
 					{#each half as band, b (b)}
