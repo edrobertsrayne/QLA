@@ -391,4 +391,107 @@ describe('marksheet grade columns', () => {
 			screen.container.querySelector('[data-testid="to-next-cell"][data-student-id="full"]')
 		).toBeNull();
 	});
+
+	describe('percent entry', () => {
+		function seedPaper(total: number, boundaries: { label: string; minimum: number }[] | null) {
+			const doc = gradedClass({
+				breakdown: {
+					entries: total > 0 ? [entry('entry-1', '1a', '1', { marks: total })] : [],
+					warnings: []
+				}
+			});
+			doc.paper.boundaries = boundaries;
+			seed(doc);
+		}
+
+		it('converts a typed percentage up to a raw mark and stores the mark', async () => {
+			seedPaper(83, null);
+			openPage(MarksheetPage);
+			await page.getByRole('button', { name: 'Set grade boundaries' }).click();
+			await page.getByRole('radio', { name: 'A level A*–E' }).click();
+			await page.getByRole('radio', { name: '%' }).click();
+
+			await userEvent.fill(page.getByLabelText('Lowest percentage for A*'), '65');
+			await expect.element(page.getByText('→ 54/83')).toBeInTheDocument();
+			await userEvent.fill(page.getByLabelText('Lowest percentage for A', { exact: true }), '50');
+			await expect.element(page.getByText('→ 42/83')).toBeInTheDocument();
+			await page.getByRole('button', { name: 'Save boundaries' }).click();
+			// 50% of 83 = 41.5 → 42, and A* must sit above A.
+			expect(marksheetStore().document?.paper.boundaries).toEqual([
+				{ label: 'A*', minimum: 54 },
+				{ label: 'A', minimum: 42 }
+			]);
+		});
+
+		it('stores an exact mark, and the bounds 100 and 0', async () => {
+			seedPaper(80, null);
+			openPage(MarksheetPage);
+			await page.getByRole('button', { name: 'Set grade boundaries' }).click();
+			await page.getByRole('radio', { name: 'A level A*–E' }).click();
+			await page.getByRole('radio', { name: '%' }).click();
+			await userEvent.fill(page.getByLabelText('Lowest percentage for A*'), '100');
+			await userEvent.fill(page.getByLabelText('Lowest percentage for A', { exact: true }), '50');
+			await userEvent.fill(page.getByLabelText('Lowest percentage for B'), '0');
+			await page.getByRole('button', { name: 'Save boundaries' }).click();
+			expect(marksheetStore().document?.paper.boundaries).toEqual([
+				{ label: 'A*', minimum: 80 },
+				{ label: 'A', minimum: 40 },
+				{ label: 'B', minimum: 0 }
+			]);
+		});
+
+		it('keeps saved raw marks identical across a Marks → % → Marks switch', async () => {
+			seedPaper(83, [
+				{ label: 'A', minimum: 54 },
+				{ label: 'B', minimum: 31 }
+			]);
+			openPage(MarksheetPage);
+			await page.getByRole('button', { name: 'Grade boundaries (2)' }).click();
+			await page.getByRole('radio', { name: '%' }).click();
+			await expect.element(page.getByLabelText('Lowest percentage for A')).toHaveValue('65.1');
+			await page.getByRole('radio', { name: 'Marks' }).click();
+			await expect.element(page.getByLabelText('Lowest mark for A')).toHaveValue('54');
+			await page.getByRole('radio', { name: '%' }).click();
+			await page.getByRole('button', { name: 'Save boundaries' }).click();
+			expect(marksheetStore().document?.paper.boundaries).toEqual([
+				{ label: 'A', minimum: 54 },
+				{ label: 'B', minimum: 31 }
+			]);
+		});
+
+		it('flags out-of-range and non-numeric percentages and blocks Save', async () => {
+			seedPaper(83, null);
+			openPage(MarksheetPage);
+			await page.getByRole('button', { name: 'Set grade boundaries' }).click();
+			await page.getByRole('radio', { name: 'A level A*–E' }).click();
+			await page.getByRole('radio', { name: '%' }).click();
+			for (const bad of ['-1', '101', 'abc']) {
+				await userEvent.fill(page.getByLabelText('Lowest percentage for A*'), bad);
+				await expect
+					.element(page.getByTestId('grade-boundaries-footer'))
+					.toHaveTextContent('1 problem to fix');
+				await expect.element(page.getByRole('button', { name: 'Save boundaries' })).toBeDisabled();
+			}
+		});
+
+		it('checks ordering on the converted marks', async () => {
+			seedPaper(83, null);
+			openPage(MarksheetPage);
+			await page.getByRole('button', { name: 'Set grade boundaries' }).click();
+			await page.getByRole('radio', { name: 'A level A*–E' }).click();
+			await page.getByRole('radio', { name: '%' }).click();
+			await userEvent.fill(page.getByLabelText('Lowest percentage for A*'), '65');
+			await userEvent.fill(page.getByLabelText('Lowest percentage for A', { exact: true }), '65');
+			await expect
+				.element(page.getByText('Must be below the grade above (54)'))
+				.toBeInTheDocument();
+		});
+
+		it('disables the % toggle on a paper with no marks', async () => {
+			seedPaper(0, null);
+			openPage(MarksheetPage);
+			await page.getByRole('button', { name: 'Set grade boundaries' }).click();
+			await expect.element(page.getByRole('radio', { name: '%' })).toBeDisabled();
+		});
+	});
 });
