@@ -7,8 +7,6 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount, tick } from 'svelte';
-	import { toast } from 'svelte-sonner';
-	import { ApiFailure } from '$lib/api-error.js';
 	import { ModelList } from '$lib/components/parse/model-list.svelte.js';
 	import GradeBoundariesForm from '$lib/components/report/GradeBoundariesForm.svelte';
 	import PrintRoot from '$lib/components/report/PrintRoot.svelte';
@@ -24,6 +22,7 @@
 	import { boundariesOf } from '$lib/marksheet/grades.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { topicNameGaps } from '$lib/marksheet/report-rollup.js';
+	import { toastPdfFailure } from '$lib/print-pdf.js';
 
 	type Step = 'topics' | 'grades' | 'who' | 'writing' | 'review';
 
@@ -107,10 +106,7 @@
 		if (!printRoot) return;
 		downloading = request;
 		try {
-			await downloadReports(printRoot, document, request, new Date());
-		} catch (error) {
-			if (!(error instanceof ApiFailure)) throw error;
-			toast.error(error.message);
+			await toastPdfFailure(() => downloadReports(printRoot, document, request, new Date()));
 		} finally {
 			downloading = null;
 		}

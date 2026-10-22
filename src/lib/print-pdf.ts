@@ -7,6 +7,7 @@
 // the network off and could not fetch them.
 
 import { ApiFailure, failureFrom } from './api-error.js';
+import { toast } from 'svelte-sonner';
 
 const PDF_FAILED = 'The PDF could not be made.';
 
@@ -88,4 +89,14 @@ export async function fetchPdf(html: string): Promise<Blob> {
 	}
 	if (!response.ok) throw await failureFrom(response, PDF_FAILED);
 	return response.blob();
+}
+
+/** Run a PDF download; a failure the user can act on is shown as a toast, anything else is a bug and rethrown. */
+export async function toastPdfFailure(download: () => Promise<void>): Promise<void> {
+	try {
+		await download();
+	} catch (error) {
+		if (!(error instanceof ApiFailure)) throw error;
+		toast.error(error.message);
+	}
 }

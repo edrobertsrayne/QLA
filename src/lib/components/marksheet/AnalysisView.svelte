@@ -11,8 +11,6 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import PrinterIcon from '@lucide/svelte/icons/printer';
-	import { toast } from 'svelte-sonner';
-	import { ApiFailure } from '$lib/api-error.js';
 	import { Button } from '$lib/components/ui/button';
 	import * as Table from '$lib/components/ui/table';
 	import {
@@ -24,9 +22,9 @@
 		type RagBand
 	} from '$lib/marksheet/analysis.js';
 	import { entryName } from '$lib/marksheet/breakdown.js';
-	import { analysisPdfFilename, saveBlob } from '$lib/marksheet/download.js';
+	import { downloadAnalysisPdf } from './analysis-pdf.js';
 	import { exportAnalysisNow, marksheetStore } from '$lib/marksheet/index.js';
-	import { fetchPdf, printDocumentHtml } from '$lib/print-pdf.js';
+	import { toastPdfFailure } from '$lib/print-pdf.js';
 	import { count, agree } from '$lib/prose.js';
 	import { cn } from '$lib/utils.js';
 
@@ -48,28 +46,22 @@
 	let view = $state<HTMLElement>();
 	let makingPdf = $state(false);
 
-	/**
-	 * The analysis as a PDF, every section in it: green is unfolded for the
-	 * moment the page is read, so the file does not depend on what is open on
-	 * screen. Each section keeps its band in its heading, so a greyscale copy
-	 * still reads. The paper margin is the analysis's own: unlike a report it
-	 * has no page of its own to fill.
-	 */
-	async function downloadPdf(): Promise<void> {
-		if (!view || !store.document) return;
-		makingPdf = true;
+	/** Green unfolded for the moment the page is read, so the file does not depend on what is open on screen. */
+	async function unfoldGreen(): Promise<() => void> {
 		const wasOpen = greenOpen;
+		greenOpen = true;
+		await tick();
+		return () => (greenOpen = wasOpen);
+	}
+
+	async function downloadPdf(): Promise<void> {
+		const document = store.document;
+		const element = view;
+		if (!element || !document) return;
+		makingPdf = true;
 		try {
-			greenOpen = true;
-			await tick();
-			const html = await printDocumentHtml(view, '@page { size: A4; margin: 12mm; }');
-			greenOpen = wasOpen;
-			saveBlob(analysisPdfFilename(store.document, new Date()), await fetchPdf(html));
-		} catch (error) {
-			if (!(error instanceof ApiFailure)) throw error;
-			toast.error(error.message);
+			await toastPdfFailure(() => downloadAnalysisPdf(element, document, new Date(), unfoldGreen));
 		} finally {
-			greenOpen = wasOpen;
 			makingPdf = false;
 		}
 	}
