@@ -2,9 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import { confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { marksheetStore } from '$lib/marksheet/index.js';
+import { goto } from '$app/navigation';
 import { openPage } from '../spec-helpers.js';
 import { markCell } from './marksheet.spec-helpers.js';
 import MarksheetPage from './+page.svelte';
+import AnalysisPage from './analysis/+page.svelte';
+import { load } from './analysis/+page.ts';
 
 describe('analysis', () => {
 	/** A marksheet with figures worth reading: two entries over two students. */
@@ -27,6 +31,12 @@ describe('analysis', () => {
 			})
 		);
 		return openPage(MarksheetPage);
+	}
+
+	/** The analysis route for a URL, as the router opens it: load first, then the page. */
+	function openAnalysisAt(search = '') {
+		const data = load({ url: new URL(`http://localhost/marksheet/analysis${search}`) });
+		return openPage(AnalysisPage, { data });
 	}
 
 	/** The figure under one entry's column, or nothing where the row has no cell for it. */
@@ -116,6 +126,8 @@ describe('analysis', () => {
 		});
 
 		await page.getByRole('button', { name: 'View analysis' }).click();
+		expect(goto).toHaveBeenCalledWith('/marksheet/analysis');
+		openAnalysisAt();
 
 		await expect
 			.element(page.getByRole('heading', { name: 'Red — below 40%' }))
@@ -143,7 +155,10 @@ describe('analysis', () => {
 		const screen = openAnalysisSheet();
 
 		await userEvent.click(rowCell(screen, 'facility-cell', 'entry-2'));
+		expect(goto).toHaveBeenCalledWith('/marksheet/analysis?entry=entry-2');
+		screen.unmount();
 
+		openAnalysisAt('?entry=entry-2');
 		expect(analysisRow('entry-2')?.dataset.highlighted).toBe('true');
 	});
 
@@ -161,6 +176,11 @@ describe('analysis', () => {
 		const screen = openPage(MarksheetPage);
 
 		await userEvent.click(rowCell(screen, 'facility-cell', 'entry-40'));
+		expect(goto).toHaveBeenCalledWith('/marksheet/analysis?entry=entry-40');
+		screen.unmount();
+
+		// Reloading the URL does the same: the entry is in the query, not in page state.
+		openAnalysisAt('?entry=entry-40');
 
 		const row = analysisRow('entry-40');
 		if (!row) throw new Error('the analysis did not open at the entry');
@@ -169,9 +189,24 @@ describe('analysis', () => {
 		expect(box.top).toBeGreaterThanOrEqual(0);
 		expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
 
-		// Back to the marksheet, where the figures are.
 		await page.getByRole('button', { name: 'Back to marksheet' }).click();
-		await expect.element(page.getByRole('button', { name: 'View analysis' })).toBeInTheDocument();
+		expect(goto).toHaveBeenLastCalledWith('/marksheet');
+	});
+
+	it('opens the analysis without a highlight for an unknown entry id', async () => {
+		openAnalysisSheet();
+		openAnalysisAt('?entry=nope');
+
+		await expect.element(page.getByTestId('analysis-view')).toBeInTheDocument();
+		expect(document.querySelector('[data-highlighted]')).toBeNull();
+	});
+
+	it('names the analysis in the page title', async () => {
+		openAnalysisSheet();
+		marksheetStore().setClassName('10C1');
+		openAnalysisAt();
+
+		await vi.waitFor(() => expect(document.title).toBe('10C1 · Analysis · QLA'));
 	});
 
 	it('opens the analysis at the entry a Hardest item names', async () => {
@@ -180,8 +215,11 @@ describe('analysis', () => {
 		});
 
 		await page.getByTestId('hardest').getByRole('button', { name: '1a 25%' }).click();
+		expect(goto).toHaveBeenCalledWith('/marksheet/analysis?entry=entry-1');
+		screen.unmount();
 
+		openAnalysisAt('?entry=entry-1');
 		expect(analysisRow('entry-1')?.dataset.highlighted).toBe('true');
-		expect(screen.container.textContent).toContain('Red — below 40%');
+		expect(document.body.textContent).toContain('Red — below 40%');
 	});
 });

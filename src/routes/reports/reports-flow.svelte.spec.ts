@@ -7,7 +7,6 @@ import { generationInputFor } from '$lib/marksheet/report-input.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { openPage } from '../spec-helpers.js';
 import MarksheetPage from '../marksheet/+page.svelte';
-import ReportsPage from './+page.svelte';
 import {
 	HOSTILE,
 	plain,
@@ -21,7 +20,8 @@ import {
 	readyTiles,
 	failedTiles,
 	writeFor,
-	posted
+	posted,
+	openReports
 } from './reports.spec-helpers.js';
 
 afterEach(() => {
@@ -44,7 +44,7 @@ describe('reports flow', () => {
 	it('goes from Who gets one through Writing to a page per student', async () => {
 		seed(plain());
 		const { peak } = stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 		await skipGrades();
 
 		await expect
@@ -78,7 +78,7 @@ describe('reports flow', () => {
 					)
 				: ok()
 		);
-		openPage(ReportsPage);
+		await openReports();
 		await skipGrades();
 
 		await page.getByRole('button', { name: 'Write 7 reports' }).click();
@@ -96,7 +96,7 @@ describe('reports flow', () => {
 				{ status: 500 }
 			)
 		);
-		openPage(ReportsPage);
+		await openReports();
 		await skipGrades();
 
 		await page.getByRole('button', { name: 'Write 7 reports' }).click();
@@ -128,7 +128,7 @@ describe('reports flow', () => {
 		expect(goto).toHaveBeenCalledWith('/reports');
 
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		expect(document.querySelector('img')).toBeNull();
 		await expect.element(page.getByText(HOSTILE).first()).toBeInTheDocument();
@@ -168,7 +168,7 @@ describe('reports flow', () => {
 			secondAt = Date.now();
 			return ok();
 		});
-		openPage(ReportsPage);
+		await openReports();
 		await skipGrades();
 
 		await page.getByRole('button', { name: 'Write 1 report' }).click();
@@ -182,7 +182,7 @@ describe('reports flow', () => {
 		seed(plain());
 		// The first five students go through; the last two dequeued burn all three tries.
 		const { stub } = stubFetch((n) => (n >= 5 && n < 11 ? retryable() : ok()));
-		openPage(ReportsPage);
+		await openReports();
 		await skipGrades();
 
 		await page.getByRole('button', { name: 'Write 7 reports' }).click();
@@ -217,7 +217,7 @@ describe('reports flow', () => {
 					)
 				: ok()
 		);
-		openPage(ReportsPage);
+		await openReports();
 		await skipGrades();
 
 		await page.getByRole('button', { name: 'Write 1 report' }).click();
@@ -244,7 +244,7 @@ describe('reports flow', () => {
 		const { stub } = stubFetch(() =>
 			Response.json({ error: { code: 'MODEL_AUTH', message: 'Bad key' } }, { status: 500 })
 		);
-		openPage(ReportsPage);
+		await openReports();
 		await skipGrades();
 
 		await page.getByRole('button', { name: 'Write 7 reports' }).click();
@@ -273,7 +273,7 @@ describe('reports flow', () => {
 				);
 			});
 		});
-		openPage(ReportsPage);
+		await openReports();
 		await skipGrades();
 
 		await page.getByRole('button', { name: 'Write 7 reports' }).click();
@@ -305,7 +305,7 @@ describe('reports flow', () => {
 		}
 		seed(doc);
 		const { stub } = stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 7' })).toBeInTheDocument();
 		expect(hasButton('Write 1 more')).toBe(false);
@@ -330,7 +330,7 @@ describe('review fixes', () => {
 		doc.reports['ada'].edit = { strengths: ['Teacher wording'], areasForImprovement: ['Mine'] };
 		seed(doc);
 		const { stub } = stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await page.getByRole('button', { name: /Who gets one/ }).click();
@@ -351,7 +351,7 @@ describe('review fixes', () => {
 		writeFor(doc, ['ada', 'bo', 'fay', 'gus', 'hal', 'ivy', 'jo']);
 		seed(doc);
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 7' })).toBeInTheDocument();
 		await page.getByRole('button', { name: /Who gets one/ }).click();

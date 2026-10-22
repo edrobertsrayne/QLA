@@ -6,14 +6,25 @@ import { marksheetStore } from '$lib/marksheet/index.js';
 // skeleton and no flash of a surface the stored state does not allow.
 export const ssr = false;
 
+/** Whether a path is part of the marksheet surface: the grid, its analysis, or a report step. */
+function onMarksheetSurface(pathname: string): boolean {
+	return (
+		pathname === '/marksheet' ||
+		pathname === '/marksheet/analysis' ||
+		pathname === '/reports' ||
+		pathname.startsWith('/reports/')
+	);
+}
+
 /** Every surface is the one the stored state allows: anything else redirects before it paints. */
 export function load({ url }: { url: URL }): void {
 	const store = marksheetStore();
 	store.load();
 	const route = store.route();
 	if (url.pathname === route) return;
-	// The report flow is part of the marksheet surface: a confirmed breakdown
-	// may write and review reports without losing the marksheet underneath.
-	if (url.pathname === '/reports' && route === '/marksheet') return;
+	// The analysis and the report flow are part of the marksheet surface: a
+	// confirmed breakdown may analyse, write and review reports without losing
+	// the marksheet underneath.
+	if (route === '/marksheet' && onMarksheetSurface(url.pathname)) return;
 	redirect(307, route);
 }

@@ -7,9 +7,9 @@ import { marksheetStore } from '$lib/marksheet/index.js';
 import Layout from './+layout.svelte';
 
 /** A page, rendered after the gate has read storage, as a route renders it. */
-export function openPage(component: Component) {
+export function openPage<P extends Record<string, unknown>>(component: Component<P>, props?: P) {
 	marksheetStore().load();
-	return render(component);
+	return render(component, props);
 }
 
 /** A stand-in for whichever surface the route would render inside the shell. */

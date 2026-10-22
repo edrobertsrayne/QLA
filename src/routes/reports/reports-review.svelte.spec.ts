@@ -5,8 +5,6 @@ import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import { readSeeded, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { generationInputFor } from '$lib/marksheet/report-input.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
-import { openPage } from '../spec-helpers.js';
-import ReportsPage from './+page.svelte';
 import {
 	HOSTILE,
 	plain,
@@ -16,7 +14,8 @@ import {
 	ok,
 	topicNames,
 	skipGrades,
-	writeFor
+	writeFor,
+	openReports
 } from './reports.spec-helpers.js';
 
 afterEach(() => {
@@ -46,7 +45,7 @@ describe('report editing', () => {
 	it('edits a strength in place, keeps it across a reload, and prints it', async () => {
 		seed(written());
 		stubFetch();
-		const first = openPage(ReportsPage);
+		const first = (await openReports()).screen;
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await page.getByLabelText('Strength 1 for Ada Lovelace').fill('Beautifully clear working');
@@ -55,7 +54,7 @@ describe('report editing', () => {
 
 		marksheetStore().flush();
 		first.unmount();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await expect
@@ -75,7 +74,7 @@ describe('report editing', () => {
 	it('reverts an edited report to its generated wording', async () => {
 		seed(written());
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await page.getByLabelText('Strength 1 for Ada Lovelace').fill('Teacher wording');
@@ -92,7 +91,7 @@ describe('report editing', () => {
 	it('undoes an edit', async () => {
 		seed(written());
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await page.getByLabelText('Strength 1 for Ada Lovelace').fill('Teacher wording');
@@ -109,7 +108,7 @@ describe('report editing', () => {
 	it('takes a typed edit back in one undo', async () => {
 		seed(written());
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await page.getByLabelText('Strength 1 for Ada Lovelace').fill('Teacher');
@@ -128,7 +127,7 @@ describe('report editing', () => {
 	it('shows pasted markup as literal text on screen and in print', async () => {
 		seed(written());
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await page.getByLabelText('Strength 1 for Ada Lovelace').fill(HOSTILE);
@@ -174,7 +173,7 @@ describe('out-of-date reports', () => {
 	it('marks only the edited-mark student out of date, not a boundary or model change', async () => {
 		seed(twoWritten());
 		stubFetch(() => topicNames({}));
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		expect(page.getByText('Out of date').query()).toBeNull();
@@ -208,7 +207,7 @@ describe('out-of-date reports', () => {
 	it('keeps wording without a model call and clears the marker', async () => {
 		seed(twoWritten());
 		const { stub } = stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		marksheetStore().setMark('ada', 'entry-1', 4);
@@ -228,7 +227,7 @@ describe('out-of-date reports', () => {
 		};
 		seed(doc);
 		const { stub } = stubFetch(() => ok('Fresh wording'));
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		marksheetStore().setMark('ada', 'entry-1', 4);
@@ -277,7 +276,7 @@ describe('out-of-date reports', () => {
 					)
 				: ok('Fresh wording')
 		);
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		marksheetStore().setMark('ada', 'entry-1', 4);
@@ -311,7 +310,7 @@ describe('out-of-date reports', () => {
 			release = resolve;
 		});
 		const { stub } = stubFetch(() => gate);
-		const shown = openPage(ReportsPage);
+		const shown = (await openReports()).screen;
 		await skipGrades();
 
 		await page.getByRole('button', { name: 'Write 1 report' }).click();
@@ -329,7 +328,7 @@ describe('out-of-date reports', () => {
 		const doc = twoWritten();
 		seed(doc);
 		stubFetch(() => ok('Fresh wording'));
-		const shown = openPage(ReportsPage);
+		const shown = (await openReports()).screen;
 
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		marksheetStore().setMark('ada', 'entry-1', 4);
@@ -357,7 +356,7 @@ describe('out-of-date reports', () => {
 	it('warns before printing one out-of-date page', async () => {
 		seed(twoWritten());
 		stubFetch();
-		const shown = openPage(ReportsPage);
+		const shown = (await openReports()).screen;
 
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		marksheetStore().setMark('ada', 'entry-1', 4);
@@ -390,7 +389,7 @@ describe('out-of-date reports', () => {
 		};
 		seed(doc);
 		const { stub } = stubFetch(() => ok('Fresh wording'));
-		const bulk = openPage(ReportsPage);
+		const bulk = (await openReports()).screen;
 
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		marksheetStore().setMark('ada', 'entry-1', 4);
@@ -432,7 +431,7 @@ describe('out-of-date reports', () => {
 		};
 		seed(doc);
 		const { stub } = stubFetch(() => ok('Fresh wording'));
-		const shown = openPage(ReportsPage);
+		const shown = (await openReports()).screen;
 
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		marksheetStore().setMark('ada', 'entry-1', 4);
@@ -464,7 +463,7 @@ describe('out-of-date reports', () => {
 	it('hides an absent student’s report, shows Blocked in the rail, and brings it back', async () => {
 		seed(twoWritten());
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
 		marksheetStore().setStudentAbsent('ada', true);
@@ -502,7 +501,7 @@ describe('review fixes', () => {
 	it('flags an emptied areas section for a student who dropped marks, and prints it blank', async () => {
 		seed(ownWritten(plain(), { areasForImprovement: ['Check units'] }));
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await page.getByLabelText('Area for improvement 1 for Ada Lovelace').fill('');
@@ -518,7 +517,7 @@ describe('review fixes', () => {
 		doc.marks['ada'] = { 'entry-1': 4, 'entry-2': 6 };
 		seed(ownWritten(doc, { areasForImprovement: [] }));
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		expect(document.querySelector('[data-testid="print-root"]')?.textContent).toContain(
@@ -530,7 +529,7 @@ describe('review fixes', () => {
 	it('edits each feedback item inside the printed list markup', async () => {
 		seed(ownWritten(plain(), { strengths: ['First strength', 'Second strength'] }));
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		const sheet = document.querySelector('main [data-report-id="ada"]');

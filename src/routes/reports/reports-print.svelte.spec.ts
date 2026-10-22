@@ -4,9 +4,7 @@ import { cleanup } from 'vitest-browser-svelte';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import { confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { generationInputFor } from '$lib/marksheet/report-input.js';
-import { openPage } from '../spec-helpers.js';
-import ReportsPage from './+page.svelte';
-import { stubFetch } from './reports.spec-helpers.js';
+import { stubFetch, openReports } from './reports.spec-helpers.js';
 
 afterEach(() => {
 	cleanup();
@@ -74,7 +72,7 @@ describe('one-page fit', () => {
 	it('shrinks a long edit without a flag, and flags an over-long one with its mm over', async () => {
 		seed(fitting());
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await page.getByLabelText('Area for improvement 1 for Ada Lovelace').fill(proseWords(300));
@@ -140,7 +138,7 @@ describe('one-page fit', () => {
 		);
 		seed(doc);
 		stubFetch();
-		openPage(ReportsPage);
+		await openReports();
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await vi.waitFor(
@@ -155,7 +153,7 @@ describe('one-page fit', () => {
 	it('asks first when Print all would print a flagged page', async () => {
 		seed(fitting());
 		stubFetch();
-		const shown = openPage(ReportsPage);
+		const shown = (await openReports()).screen;
 
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
 		await page.getByLabelText('Area for improvement 1 for Ada Lovelace').fill(proseWords(370));

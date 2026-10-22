@@ -4,7 +4,8 @@
 	the editable half of this surface.
 -->
 <script lang="ts">
-	import AnalysisView from '$lib/components/marksheet/AnalysisView.svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import MarksheetGrid from '$lib/components/marksheet/MarksheetGrid.svelte';
 	import ReportBanner from '$lib/components/report/ReportBanner.svelte';
 	import BackupCard from '$lib/components/shell/BackupCard.svelte';
@@ -16,11 +17,6 @@
 
 	// The route's load guard has read storage by the time this renders.
 	const store = marksheetStore();
-
-	/** Which half of the sheet is on screen: the grid, or the whole sheet's figures. */
-	let view = $state<'grid' | 'analysis'>('grid');
-	/** The entry the analysis was opened at, to outline and scroll to, or null for all of them. */
-	let highlighted = $state<string | null>(null);
 
 	const entries = $derived(store.entries);
 	const students = $derived(store.students);
@@ -37,8 +33,10 @@
 
 	/** Open the analysis, at one entry when the teacher asked from that entry's figure. */
 	function openAnalysis(entryId: string | null): void {
-		highlighted = entryId;
-		view = 'analysis';
+		const path = resolve('/marksheet/analysis');
+		// resolve() has no query string, so the base-resolved path takes it here.
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		void goto(entryId === null ? path : `${path}?entry=${encodeURIComponent(entryId)}`);
 	}
 </script>
 
@@ -47,28 +45,24 @@
 </svelte:head>
 
 <main class="mx-auto max-w-6xl space-y-4 p-6">
-	{#if view === 'grid'}
-		<header class="space-y-3">
-			<div class="space-y-1">
-				<PaperLabelInput />
-				<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-					<Input
-						aria-label="Class name"
-						class="h-8 w-40 border-transparent bg-transparent px-1 shadow-none hover:border-input"
-						placeholder="Name this class"
-						value={className ?? ''}
-						oninput={(event) => store.setClassName(event.currentTarget.value)}
-					/>
-					<p class="text-sm text-muted-foreground">{summary}</p>
-				</div>
+	<header class="space-y-3">
+		<div class="space-y-1">
+			<PaperLabelInput />
+			<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+				<Input
+					aria-label="Class name"
+					class="h-8 w-40 border-transparent bg-transparent px-1 shadow-none hover:border-input"
+					placeholder="Name this class"
+					value={className ?? ''}
+					oninput={(event) => store.setClassName(event.currentTarget.value)}
+				/>
+				<p class="text-sm text-muted-foreground">{summary}</p>
 			</div>
-			<BackupCard />
-		</header>
+		</div>
+		<BackupCard />
+	</header>
 
-		<ReportBanner />
+	<ReportBanner />
 
-		<MarksheetGrid onViewAnalysis={openAnalysis} />
-	{:else}
-		<AnalysisView highlight={highlighted} onBack={() => (view = 'grid')} />
-	{/if}
+	<MarksheetGrid onViewAnalysis={openAnalysis} />
 </main>

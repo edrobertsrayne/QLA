@@ -1,9 +1,16 @@
 // Test-only: shared fixtures and fetch stubs for the reports page specs.
+
+// The one-page fit measures real layout, so the stylesheet has to be in the page.
+import '../../app.css';
 import { expect, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import { confirmed, entry, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { generationInputFor } from '$lib/marksheet/report-input.js';
+import { marksheetStore } from '$lib/marksheet/index.js';
+import { render } from 'vitest-browser-svelte';
+import ReportsHarness from './ReportsHarness.test.svelte';
+import { TestRouter } from './reports-router.spec-helpers.js';
 
 export const HOSTILE = '<img src=x onerror=window.__pwned=1> well done';
 
@@ -200,3 +207,13 @@ export const posted = (stub: { mock: { calls: unknown[][] } }) =>
 	stub.mock.calls
 		.filter(([url]) => String(url) === '/api/report')
 		.map(([, init]) => JSON.parse((init as { body: string }).body));
+
+/** Open the reports routes at a URL the way the router does: through the layout load, redirects included. */
+export async function openReports(path = '/reports') {
+	marksheetStore().load();
+	const router = new TestRouter(path);
+	router.install();
+	await router.settle();
+	const screen = render(ReportsHarness, { router });
+	return { screen, router };
+}

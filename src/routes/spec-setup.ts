@@ -13,5 +13,5 @@ vi.mock('$app/navigation', () => ({ goto }));
 beforeEach(() => {
 	marksheetStore().wipe();
 	localStorage.clear();
-	goto.mockClear();
+	goto.mockReset();
 });
