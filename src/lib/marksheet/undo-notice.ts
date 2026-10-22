@@ -14,6 +14,7 @@ export type UndoableChange =
 			/** What the notice calls what went. */
 			name: string;
 	  }
+	/** A paste or a class-list upload: the paste notice speaks for it. */
 	| { kind: 'mark-paste' }
 	| { kind: 'report-edit'; studentId: string }
 	| { kind: 'report-kept'; studentId: string }
