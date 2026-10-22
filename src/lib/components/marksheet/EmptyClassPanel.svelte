@@ -1,5 +1,5 @@
 <!--
-	Where an empty class starts: a column of names to paste, or one at a time.
+	Where an empty class starts: a column of names to paste, a CSV to upload, or one at a time.
 	The paste target and the one-at-a-time row want room the grid's columns do
 	not have to give.
 -->
@@ -8,6 +8,7 @@
 	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import UploadStudentsDialog from './UploadStudentsDialog.svelte';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 
 	let { onAddOne }: { onAddOne: () => void } = $props();
@@ -39,7 +40,10 @@
 		One name per line, as your class list has them. A comma means
 		<code>Surname, First name</code>; otherwise the last word is the surname.
 	</p>
-	<Button variant="ghost" size="sm" class="w-fit" onclick={onAddOne}>
-		<UserPlusIcon class="size-4" /> Or add students one at a time
-	</Button>
+	<div class="flex flex-wrap items-center gap-2">
+		<UploadStudentsDialog />
+		<Button variant="ghost" size="sm" class="w-fit" onclick={onAddOne}>
+			<UserPlusIcon class="size-4" /> Or add students one at a time
+		</Button>
+	</div>
 </div>

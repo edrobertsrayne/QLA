@@ -52,6 +52,37 @@ describe('class', () => {
 		expect(store.document?.students).toEqual([student('student-1', 'Ada', 'Lovelace')]);
 	});
 
+	it('adds an uploaded class list to the end, skipping duplicates, in one undo', () => {
+		const { store } = openMarksheet({ students: [student('student-1', 'Ada', 'Lovelace')] });
+		const names = [
+			{ firstName: 'ada', surname: 'LOVELACE' },
+			{ firstName: 'Grace', surname: 'Hopper' },
+			{ firstName: 'Grace', surname: 'Hopper' },
+			{ firstName: 'Cher', surname: '' }
+		];
+
+		store.addStudentsFromUpload(names);
+
+		expect(store.document?.students.map(({ firstName }) => firstName)).toEqual([
+			'Ada',
+			'Grace',
+			'Cher'
+		]);
+		expect(store.pasteNotice).toMatchObject({ studentsAdded: 2, duplicatesSkipped: 2 });
+
+		expect(store.undo()).toBe(true);
+		expect(store.document?.students).toEqual([student('student-1', 'Ada', 'Lovelace')]);
+	});
+
+	it('still lets paste and add-one repeat a name', () => {
+		const { store } = openMarksheet({ students: [student('student-1', 'Ada', 'Lovelace')] });
+
+		store.addStudent({ firstName: 'Ada', surname: 'Lovelace' });
+		store.pasteNames('Lovelace, Ada');
+
+		expect(store.document?.students).toHaveLength(3);
+	});
+
 	it('maps a pasted column of names to first names and surnames', () => {
 		const { store } = openMarksheet();
 
