@@ -79,6 +79,17 @@ function trimOrNull(value: string | null): string | null {
 	return trimmed === '' ? null : trimmed;
 }
 
+/** Sets a trimmed AO description, or removes the key when it is blank. */
+function applyAoDescription(
+	descriptions: AoDescriptions,
+	ao: AssessmentObjective,
+	text: string | null
+): void {
+	const trimmed = trimOrNull(text);
+	if (trimmed === null) delete descriptions[ao];
+	else descriptions[ao] = trimmed;
+}
+
 export class MarksheetStore {
 	readonly #now: () => Date;
 	readonly #persistence: DocumentPersistence;
@@ -194,8 +205,7 @@ export class MarksheetStore {
 
 		const aoDescriptions: AoDescriptions = {};
 		for (const { ao, description } of input.breakdown.aoDescriptions) {
-			const trimmed = trimOrNull(description);
-			if (trimmed !== null) aoDescriptions[ao] = trimmed;
+			applyAoDescription(aoDescriptions, ao, description);
 		}
 
 		const document: MarksheetDocument = {
@@ -321,9 +331,7 @@ export class MarksheetStore {
 	setAoDescription(ao: AssessmentObjective, description: string): void {
 		const document = this.#editable();
 		if (!document) return;
-		const trimmed = trimOrNull(description);
-		if (trimmed === null) delete document.breakdown.aoDescriptions[ao];
-		else document.breakdown.aoDescriptions[ao] = trimmed;
+		applyAoDescription(document.breakdown.aoDescriptions, ao, description);
 		this.#mutated();
 	}
 
