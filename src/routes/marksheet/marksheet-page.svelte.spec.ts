@@ -225,7 +225,8 @@ describe('marksheet page', () => {
 			confirmed({
 				breakdown: {
 					entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
-					warnings: []
+					warnings: [],
+					aoDescriptions: {}
 				},
 				students: [student('student-1', 'Ada', 'Lovelace')],
 				marks: { 'student-1': { 'entry-1': 3 } }
@@ -288,7 +289,8 @@ describe('marksheet page', () => {
 						entry('entry-2', '1b', '1'),
 						entry('entry-3', '2', '2')
 					],
-					warnings: []
+					warnings: [],
+					aoDescriptions: {}
 				},
 				students: [student('student-1', 'Ada', 'Lovelace')]
 			})
@@ -335,7 +337,8 @@ describe('marksheet page', () => {
 							code: 'SUMMARY_LENGTH',
 							message: 'Summary is 2 words; expected 3–8 words.'
 						}
-					]
+					],
+					aoDescriptions: {}
 				}
 			})
 		);
@@ -364,7 +367,8 @@ describe('marksheet page', () => {
 							message: 'Summary is 2 words; expected 3–8 words.'
 						},
 						{ questionId: null, code: 'MARKS_TOTAL', message: 'Marks total 76; paper says 86.' }
-					]
+					],
+					aoDescriptions: {}
 				}
 			})
 		);
@@ -393,7 +397,7 @@ describe('marksheet page', () => {
 		);
 		seed(
 			confirmed({
-				breakdown: { entries, warnings: [] },
+				breakdown: { entries, warnings: [], aoDescriptions: {} },
 				students: [student('student-1', 'Alexandrina-Bartholomew-Montgomery', 'Lovelace')]
 			})
 		);

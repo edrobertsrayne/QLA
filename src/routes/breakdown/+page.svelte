@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import AoDescriptionsCard from '$lib/components/marksheet/AoDescriptionsCard.svelte';
 	import BreakdownTable from '$lib/components/marksheet/BreakdownTable.svelte';
 	import BackupCard from '$lib/components/shell/BackupCard.svelte';
 	import PaperLabelInput from '$lib/components/shell/PaperLabelInput.svelte';
@@ -200,6 +201,8 @@
 					</p>
 				{/if}
 			</section>
+
+			<AoDescriptionsCard />
 
 			<section class="space-y-1 rounded-lg border p-3">
 				<h2 class="text-sm font-semibold">Needs attention ({attention.length})</h2>

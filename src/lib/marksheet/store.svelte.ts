@@ -29,6 +29,7 @@ import {
 	marksOverMax,
 	putMark,
 	removeMark,
+	type AoDescriptions,
 	type BreakdownEntry,
 	type EntryValues,
 	type MarksheetDocument,
@@ -191,6 +192,12 @@ export class MarksheetStore {
 			questionId: entryIdFor(warning.questionId)
 		}));
 
+		const aoDescriptions: AoDescriptions = {};
+		for (const { ao, description } of input.breakdown.aoDescriptions) {
+			const trimmed = trimOrNull(description);
+			if (trimmed !== null) aoDescriptions[ao] = trimmed;
+		}
+
 		const document: MarksheetDocument = {
 			schemaVersion: DOCUMENT_SCHEMA_VERSION,
 			createdAt: at.toISOString(),
@@ -205,7 +212,7 @@ export class MarksheetStore {
 				boundaries: null,
 				belowLowestLabel: DEFAULT_BELOW_LOWEST_LABEL
 			},
-			breakdown: { entries, warnings },
+			breakdown: { entries, warnings, aoDescriptions },
 			students: [],
 			marks: {},
 			topicNames: {},
@@ -304,6 +311,20 @@ export class MarksheetStore {
 		this.#editEntries([entryId], (entry) => {
 			entry.ao = ao;
 		});
+	}
+
+	/**
+	 * Describe an assessment objective for the report's By skill strip. A blank
+	 * description clears it. Display only: reports are written without it, so it
+	 * leaves every report current.
+	 */
+	setAoDescription(ao: AssessmentObjective, description: string): void {
+		const document = this.#editable();
+		if (!document) return;
+		const trimmed = trimOrNull(description);
+		if (trimmed === null) delete document.breakdown.aoDescriptions[ao];
+		else document.breakdown.aoDescriptions[ao] = trimmed;
+		this.#mutated();
 	}
 
 	/**

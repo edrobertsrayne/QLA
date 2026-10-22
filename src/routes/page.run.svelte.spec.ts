@@ -37,7 +37,8 @@ const parsedRun = {
 				commandWord: 'Explain',
 				ao: 'AO1'
 			}
-		]
+		],
+		aoDescriptions: [{ ao: 'AO1', description: 'Demonstrate knowledge and understanding' }]
 	},
 	warnings: [{ questionId: '1a', code: 'SUMMARY_LENGTH', message: 'Not 3–8 words.' }],
 	usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30, estCost: 0.001 }

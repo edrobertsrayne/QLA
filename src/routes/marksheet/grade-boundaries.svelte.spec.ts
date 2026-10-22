@@ -24,7 +24,8 @@ function gradedClass(over: Partial<MarksheetDocument> = {}): MarksheetDocument {
 				entry('entry-1', '1a', '1', { marks: 4, summary: 'Define a term' }),
 				entry('entry-2', '1b', '1', { marks: 6, summary: 'Explain the result' })
 			],
-			warnings: []
+			warnings: [],
+			aoDescriptions: {}
 		},
 		students: [
 			student('full', 'Full', 'Marks'),
@@ -90,7 +91,11 @@ describe('grade boundaries', () => {
 	it('opens Set grade boundaries with no grades yet, saving A level labels', async () => {
 		seed(
 			confirmed({
-				breakdown: { entries: [entry('entry-1', '1a', '1', { marks: 10 })], warnings: [] },
+				breakdown: {
+					entries: [entry('entry-1', '1a', '1', { marks: 10 })],
+					warnings: [],
+					aoDescriptions: {}
+				},
 				students: [student('student-1', 'Ada', 'Lovelace')],
 				marks: { 'student-1': { 'entry-1': 8 } }
 			})
@@ -126,7 +131,11 @@ describe('grade boundaries', () => {
 	it('shows each problem on its row and keeps Save disabled until fixed', async () => {
 		seed(
 			confirmed({
-				breakdown: { entries: [entry('entry-1', '1a', '1', { marks: 10 })], warnings: [] },
+				breakdown: {
+					entries: [entry('entry-1', '1a', '1', { marks: 10 })],
+					warnings: [],
+					aoDescriptions: {}
+				},
 				students: [student('student-1', 'Ada', 'Lovelace')]
 			})
 		);
@@ -188,7 +197,11 @@ describe('grade boundaries', () => {
 	it('rejects non-whole marks, duplicate and missing labels, and a clash with the below-lowest label', async () => {
 		seed(
 			confirmed({
-				breakdown: { entries: [entry('entry-1', '1a', '1', { marks: 10 })], warnings: [] },
+				breakdown: {
+					entries: [entry('entry-1', '1a', '1', { marks: 10 })],
+					warnings: [],
+					aoDescriptions: {}
+				},
 				students: [student('student-1', 'Ada', 'Lovelace')]
 			})
 		);
@@ -220,7 +233,11 @@ describe('grade boundaries', () => {
 	it('switching scale keeps marks typed against carried-over labels', async () => {
 		seed(
 			confirmed({
-				breakdown: { entries: [entry('entry-1', '1a', '1', { marks: 10 })], warnings: [] },
+				breakdown: {
+					entries: [entry('entry-1', '1a', '1', { marks: 10 })],
+					warnings: [],
+					aoDescriptions: {}
+				},
 				students: [student('student-1', 'Ada', 'Lovelace')]
 			})
 		);
@@ -310,7 +327,11 @@ describe('grade boundaries', () => {
 	it('boundaries saved in the dialog reach storage, and a blank scale saves marks only', async () => {
 		seed(
 			confirmed({
-				breakdown: { entries: [entry('entry-1', '1a', '1', { marks: 10 })], warnings: [] },
+				breakdown: {
+					entries: [entry('entry-1', '1a', '1', { marks: 10 })],
+					warnings: [],
+					aoDescriptions: {}
+				},
 				students: [student('student-1', 'Ada', 'Lovelace')],
 				marks: { 'student-1': { 'entry-1': 8 } }
 			})

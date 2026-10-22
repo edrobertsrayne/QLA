@@ -7,12 +7,15 @@
 // by name, so codes that share a name share a row. Entries with no
 // specification point count only toward their assessment objective.
 
+import { assessmentObjectiveOf } from '$lib/parse/assessment-objectives.js';
 import { facilityBand, type RagBand } from './analysis.js';
 import { studentTotal, totalMarks, type MarksheetDocument } from './document.js';
 import { rollupBy, topicNamesFor, type RollupTotals } from './report-rollup.js';
 
 /** One roll-up row: marks summed over the entries carrying the name. */
 export interface RollupRow extends RollupTotals {
+	/** Shown beside the name on the page only: the AO description, never sent to the model. */
+	description: string | null;
 	share: number;
 	band: RagBand;
 }
@@ -42,8 +45,14 @@ function shareOf(gained: number, available: number): { share: number; band: RagB
 	return { share, band: facilityBand(share) };
 }
 
-function toRow(totals: RollupTotals): RollupRow {
-	return { ...totals, ...shareOf(totals.gained, totals.available) };
+function toRow(totals: RollupTotals, description: string | null = null): RollupRow {
+	return { ...totals, description, ...shareOf(totals.gained, totals.available) };
+}
+
+/** The description of the assessment objective a roll-up row is named for, if it has one. */
+function descriptionOf(document: MarksheetDocument, name: string): string | null {
+	const ao = assessmentObjectiveOf(name);
+	return (ao && document.breakdown.aoDescriptions[ao]) || null;
 }
 
 /** Every figure on one student's report, calculated locally from the document. */
@@ -74,8 +83,12 @@ export function reportFiguresFor(
 		total,
 		available,
 		percent: available === 0 ? 0 : Math.round((total / available) * 100),
-		topics: rollupBy(rows, (row) => topicNamesFor(document, row.entry.specPoint)).map(toRow),
-		aos: rollupBy(rows, (row) => (row.entry.ao ? [row.entry.ao] : [])).map(toRow),
+		topics: rollupBy(rows, (row) => topicNamesFor(document, row.entry.specPoint)).map((totals) =>
+			toRow(totals)
+		),
+		aos: rollupBy(rows, (row) => (row.entry.ao ? [row.entry.ao] : [])).map((totals) =>
+			toRow(totals, descriptionOf(document, totals.name))
+		),
 		entries: rows.map(({ entry, gained, available }) => ({
 			entryId: entry.id,
 			label: entry.label,

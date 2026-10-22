@@ -32,7 +32,7 @@ describe('one-page fit', () => {
 		const marks: Record<string, number> = {};
 		for (const candidate of entries) marks[candidate.id] = 3;
 		const doc = confirmed({
-			breakdown: { entries, warnings: [] },
+			breakdown: { entries, warnings: [], aoDescriptions: {} },
 			students: [student('ada', 'Ada', 'Lovelace')],
 			marks: { ada: marks }
 		});
@@ -119,7 +119,7 @@ describe('one-page fit', () => {
 		const marks: Record<string, number> = {};
 		for (const candidate of entries) marks[candidate.id] = 2;
 		const doc = confirmed({
-			breakdown: { entries, warnings: [] },
+			breakdown: { entries, warnings: [], aoDescriptions: {} },
 			students: [student('ada', 'Ada', 'Lovelace')],
 			marks: { ada: marks },
 			topicNames

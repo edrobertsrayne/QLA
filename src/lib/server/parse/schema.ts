@@ -4,6 +4,8 @@
 // plus an optional exam specification URL fetched server-side per run
 // (no cache). No spec validation: `specPoint` is an exact verbatim lift
 // from the markscheme or null — never inferred, even when a spec is given.
+// The spec's only other contribution is `aoDescriptions`: one short summary
+// per assessment objective, null when the spec does not define it.
 
 import type { AssessmentObjective } from '$lib/parse/assessment-objectives.js';
 
@@ -29,9 +31,23 @@ export interface ParseQuestion {
 	ao: AssessmentObjective | null;
 }
 
+/**
+ * A short student-readable description of one assessment objective, summarised
+ * from the specification's own wording, or null when no specification was
+ * attached or it does not define that objective. Never inferred.
+ */
+export interface AoDescription {
+	ao: AssessmentObjective;
+	description: string | null;
+}
+
+/** Longest description kept, in words: the prompt asks for about 10, so 12 allows for rounding. */
+export const MAX_AO_DESCRIPTION_WORDS = 12;
+
 /** Structured per-question breakdown of an upload. */
 export interface Breakdown {
 	questions: ParseQuestion[];
+	aoDescriptions: AoDescription[];
 }
 
 /** A soft finding: the run succeeds (HTTP 200) with the breakdown intact. */

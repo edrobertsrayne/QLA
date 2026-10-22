@@ -16,8 +16,14 @@ export const STORAGE_KEY = 'qla:marksheet:v1';
 /** Keys unreadable documents are preserved under, suffixed with an ISO timestamp. */
 export const CORRUPT_KEY_PREFIX = 'qla:marksheet:corrupt:';
 
-/** Only version we know how to read. Anything else is treated as unreadable. */
-export const DOCUMENT_SCHEMA_VERSION = 2;
+/** The version we write. */
+export const DOCUMENT_SCHEMA_VERSION = 3;
+
+/**
+ * Versions we know how to read. Version 2 predates AO descriptions and reads as
+ * a document with none; anything else is treated as unreadable.
+ */
+const READABLE_SCHEMA_VERSIONS: readonly number[] = [2, DOCUMENT_SCHEMA_VERSION];
 
 /** The label for a total below every grade boundary, when the paper has grades. */
 export const DEFAULT_BELOW_LOWEST_LABEL = 'U';
@@ -91,10 +97,18 @@ export interface StoredStudent {
 	absent: boolean;
 }
 
-/** The breakdown as stored: its entries, and the findings the parse left beside them. */
+/** A short, student-readable description per assessment objective that has one. */
+export type AoDescriptions = Partial<Record<AssessmentObjective, string>>;
+
+/**
+ * The breakdown as stored: its entries, the findings the parse left beside
+ * them, and the AO descriptions lifted from the specification. The
+ * descriptions are display only: reports are written without them.
+ */
 export interface StoredBreakdown {
 	entries: BreakdownEntry[];
 	warnings: StoredWarning[];
+	aoDescriptions: AoDescriptions;
 }
 
 /** One breakdown entry's figures as a report was written from them. */
@@ -227,6 +241,19 @@ function parseEntry(value: unknown): BreakdownEntry | null {
 		...entryValuesOf(value),
 		original: original === null ? null : entryValuesOf(original ?? value)
 	};
+}
+
+/** Absent in a document written before descriptions existed: none. `null` means invalid. */
+function parseAoDescriptions(value: unknown): AoDescriptions | null {
+	if (value === undefined) return {};
+	if (!isRecord(value)) return null;
+	const descriptions: AoDescriptions = {};
+	for (const [key, description] of Object.entries(value)) {
+		const ao = assessmentObjectiveOf(key);
+		if (ao === null || typeof description !== 'string') return null;
+		descriptions[ao] = description;
+	}
+	return descriptions;
 }
 
 function parseWarning(value: unknown): StoredWarning | null {
@@ -368,7 +395,10 @@ function parseReports(value: unknown): Record<string, StoredReport> | null {
  */
 function parseDocumentValue(value: unknown): MarksheetDocument | null {
 	if (!isRecord(value)) return null;
-	if (value['schemaVersion'] !== DOCUMENT_SCHEMA_VERSION) return null;
+	const schemaVersion = value['schemaVersion'];
+	if (typeof schemaVersion !== 'number' || !READABLE_SCHEMA_VERSIONS.includes(schemaVersion)) {
+		return null;
+	}
 
 	const createdAt = value['createdAt'];
 	const updatedAt = value['updatedAt'];
@@ -407,6 +437,8 @@ function parseDocumentValue(value: unknown): MarksheetDocument | null {
 	const entries = parseAll(rawEntries, parseEntry);
 	const warnings = parseAll(rawWarnings, parseWarning);
 	if (!entries || !warnings) return null;
+	const aoDescriptions = parseAoDescriptions(breakdown['aoDescriptions']);
+	if (!aoDescriptions) return null;
 
 	const rawStudents = value['students'];
 	if (!Array.isArray(rawStudents)) return null;
@@ -436,7 +468,7 @@ function parseDocumentValue(value: unknown): MarksheetDocument | null {
 			boundaries,
 			belowLowestLabel
 		},
-		breakdown: { entries, warnings },
+		breakdown: { entries, warnings, aoDescriptions },
 		students,
 		marks,
 		topicNames,

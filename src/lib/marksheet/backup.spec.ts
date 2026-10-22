@@ -40,7 +40,8 @@ function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocumen
 					original: null
 				}
 			],
-			warnings: []
+			warnings: [],
+			aoDescriptions: {}
 		},
 		students: [
 			{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false },

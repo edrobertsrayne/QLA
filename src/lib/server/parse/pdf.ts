@@ -154,6 +154,7 @@ export function buildPromptText(input: {
 		'Return ONLY a single JSON object — no markdown fences, no commentary.',
 		nativeHint,
 		'The specification below is extra grounding only: specPoint is still an exact spec reference lifted verbatim from the markscheme, or null when the markscheme gives none — NEVER infer or guess, even when the specification lists candidate codes.',
+		'Top level also has aoDescriptions: one { ao, description } entry for each of AO1, AO2, AO3. description is a single student-readable phrase of about 10 words at most that summarises how the specification text itself defines that assessment objective. Summarise from the specification text ONLY; NEVER invent or infer a description. Use null when no specification is provided or it does not define that objective.',
 		directive,
 		'',
 		'Top level: questions array, one entry per undivided question and one per separately marked subquestion (e.g. 1a, 2bii). A question that is subdivided gets no entry of its own, and neither does an unmarked stem whose marks sit on its own subquestions (e.g. no 2b entry when 2bi and 2bii carry the marks).',

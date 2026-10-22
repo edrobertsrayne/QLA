@@ -8,6 +8,10 @@
 
 import type { BreakdownEntry, EditableField, StoredBreakdown, StoredWarning } from './document.js';
 import { EDITABLE_FIELDS, totalMarks } from './document.js';
+import {
+	ASSESSMENT_OBJECTIVES,
+	type AssessmentObjective
+} from '$lib/parse/assessment-objectives.js';
 import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
 
 /** A contiguous run of entries belonging to one question: one band of the table. */
@@ -250,4 +254,11 @@ export function fallbackExplanation(
 		.filter((warning) => warning.code === MISSING_QUESTION_NUMBER)
 		.map((warning) => warning.message)
 		.join(' ');
+}
+
+/** The assessment objectives any entry carries, in AO order: the ones a description is worth having for. */
+export function usedAssessmentObjectives(
+	entries: readonly BreakdownEntry[]
+): AssessmentObjective[] {
+	return ASSESSMENT_OBJECTIVES.filter((ao) => entries.some((entry) => entry.ao === ao));
 }
