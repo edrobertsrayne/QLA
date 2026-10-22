@@ -20,6 +20,9 @@
 	} from '$lib/marksheet/breakdown.js';
 	import { exportMarksNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { count } from '$lib/prose.js';
+	// PROTOTYPE (#93): variant B puts the backup control in this row.
+	import BackupVariantB from '$lib/components/shell/backup-prototype/VariantB.svelte';
+	import { protoVariant } from '$lib/components/shell/backup-prototype/proto.svelte.js';
 
 	let { onViewAnalysis }: { onViewAnalysis: (entryId: string | null) => void } = $props();
 
@@ -117,6 +120,7 @@
 	     end from View analysis beside the marks export: a data tool, never
 	     mistaken for the page's own backup. -->
 	<div class="ml-auto flex items-center gap-2">
+		{#if protoVariant() === 'B'}<BackupVariantB />{/if}
 		<EditBreakdownDialog />
 		<Button variant="outline" size="xs" onclick={exportMarksNow}>
 			<FileSpreadsheetIcon class="size-3.5" /> Export marks to spreadsheet (.csv)

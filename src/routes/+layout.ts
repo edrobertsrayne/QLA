@@ -1,4 +1,6 @@
 import { redirect } from '@sveltejs/kit';
+import { dev } from '$app/environment';
+import { demoDocument } from '$lib/components/shell/backup-prototype/demo-document.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 
 // The stored marksheet document lives in localStorage, so every route renders
@@ -20,6 +22,9 @@ function onMarksheetSurface(pathname: string): boolean {
 export function load({ url }: { url: URL }): void {
 	const store = marksheetStore();
 	store.load();
+	// PROTOTYPE (#93): an empty browser gets a demo marksheet for the variants.
+	if (dev && url.pathname === '/marksheet' && url.searchParams.has('variant'))
+		if (store.route() === '/') store.restoreBackup(demoDocument());
 	const route = store.route();
 	if (url.pathname === route) return;
 	// The analysis and the report flow are part of the marksheet surface: a

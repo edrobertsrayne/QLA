@@ -9,6 +9,11 @@
 	import MarksheetGrid from '$lib/components/marksheet/MarksheetGrid.svelte';
 	import ReportBanner from '$lib/components/report/ReportBanner.svelte';
 	import BackupCard from '$lib/components/shell/BackupCard.svelte';
+	// PROTOTYPE (#93): ?variant=A..E swaps the backup control for a mockup.
+	import BackupPrototypeControls from '$lib/components/shell/backup-prototype/BackupPrototypeControls.svelte';
+	import BackupVariantA from '$lib/components/shell/backup-prototype/VariantA.svelte';
+	import BackupVariantD from '$lib/components/shell/backup-prototype/VariantD.svelte';
+	import { protoVariant } from '$lib/components/shell/backup-prototype/proto.svelte.js';
 	import PaperLabelInput from '$lib/components/shell/PaperLabelInput.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { totalMarks } from '$lib/marksheet/document.js';
@@ -30,6 +35,7 @@
 			`${marks} marks`
 		].join(' · ')
 	);
+	const variant = $derived(protoVariant());
 
 	/** Open the analysis, at one entry when the teacher asked from that entry's figure. */
 	function openAnalysis(entryId: string | null): void {
@@ -57,12 +63,21 @@
 					oninput={(event) => store.setClassName(event.currentTarget.value)}
 				/>
 				<p class="text-sm text-muted-foreground">{summary}</p>
+				{#if variant === 'D'}<BackupVariantD />{/if}
 			</div>
 		</div>
-		<BackupCard />
+		{#if variant === null}
+			<BackupCard />
+		{:else if variant === 'A'}
+			<BackupVariantA />
+		{/if}
 	</header>
 
 	<ReportBanner />
 
 	<MarksheetGrid onViewAnalysis={openAnalysis} />
 </main>
+
+{#if variant !== null}
+	<BackupPrototypeControls />
+{/if}

@@ -12,6 +12,9 @@
 	import NewUploadDialog from '$lib/components/marksheet/NewUploadDialog.svelte';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import ThemeToggle from './ThemeToggle.svelte';
+	// PROTOTYPE (#93): variant E puts the backup control in the nav.
+	import BackupVariantE from './backup-prototype/VariantE.svelte';
+	import { protoVariant } from './backup-prototype/proto.svelte.js';
 
 	const store = marksheetStore();
 
@@ -31,6 +34,7 @@
 		</ol>
 	</nav>
 	<div class="ml-auto flex items-center gap-2">
+		{#if protoVariant() === 'E'}<BackupVariantE />{/if}
 		{#if store.document}
 			<NewUploadDialog />
 		{/if}

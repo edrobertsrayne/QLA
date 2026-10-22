@@ -10,6 +10,10 @@
 	import { Button } from '$lib/components/ui/button';
 	import { backUpNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { statusLine, storageNote, type StatusTone } from '$lib/marksheet/status.js';
+	// PROTOTYPE (#93): variant C puts the backup control in this bar; the other
+	// variants keep today's note, read from the fake backup state.
+	import BackupVariantC from '$lib/components/shell/backup-prototype/VariantC.svelte';
+	import { proto, protoVariant } from '$lib/components/shell/backup-prototype/proto.svelte.js';
 
 	const store = marksheetStore();
 
@@ -72,7 +76,13 @@
 				Download backup now
 			</Button>
 		{/if}
-		{#if note}
+		{#if protoVariant() === 'C'}
+			<BackupVariantC />
+		{:else if protoVariant() !== null}
+			<span class="ml-auto" data-testid="storage-note"
+				>Stored in this browser only · {proto.never ? 'no backup yet' : `backup ${proto.age}`}</span
+			>
+		{:else if note}
 			<span class="ml-auto" data-testid="storage-note">{note}</span>
 		{/if}
 	</footer>
