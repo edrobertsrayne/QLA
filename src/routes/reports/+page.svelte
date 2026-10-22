@@ -16,12 +16,7 @@
 	import TopicNamesStep from '$lib/components/report/TopicNamesStep.svelte';
 	import WhoStep from '$lib/components/report/WhoStep.svelte';
 	import WritingStep from '$lib/components/report/WritingStep.svelte';
-	import {
-		type ReportDownload,
-		downloadReportPdf,
-		downloadReportsPdf,
-		downloadReportsZip
-	} from '$lib/components/report/report-pdf.js';
+	import { downloadReports, type ReportDownload } from '$lib/components/report/report-pdf.js';
 	import { reportRoster, rowsOf } from '$lib/components/report/report-roster.js';
 	import { ReportRun } from '$lib/components/report/report-run.svelte.js';
 	import { Button } from '$lib/components/ui/button';
@@ -103,19 +98,16 @@
 		window.print();
 	}
 
-	/** What the PDF being made is for: one student's id, or `all`. Null when none is being made. */
-	let downloading = $state<string | null>(null);
+	/** The PDF being made, or null when none is. */
+	let downloading = $state<ReportDownload | null>(null);
 
-	async function download(ids: string[], kind: ReportDownload): Promise<void> {
+	async function download(request: ReportDownload): Promise<void> {
 		if (!document) return;
 		const printRoot = globalThis.document.querySelector<HTMLElement>('.print-root');
 		if (!printRoot) return;
-		const now = new Date();
-		downloading = kind === 'page' ? ids[0] : 'all';
+		downloading = request;
 		try {
-			if (kind === 'page') await downloadReportPdf(printRoot, document, ids[0], now);
-			else if (kind === 'one') await downloadReportsPdf(printRoot, document, ids, now);
-			else await downloadReportsZip(printRoot, document, ids, now);
+			await downloadReports(printRoot, document, request, new Date());
 		} catch (error) {
 			if (!(error instanceof ApiFailure)) throw error;
 			toast.error(error.message);
@@ -204,7 +196,7 @@
 			{run}
 			{downloading}
 			onprint={(ids) => void print(ids)}
-			ondownload={(ids, kind) => void download(ids, kind)}
+			ondownload={(request) => void download(request)}
 			onrewrite={rewriteHere}
 			onwritemore={writeAgain}
 		/>

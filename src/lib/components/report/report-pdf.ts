@@ -12,8 +12,16 @@ import {
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import { fetchPdf, printDocumentHtml } from '$lib/print-pdf.js';
 
-/** What a download is of: one student's page, every visible report as one PDF, or one PDF each in a zip. */
-export type ReportDownload = 'page' | 'one' | 'zip';
+/**
+ * What a download is of: one student's page as its own PDF, every report in
+ * `ids` as one PDF, or one PDF each in a zip. Also what the page is busy with
+ * while it runs.
+ */
+export type ReportDownload = { kind: 'page'; id: string } | { kind: 'one' | 'zip'; ids: string[] };
+
+/** The students a download covers, in order. */
+export const downloadIds = (download: ReportDownload): string[] =>
+	download.kind === 'page' ? [download.id] : download.ids;
 
 /** A copy of the print root holding only the pages of `ids`, in that order. */
 function rootOf(printRoot: HTMLElement, ids: string[]): HTMLElement {
@@ -31,28 +39,6 @@ function pdfOf(printRoot: HTMLElement, ids: string[]): Promise<Blob> {
 	return printDocumentHtml(rootOf(printRoot, ids)).then(fetchPdf);
 }
 
-/** One student's report as its own PDF. */
-export async function downloadReportPdf(
-	printRoot: HTMLElement,
-	document: MarksheetDocument,
-	id: string,
-	now: Date
-): Promise<void> {
-	const student = document.students.find((candidate) => candidate.id === id);
-	if (!student) return;
-	saveBlob(reportPdfFilename(document, student, now), await pdfOf(printRoot, [id]));
-}
-
-/** Every report in `ids` as one PDF, a page each, in the order given. */
-export async function downloadReportsPdf(
-	printRoot: HTMLElement,
-	document: MarksheetDocument,
-	ids: string[],
-	now: Date
-): Promise<void> {
-	saveBlob(reportsPdfFilename(document, now), await pdfOf(printRoot, ids));
-}
-
 /** A name not already taken: `-2`, `-3`… before the extension, for students who share a name. */
 function distinctName(name: string, taken: Set<string>): string {
 	let candidate = name;
@@ -62,7 +48,7 @@ function distinctName(name: string, taken: Set<string>): string {
 }
 
 /** One PDF per report in `ids`, zipped. */
-export async function downloadReportsZip(
+async function downloadZip(
 	printRoot: HTMLElement,
 	document: MarksheetDocument,
 	ids: string[],
@@ -82,4 +68,26 @@ export async function downloadReportsZip(
 		reportsZipFilename(document, now),
 		new Blob([zipSync(files, { level: 0 })], { type: 'application/zip' })
 	);
+}
+
+/** Render `download` from the print root and save the file. */
+export async function downloadReports(
+	printRoot: HTMLElement,
+	document: MarksheetDocument,
+	download: ReportDownload,
+	now: Date
+): Promise<void> {
+	switch (download.kind) {
+		case 'page': {
+			const student = document.students.find((candidate) => candidate.id === download.id);
+			if (!student) return;
+			saveBlob(reportPdfFilename(document, student, now), await pdfOf(printRoot, [download.id]));
+			return;
+		}
+		case 'one':
+			saveBlob(reportsPdfFilename(document, now), await pdfOf(printRoot, download.ids));
+			return;
+		case 'zip':
+			await downloadZip(printRoot, document, download.ids, now);
+	}
 }

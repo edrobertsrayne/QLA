@@ -16,7 +16,7 @@
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import { isFlagged, reportFit } from './report-fit.svelte.js';
 	import { railStatus, rowsOf, type RosterRow } from './report-roster.js';
-	import type { ReportDownload } from './report-pdf.js';
+	import { downloadIds, type ReportDownload } from './report-pdf.js';
 	import type { ReportRun } from './report-run.svelte.js';
 	import ReportSheet from './ReportSheet.svelte';
 
@@ -33,10 +33,10 @@
 		document: MarksheetDocument;
 		roster: RosterRow[];
 		run: ReportRun;
-		/** Who the PDF being made is for (a student's id or `all`), or null when none is. */
-		downloading: string | null;
+		/** The PDF being made, or null when none is. */
+		downloading: ReportDownload | null;
 		onprint: (ids: string[]) => void;
-		ondownload: (ids: string[], kind: ReportDownload) => void;
+		ondownload: (request: ReportDownload) => void;
 		onrewrite: (ids: string[]) => void;
 		onwritemore: (ids: string[]) => void;
 	} = $props();
@@ -129,8 +129,8 @@
 	}
 
 	const askPrint = (ids: string[]): void => askFirst(ids, 'print', () => onprint(ids));
-	const askDownload = (ids: string[], kind: ReportDownload): void =>
-		askFirst(ids, 'download', () => ondownload(ids, kind));
+	const askDownload = (request: ReportDownload): void =>
+		askFirst(downloadIds(request), 'download', () => ondownload(request));
 
 	function jumpTo(studentId: string): void {
 		globalThis.document
@@ -149,7 +149,9 @@
 			disabled={reviewIds.length === 0 || downloading !== null}
 			onclick={() => (choosingDownload = true)}
 		>
-			{downloading === 'all' ? 'Preparing PDFs…' : `Download all ${reviewIds.length}`}
+			{downloading !== null && downloading.kind !== 'page'
+				? 'Preparing PDFs…'
+				: `Download all ${reviewIds.length}`}
 		</Button>
 		{#if outOfDateIds.length > 0 && !run.running}
 			{@const skipped = includeEdited ? 0 : editedOutOfDateIds.length}
@@ -209,9 +211,11 @@
 						variant="outline"
 						size="sm"
 						disabled={downloading !== null}
-						onclick={() => askDownload([id], 'page')}
+						onclick={() => askDownload({ kind: 'page', id })}
 					>
-						{downloading === id ? 'Preparing PDF…' : 'Download PDF'}
+						{downloading?.kind === 'page' && downloading.id === id
+							? 'Preparing PDF…'
+							: 'Download PDF'}
 					</Button>
 					{#if document.reports[id].edit !== null}
 						<Badge variant="secondary">edited</Badge>
@@ -278,11 +282,11 @@
 		title="Download all {reviewIds.length}"
 		description="Save the reports as one PDF, a page each, or as a separate PDF for each student in a zip."
 		actions={[
-			{ label: 'One PDF', onclick: () => askDownload(reviewIds, 'one') },
+			{ label: 'One PDF', onclick: () => askDownload({ kind: 'one', ids: reviewIds }) },
 			{
 				label: 'Separate PDFs (zip)',
 				variant: 'outline',
-				onclick: () => askDownload(reviewIds, 'zip')
+				onclick: () => askDownload({ kind: 'zip', ids: reviewIds })
 			},
 			{ label: 'Cancel', variant: 'outline', onclick: () => {} }
 		]}
