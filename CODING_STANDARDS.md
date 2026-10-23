@@ -1,67 +1,147 @@
 # Coding standards
 
-Judgement calls for the reviewer. Each rule came from a mistake a review caught or from the project's first principles, YAGNI and KISS; anything `eslint.config.js` or `svelte-check` already enforces is left to them. Apply these to the diff under review, not to untouched code, and when two rules pull apart, the design with fewer moving parts wins.
+The rules code review checks, grounded in YAGNI and KISS.
 
-## Build for today's caller
+## Contents
 
-Every new option, parameter, branch, fallback, config key and export has a caller in the same change. A new abstraction (an interface, a generic helper, a lookup map, an extension point) arrives with its second real use, which is the same moment "Extract on the second copy" fires. Between two designs that both work, choose the one with fewer moving parts.
+- [How to apply](#how-to-apply)
+- [Design](#design)
+  - [Build for today's caller](#build-for-todays-caller)
+  - [Delete complexity, don't move it](#delete-complexity-dont-move-it)
+  - [Every layer earns its keep](#every-layer-earns-its-keep)
+  - [Special cases get their own home](#special-cases-get-their-own-home)
+- [Structure](#structure)
+  - [One reason to change](#one-reason-to-change)
+  - [Code lives where its concept lives](#code-lives-where-its-concept-lives)
+  - [Extract on the second copy](#extract-on-the-second-copy)
+  - [Split a file before it passes 1,000 lines](#split-a-file-before-it-passes-1000-lines)
+  - [Production modules export production API](#production-modules-export-production-api)
+- [Types, state and errors](#types-state-and-errors)
+  - [Make invalid states unreachable](#make-invalid-states-unreachable)
+  - [Types state the real contract](#types-state-the-real-contract)
+  - [Errors fail loudly](#errors-fail-loudly)
+  - [Related updates land together](#related-updates-land-together)
+- [Tests and comments](#tests-and-comments)
+  - [Tests fail when the behaviour breaks](#tests-fail-when-the-behaviour-breaks)
+  - [Comments say why and match the code](#comments-say-why-and-match-the-code)
+- [Svelte](#svelte)
+  - [Derive, don't sync](#derive-dont-sync)
+  - [State only what is reactive](#state-only-what-is-reactive)
+  - [Scope shared state](#scope-shared-state)
+  - [Use the runes-era syntax](#use-the-runes-era-syntax)
+  - [Markup and styling](#markup-and-styling)
+- [Smells](#smells)
 
-## Delete complexity, don't move it
+## How to apply
 
-Working code is not done if a reframing would make a branch, flag, helper or layer unnecessary; look for that reframing before polishing what is there. A refactor that moves logic around without cutting the number of concepts a reader must hold is not a simplification.
+- Review the diff only; leave what `eslint.config.js` and `svelte-check` enforce to them.
+- A rule (`###` heading) can be breached; cite it by heading. A smell is a judgement call: report "possible _Name_". A rule beats a smell.
+- When rules conflict, fewer moving parts wins.
 
-## Extract on the second copy
+## Design
 
-When a change writes logic that already exists (a predicate, a normalisation, a request pipeline, a snapshot-then-mutate sequence), it calls or extracts the existing one. One rule lives in one function that the page, the store and the server share. DRY applies to meaning, not text: two passages that look alike but encode different rules stay separate. A limit or other value used in two places is one named, exported constant, and values derived from it are computed, not retyped.
+### Build for today's caller
 
-## One reason to change
+Every new option, parameter, branch, fallback, config key and export has a caller in the same change. An abstraction (interface, generic helper, lookup map, extension point) arrives with its second real use. Smell: _Speculative Generality_.
 
-Each module, component and function does one job: a route wires a request or a page to `src/lib`, a component renders, and a domain rule lives in one `src/lib` function. When describing a unit's job needs an "and", split it along that "and".
+### Delete complexity, don't move it
 
-## Code lives where its concept lives
+Before polishing working code, look for a reframing that makes a branch, flag, helper or layer unnecessary. A refactor that doesn't cut the concepts a reader must hold is not a simplification.
 
-Shared code (`src/lib/*.ts`, `src/lib/server/*.ts`, `src/lib/components/shell/`) never imports from a feature folder (`marksheet`, `parse`, `report`); when a feature helper gains a second user, move it to the shared level. Feature-specific checks stay in the feature, not in a shared path. One module owns each decision, such as turning an error into a status, rather than splitting it across a helper and its caller.
+### Every layer earns its keep
 
-## Special cases get their own home
+A wrapper, pass-through or generic mechanism must make its callers simpler than calling what it wraps. Prefer plain code to a clever mechanism hiding a simple data shape. Smell: _Middle Man_.
 
-A change does not bolt a new `if`, one-off boolean or nullable mode onto an existing flow for one caller's sake. Give the case its own function or module, or fold it into the model (see "Make invalid states unreachable") so the branch disappears.
+### Special cases get their own home
 
-## Every layer earns its keep
+Don't bolt an `if`, one-off boolean or nullable mode onto a shared flow for one caller. Give the case its own function or module, or fold it into the model so the branch disappears.
 
-A wrapper, pass-through helper or generic mechanism must make its callers simpler than calling the thing it wraps. Delete identity wrappers, and prefer plain code over a clever mechanism that hides a simple data shape.
+## Structure
 
-## Split a file before it passes 1,000 lines
+### One reason to change
 
-A change that pushes a file from under 1,000 lines to over it splits the file first, along the "One reason to change" seams. Specs count too.
+Each unit does one job: a route wires a request or page to `src/lib`, a component renders, a domain rule lives in one `src/lib` function. If its job needs an "and", split there. Smell: _Divergent Change_.
 
-## Make invalid states unreachable
+### Code lives where its concept lives
 
-Prefer a flow or a type in which the bad state cannot occur: lock the later steps, or model status as one discriminated union (`phase: 'idle' | 'running' | …`). Avoid a guard repeated on every action, or several flags that must agree.
+Shared code (`src/lib/*.ts`, `src/lib/server/*.ts`, `src/lib/components/shell/`) never imports from a feature folder (`marksheet`, `parse`, `report`); a feature helper with a second user moves up. Feature-specific checks stay in the feature. One module owns each decision, such as mapping an error to a status. Smell: _Shotgun Surgery_.
 
-## Types state the real contract
+### Extract on the second copy
 
-Do not use `as`, `!`, `any` or an optional parameter to quiet the compiler where a precise type would say what is true. Data from outside the program (`fetch` responses, `JSON.parse`, `localStorage`, model output) goes through a checking function that returns a typed value or a failure; it is never cast.
+Logic that already exists (a predicate, normalisation, request pipeline, snapshot-then-mutate) is called or extracted, not rewritten. DRY applies to meaning, not text. A value used twice is one exported constant; values derived from it are computed. Smell: _Duplicated Code_.
 
-## Errors fail loudly
+### Split a file before it passes 1,000 lines
 
-A `try` wraps only the call that is expected to fail, and its `catch` handles that expected error and rethrows anything else. Do not use `throw` to jump to your own fallback, and do not add a `?.`, `?? default` or empty catch that would hide a bug.
+A change that takes a file past 1,000 lines splits it first, along "One reason to change" seams. Specs count.
 
-## Related updates land together
+### Production modules export production API
 
-State changes that must agree are applied in one step, so a failure part-way cannot leave them half-applied. Independent async work runs together (`Promise.all`) unless its order matters.
+Export what production imports, plus a `set…`/`reset…` seam per injected dependency a spec must replace (pattern: `src/lib/server/openrouter.ts`). Spec-only stubs and constants live in `*.spec-helpers.ts` or the spec.
 
-## Tests fail when the behaviour breaks
+## Types, state and errors
 
-An acceptance test performs the action it names and asserts its effect. A reload test writes and then reloads. An undo test undoes the action under test. A "changing X leaves Y alone" test actually changes X. A test that only reads back its own fixture proves nothing.
+### Make invalid states unreachable
 
-## Comments say why and match the code
+Make the bad state impossible: lock later steps, or model status as one discriminated union (`phase: 'idle' | 'running' | …`), not repeated guards or flags that must agree.
 
-A comment explains intent or a constraint the code cannot show. A change that alters behaviour updates the comments that describe it, and deletes comments that narrate history ("removed X", "now uses Y").
+### Types state the real contract
+
+No `as`, `!`, `any` or optional parameter to quiet the compiler where a precise type fits. Outside data (`fetch`, `JSON.parse`, `localStorage`, model output) passes a checking function returning a typed value or a failure; never cast.
+
+### Errors fail loudly
+
+A `try` wraps only the call expected to fail; its `catch` handles that error and rethrows the rest. No `throw` to reach your own fallback, and no `?.`, `?? default` or empty catch that hides a bug.
+
+### Related updates land together
+
+State changes that must agree apply in one step. Independent async work runs in `Promise.all` unless order matters.
+
+## Tests and comments
+
+### Tests fail when the behaviour breaks
+
+A test performs the action it names and asserts its effect: a reload test reloads, an undo test undoes, a "changing X leaves Y alone" test changes X. Reading back a fixture proves nothing.
+
+### Comments say why and match the code
+
+Comments explain intent or constraints the code can't show. A behaviour change updates its comments; delete comments that narrate history ("now uses Y").
 
 ## Svelte
 
-For any `.svelte` or `.svelte.ts` change, also apply `.agents/skills/svelte-core-bestpractices/SKILL.md` (the same text as https://svelte.dev/docs/svelte/best-practices); reviewers read it as part of these standards. ESLint and runes mode already enforce keyed `each`, writable `$derived` and the legacy-syntax bans. The judgement calls are left to review, and the one most often missed here is state written inside `$effect` that should be a `$derived`. Phase 3 shipped three of these. Side effects caused by a user action run in the event handler, and one-shot setup that reads no reactive state runs in `onMount`; `$effect` is only for keeping something outside Svelte in sync with state.
+Applies to `.svelte` and `.svelte.ts`. Runes mode is forced; ESLint enforces keyed `each` and writable `$derived`.
 
-## Production modules export production API
+### Derive, don't sync
 
-A module exports what production code imports, plus a `set…`/`reset…` seam for each injected dependency (the existing pattern in `src/lib/server/openrouter.ts`). Stub data, stub transports and constants that only specs use live in a `*.spec-helpers.ts` file or in the spec itself. Add such a seam only when a spec needs to replace that dependency; production code calls its collaborators directly.
+Compute from state or props with `$derived` (`$derived.by` for a function), never `$effect`; a prop-dependent value assigned once goes stale. This is the rule most often missed here. `$effect` is a last resort and never writes state: user-caused work goes in the event handler, external-library sync in `{@attach}`, observing outside sources in `createSubscriber`, logging in `$inspect`, one-shot setup reading no reactive state in `onMount`. Effects never run on the server, so no `if (browser)` inside one. `{#key}` remounts its whole subtree: use it for transitions only, not to rerun a child's script.
+
+### State only what is reactive
+
+`$state` only for values an effect, derived or template reads. Large objects that are only reassigned (API responses) use `$state.raw`. A `$derived` object or array is not deeply reactive.
+
+### Scope shared state
+
+Share state through `createContext`, not module-level state, which leaks between users under SSR. Share reactivity through classes with `$state` fields, not stores.
+
+### Use the runes-era syntax
+
+`{#snippet}`/`{@render}` over `<slot>`, `$$slots` and `<svelte:fragment>`; `onclick` over `on:click`; `<Dynamic>` over `<svelte:component>`; a self-import over `<svelte:self>`; `{@attach}` over `use:`; clsx-style `class` arrays and objects over `class:`.
+
+### Markup and styling
+
+- An `each` key uniquely identifies the item, never the index; don't destructure items you mutate.
+- Listen on `window`/`document` with `<svelte:window>`/`<svelte:document>`, not `onMount` or `$effect`.
+- Pass JS values to CSS with `style:--name`. Parents style children through CSS custom properties; `:global` only for library components.
+
+## Smells
+
+Fowler smells (_Refactoring_, ch. 3) no rule above covers. Quote the hunk.
+
+| Smell                 | Sign                                                   | Fix                                        |
+| --------------------- | ------------------------------------------------------ | ------------------------------------------ |
+| _Mysterious Name_     | Name doesn't reveal what it does or holds.             | Rename; no honest name means murky design. |
+| _Feature Envy_        | Function uses another object's data more than its own. | Move it to that data.                      |
+| _Data Clumps_         | The same fields or parameters travel together.         | Bundle them into one type.                 |
+| _Primitive Obsession_ | A primitive stands in for a domain concept.            | Give the concept its own type.             |
+| _Repeated Switches_   | The same `switch`/`if` cascade on one value recurs.    | One shared map or function.                |
+| _Message Chains_      | Callers walk `a.b().c().d()`.                          | Hide the walk behind one function.         |
+| _Refused Bequest_     | An implementer ignores most of what it inherits.       | Use composition.                           |
