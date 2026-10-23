@@ -26,6 +26,8 @@ export function load({ url }: { url: URL }): void {
 	if (url.pathname === '/breakdown' && url.searchParams.has('variant')) return;
 	// PROTOTYPE (#114): /marksheet?variant=… renders the stubbed two-tier marksheet whatever is stored.
 	if (url.pathname === '/marksheet' && url.searchParams.has('variant')) return;
+	// PROTOTYPE (#115): /marksheet/analysis?variant=… renders the stubbed two-tier analysis whatever is stored.
+	if (url.pathname === '/marksheet/analysis' && url.searchParams.has('variant')) return;
 	// The analysis and the report flow are part of the marksheet surface: a
 	// confirmed breakdown may analyse, write and review reports without losing
 	// the marksheet underneath.
