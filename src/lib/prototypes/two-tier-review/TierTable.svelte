@@ -69,9 +69,11 @@
 							oninput={(e) => review.setField(tier, entry.id, 'summary', e.currentTarget.value)}
 						/>
 					</Table.Cell>
-					<Table.Cell class="px-2 font-mono text-xs text-muted-foreground"
-						>{entry.specPoint ?? '—'}</Table.Cell
-					>
+					<Table.Cell class="px-2 font-mono text-xs whitespace-normal text-muted-foreground">
+						{#each (entry.specPoint ?? '—').split(';') as point, i (i)}
+							<span class="block py-0.5">{point.trim()}</span>
+						{/each}
+					</Table.Cell>
 					<Table.Cell class="px-2 text-xs text-muted-foreground">{entry.ao ?? '—'}</Table.Cell>
 					<Table.Cell class="px-1">{@render pairCell(entry)}</Table.Cell>
 					<Table.Cell class="pr-2">

@@ -12,7 +12,7 @@
 	const blockers = $derived(review.blockers);
 </script>
 
-<section class={cn('space-y-2 rounded-lg border-2 border-primary p-3', className)}>
+<section class={cn('space-y-2', className)}>
 	<h2 class="text-sm font-semibold">Confirm breakdown</h2>
 	<p class="text-xs text-muted-foreground">Builds your marksheet from both tiers:</p>
 	<ul class="space-y-0.5 text-xs">
