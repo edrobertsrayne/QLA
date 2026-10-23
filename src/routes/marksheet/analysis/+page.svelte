@@ -11,6 +11,7 @@
 	import VariantA from '$lib/prototypes/common-questions/VariantA.svelte';
 	import VariantB from '$lib/prototypes/common-questions/VariantB.svelte';
 	import VariantC from '$lib/prototypes/common-questions/VariantC.svelte';
+	import VariantD from '$lib/prototypes/common-questions/VariantD.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import AnalysisView from '$lib/components/marksheet/AnalysisView.svelte';
@@ -25,7 +26,8 @@
 	const VARIANTS = [
 		{ key: 'A', label: 'Third tab' },
 		{ key: 'B', label: 'Inline in each tier' },
-		{ key: 'C', label: 'Comparison page' }
+		{ key: 'C', label: 'Comparison page' },
+		{ key: 'D', label: 'Tabs + comparison tracks' }
 	];
 </script>
 
@@ -38,6 +40,8 @@
 		<VariantB />
 	{:else if variant === 'C'}
 		<VariantC />
+	{:else if variant === 'D'}
+		<VariantD />
 	{:else}
 		<VariantA />
 	{/if}
