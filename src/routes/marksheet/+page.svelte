@@ -4,6 +4,14 @@
 	the editable half of this surface.
 -->
 <script lang="ts">
+	// PROTOTYPE (#114): ?variant=A|B|C renders a stubbed two-tier marksheet instead of
+	// today's page (in-memory, AQA 8463 P1 H/F). No variant = today's page, untouched.
+	import { page } from '$app/state';
+	import PrototypeSwitcher from '$lib/components/prototype/PrototypeSwitcher.svelte';
+	import StubPanel from '$lib/prototypes/marksheet-tiers/StubPanel.svelte';
+	import VariantA from '$lib/prototypes/marksheet-tiers/VariantA.svelte';
+	import VariantB from '$lib/prototypes/marksheet-tiers/VariantB.svelte';
+	import VariantC from '$lib/prototypes/marksheet-tiers/VariantC.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import MarksheetGrid from '$lib/components/marksheet/MarksheetGrid.svelte';
@@ -38,31 +46,50 @@
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		void goto(entryId === null ? path : `${path}?entry=${encodeURIComponent(entryId)}`);
 	}
+
+	const variant = $derived(page.url.searchParams.get('variant'));
+	const VARIANTS = [
+		{ key: 'A', label: 'Tier tabs' },
+		{ key: 'B', label: 'One roster' },
+		{ key: 'C', label: 'Stacked tiers' }
+	];
 </script>
 
 <svelte:head>
 	<title>{title}</title>
 </svelte:head>
 
-<main class="mx-auto max-w-6xl space-y-4 p-6">
-	<header class="space-y-3">
-		<div class="space-y-1">
-			<PaperLabelInput />
-			<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-				<Input
-					aria-label="Class name"
-					class="h-8 w-40 border-transparent bg-transparent px-1 shadow-none hover:border-input"
-					placeholder="Name this class"
-					value={className ?? ''}
-					oninput={(event) => store.setClassName(event.currentTarget.value)}
-				/>
-				<p class="text-sm text-muted-foreground">{summary}</p>
+{#if variant !== null}
+	{#if variant === 'B'}
+		<VariantB />
+	{:else if variant === 'C'}
+		<VariantC />
+	{:else}
+		<VariantA />
+	{/if}
+	<StubPanel />
+	<PrototypeSwitcher variants={VARIANTS} current={variant} />
+{:else}
+	<main class="mx-auto max-w-6xl space-y-4 p-6">
+		<header class="space-y-3">
+			<div class="space-y-1">
+				<PaperLabelInput />
+				<div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+					<Input
+						aria-label="Class name"
+						class="h-8 w-40 border-transparent bg-transparent px-1 shadow-none hover:border-input"
+						placeholder="Name this class"
+						value={className ?? ''}
+						oninput={(event) => store.setClassName(event.currentTarget.value)}
+					/>
+					<p class="text-sm text-muted-foreground">{summary}</p>
+				</div>
 			</div>
-		</div>
-		<BackupCard />
-	</header>
+			<BackupCard />
+		</header>
 
-	<ReportBanner />
+		<ReportBanner />
 
-	<MarksheetGrid onViewAnalysis={openAnalysis} />
-</main>
+		<MarksheetGrid onViewAnalysis={openAnalysis} />
+	</main>
+{/if}
