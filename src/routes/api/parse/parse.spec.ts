@@ -48,6 +48,7 @@ interface SeamWarning {
 
 interface SeamBody {
 	breakdown?: {
+		tierName?: string | null;
 		questions?: Array<Record<string, unknown>>;
 		aoDescriptions?: Array<{ ao: string; description: string | null }>;
 	};
@@ -331,6 +332,10 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		expect(status).toBe(200);
 		expect(seen?.useNativePdf).toBe(true);
 		expect(seen?.modelId).toBe('openai/gpt-4o-mini');
+		// pdf.js detaches the buffer it extracts, so the native copy must be
+		// encoded first; an empty one is silently useless to the model.
+		const decoded = Buffer.from(seen?.paper?.pdfBase64 ?? '', 'base64').toString('latin1');
+		expect(decoded.startsWith('%PDF-')).toBe(true);
 		expect(body.warnings).toEqual([]);
 	});
 
@@ -493,6 +498,8 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		expect(body.warnings).toEqual([]);
 		expect(seen?.spec?.pageCount).toBe(1);
 		expect(seen?.spec?.text).toContain('Specification topic code');
+		const decoded = Buffer.from(seen?.spec?.pdfBase64 ?? '', 'base64').toString('latin1');
+		expect(decoded.startsWith('%PDF-')).toBe(true);
 	});
 
 	describe('AO descriptions', () => {
@@ -572,6 +579,46 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 				{ ao: 'AO2', description: null },
 				{ ao: 'AO3', description: null }
 			]);
+		});
+	});
+
+	describe('tier name', () => {
+		it('carries the trimmed tier name the model read', async () => {
+			setModelTransport(async () =>
+				stubResultWith({ ...stubBreakdown(), tierName: '  Higher Tier  ' })
+			);
+
+			const { status, body } = await post(paperOnlyForm());
+
+			expect(status).toBe(200);
+			expect(body.breakdown?.tierName).toBe('Higher Tier');
+			expect(body.warnings).toEqual([]);
+		});
+
+		it('turns a blank tier name into null', async () => {
+			setModelTransport(async () => stubResultWith({ ...stubBreakdown(), tierName: '   ' }));
+
+			const { body } = await post(paperOnlyForm());
+
+			expect(body.breakdown?.tierName).toBeNull();
+		});
+
+		it('turns a missing tier name into null', async () => {
+			setModelTransport(async () =>
+				stubResultWith({ questions: stubBreakdown().questions, aoDescriptions: [] })
+			);
+
+			const { body } = await post(paperOnlyForm());
+
+			expect(body.breakdown?.tierName).toBeNull();
+		});
+
+		it('turns a non-string tier name into null', async () => {
+			setModelTransport(async () => stubResultWith({ ...stubBreakdown(), tierName: 42 }));
+
+			const { body } = await post(paperOnlyForm());
+
+			expect(body.breakdown?.tierName).toBeNull();
 		});
 	});
 
@@ -724,6 +771,7 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 describe('validateBreakdown v1 rules', () => {
 	it('accepts a minimal valid breakdown with zero warnings', () => {
 		const breakdown: Breakdown = {
+			tierName: null,
 			questions: [
 				{
 					id: '2bii',
@@ -799,6 +847,24 @@ describe('buildPromptText v1', () => {
 		expect(prompt).toContain('specification text ONLY');
 		expect(prompt).toContain('NEVER invent');
 		expect(prompt).toContain('Use null when no specification is provided');
+	});
+
+	it('appends the #108 tier-name instruction verbatim, on its own line after the AO descriptions', () => {
+		const instruction = [
+			'Top level also has tierName: the tier this paper is set at, lifted from the documents themselves (cover, title page or running header) — NEVER from a filename.',
+			'Copy the tier words verbatim as printed (e.g. "Higher Tier", "Foundation Tier", "Higher"), dropping only the wording around them such as the paper number, calculator rubric or brackets (e.g. "Higher (Calculator) Paper 2H" gives "Higher").',
+			'If the tier appears only as the letter suffix of the paper code (e.g. 8300/1H, 1MA1/2F), give the word that letter stands for: H gives "Higher", F gives "Foundation".',
+			'A paper number, paper title, qualification level or calculator rubric is NEVER a tier: "Paper 1", "Paper 2", "01", "Modelling physics", "A-level", "AS", "GCSE", "Non-Calculator" are not tiers.',
+			"When no tier is printed, tierName is null. When the assessment paper and markscheme both name the tier, use the assessment paper's wording."
+		].join(' ');
+
+		const prompt = buildPromptText({ paperText: 'p', markschemeText: null, useNativePdf: true });
+		const lines = prompt.split('\n');
+		const at = lines.indexOf(instruction);
+
+		expect(prompt).toContain('Top level also has tierName');
+		expect(at).toBeGreaterThan(0);
+		expect(lines[at - 1]).toContain('Top level also has aoDescriptions');
 	});
 
 	it('instructs the v1 shape with either-input handling', () => {

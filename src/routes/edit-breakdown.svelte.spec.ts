@@ -9,7 +9,8 @@ import {
 	entry,
 	seed,
 	readSeeded,
-	student
+	student,
+	tier
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { openPage } from './spec-helpers.js';
@@ -19,27 +20,56 @@ import MarksheetPage from './marksheet/+page.svelte';
 /** A confirmed marksheet with one mark entered: the state a teacher unlocks from. */
 function confirmedDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({
-		paper: { ...confirmed().paper, className: '10C1' },
-		breakdown: {
-			entries: [
-				entry('entry-1', '2bii', '2'),
-				entry('entry-2', '2biii', '2', {
-					marks: 3,
-					summary: 'Name the gas produced',
-					specPoint: null,
-					commandWord: 'Name',
-					ao: null
-				})
-			],
-			warnings: [],
-			aoDescriptions: {}
-		},
+		className: '10C1',
+		tiers: [
+			tier({
+				breakdown: {
+					entries: [
+						entry('entry-1', '2bii', '2'),
+						entry('entry-2', '2biii', '2', {
+							marks: 3,
+							summary: 'Name the gas produced',
+							specPoint: null,
+							commandWord: 'Name',
+							ao: null
+						})
+					],
+					warnings: []
+				}
+			})
+		],
 		students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
 		marks: {
 			'student-1': { 'entry-1': 3, 'entry-2': 1 },
 			'student-2': { 'entry-1': 2 }
 		},
 		...overrides
+	});
+}
+
+/** Two confirmed tiers with a pair and marks on both: the state a two-tier unlock leaves. */
+function twoTierConfirmed(): MarksheetDocument {
+	return confirmed({
+		tiers: [
+			tier({
+				tierName: 'Higher',
+				breakdown: {
+					entries: [entry('h1', '1a', '1'), entry('h2', '2a', '2')],
+					warnings: []
+				}
+			}),
+			tier({
+				tierName: 'Foundation',
+				sourceFilenames: ['10X Ph1 F.pdf'],
+				breakdown: { entries: [entry('f1', '8a', '8')], warnings: [] }
+			})
+		],
+		commonQuestions: [{ tier1EntryId: 'h1', tier2EntryId: 'f1' }],
+		students: [
+			student('student-1', 'Ada', 'Lovelace', false, 0),
+			student('student-2', 'Grace', 'Hopper', false, 1)
+		],
+		marks: { 'student-1': { h1: 2 }, 'student-2': { f1: 3 } }
 	});
 }
 
@@ -83,7 +113,7 @@ describe('editing the breakdown after confirming it', () => {
 		await vi.waitFor(() => {
 			const reconfirmed = readSeeded();
 			expect(reconfirmed.breakdownConfirmedAt).not.toBeNull();
-			expect(reconfirmed.breakdown.entries.map((one) => one.label)).toEqual(['2biii']);
+			expect(reconfirmed.tiers[0].breakdown.entries.map((one) => one.label)).toEqual(['2biii']);
 			// The class survives whole, and so do the marks the deleted entry never
 			// held: only what was entered against it went with it.
 			expect(reconfirmed.students.map(({ firstName }) => firstName)).toEqual(['Ada', 'Grace']);
@@ -111,5 +141,41 @@ describe('editing the breakdown after confirming it', () => {
 		expect(readSeeded().breakdownConfirmedAt).toBe(NOW);
 		expect(marksheetStore().route()).toBe('/marksheet');
 		expect(goto).not.toHaveBeenCalled();
+	});
+
+	it('says one unlock covers both tiers and the pairs, and that pairing touches no marks', async () => {
+		seed(twoTierConfirmed());
+		const marksheet = openPage(MarksheetPage);
+
+		await page.getByRole('button', { name: 'Edit breakdown' }).click();
+
+		await expect
+			.element(page.getByRole('dialog'))
+			.toHaveTextContent("This unlocks both tiers' breakdowns and the common questions together.");
+		await expect
+			.element(page.getByRole('dialog'))
+			.toHaveTextContent(
+				'Changing which questions are common changes only the common-questions analysis.'
+			);
+		await expect.element(page.getByRole('dialog')).toHaveTextContent('No marks are touched.');
+
+		await page.getByRole('button', { name: 'Unlock and edit' }).click();
+
+		await vi.waitFor(() => {
+			expect(readSeeded().breakdownConfirmedAt).toBeNull();
+			// The pairs and every mark are exactly as they were.
+			expect(readSeeded().commonQuestions).toEqual([{ tier1EntryId: 'h1', tier2EntryId: 'f1' }]);
+			expect(readSeeded().marks).toEqual({
+				'student-1': { h1: 2 },
+				'student-2': { f1: 3 }
+			});
+		});
+
+		// Arriving back on the review page says what the unlock put at risk.
+		marksheet.unmount();
+		openPage(BreakdownPage);
+		await expect
+			.element(page.getByTestId('unlocked-notice'))
+			.toHaveTextContent('2 students have marks.');
 	});
 });

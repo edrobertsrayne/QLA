@@ -8,8 +8,8 @@
 // and separate from the store, so the store's block application can be tested
 // over plain rows.
 
-import { isOverMax, putMark, readMarkText, removeMark } from './document.js';
-import type { MarksheetDocument } from './document.js';
+import { isOverMax, putMark, readMarkText, removeMark, tierEntries } from './document.js';
+import type { MarksheetDocument, TierIndex } from './document.js';
 import { newStudent, readName } from './students.js';
 import { agree, count } from '$lib/prose.js';
 
@@ -134,32 +134,34 @@ export function trimPasteGrid(rows: readonly (readonly string[])[]): string[][] 
 }
 
 /**
- * Apply a block to the document in place, and say what it did. A block anchored
- * in the name column reads its first column as names, mapped the way a pasted
- * class list is; every other block reads every column as marks from the
- * anchor's entry onwards.
+ * Apply a block to one tier's grid in place, and say what it did. A block
+ * anchored in the name column reads its first column as names, mapped the way
+ * a pasted class list is; every other block reads every column as marks from
+ * the anchor's entry onwards. Rows line up with that tier's students, and a
+ * pasted row past the class becomes a student on that tier.
  *
- * Pasted rows past the class become students when there is a name to give
- * them. Columns past the last entry are clipped. A cell that is not a whole
+ * Pasted columns past the last entry are clipped. A cell that is not a whole
  * number is refused on its own and leaves the sheet as it was, while an empty
  * cell clears a mark — the same rules as typing, applied a block at a time.
  */
 export function applyPaste(
 	document: MarksheetDocument,
 	rows: readonly (readonly string[])[],
-	anchor: PasteAnchor
+	anchor: PasteAnchor,
+	tier: TierIndex
 ): PasteResult {
 	const result = emptyPasteResult();
 
+	const students = document.students.filter((student) => student.tier === tier);
 	// No student to anchor on starts the block below the class: only a block
 	// that begins with names can do that, and it is how an empty class is built.
 	const anchorRow =
 		anchor.studentId === null
-			? document.students.length
-			: document.students.findIndex((student) => student.id === anchor.studentId);
+			? students.length
+			: students.findIndex((student) => student.id === anchor.studentId);
 	if (anchorRow === -1) return result;
 
-	const entries = document.breakdown.entries;
+	const entries = tierEntries(document, tier);
 	const startsWithName = anchor.kind === 'names';
 	const firstEntry = startsWithName ? 0 : entries.findIndex((entry) => entry.id === anchor.entryId);
 	if (firstEntry === -1) return result;
@@ -175,7 +177,7 @@ export function applyPaste(
 
 	block.forEach((row, rowIndex) => {
 		const name = startsWithName ? (row[0] ?? '') : '';
-		let target = document.students[anchorRow + rowIndex];
+		let target = students[anchorRow + rowIndex];
 
 		if (!target) {
 			// A row with no cells at all is a blank line: nothing to count. Past
@@ -188,8 +190,9 @@ export function applyPaste(
 				result.rowsDropped += 1;
 				return;
 			}
-			target = newStudent(parsedName);
+			target = newStudent(parsedName, tier);
 			document.students.push(target);
+			students.push(target);
 			result.studentsAdded += 1;
 			result.changed = true;
 		}

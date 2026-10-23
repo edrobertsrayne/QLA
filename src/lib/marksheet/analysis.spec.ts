@@ -1,22 +1,45 @@
 import { describe, expect, it } from 'vitest';
-import { analyseMarksheet } from './analysis.js';
-import type { MarksheetDocument } from './document.js';
-import { confirmed, entry, student } from './fixtures.spec-helpers.js';
+import { analyseCommonQuestions, analyseTier, sortCommonQuestions } from './analysis.js';
+import type { BreakdownEntry, MarksheetDocument } from './document.js';
+import { confirmed, entry, student, tier } from './fixtures.spec-helpers.js';
 
-describe('analysis', () => {
-	/** A confirmed marksheet: the figures are read off the sheet a confirmation builds. */
+/** A one-tier marksheet whose single tier holds the entries a test is about. */
+function oneTier(
+	entries: BreakdownEntry[],
+	overrides: Partial<MarksheetDocument> = {}
+): MarksheetDocument {
+	return confirmed({
+		tiers: [tier({ breakdown: { entries, warnings: [] } })],
+		...overrides
+	});
+}
+
+/** A two-tier marksheet, named apart, with the entries each tier holds. */
+function twoTiers(
+	tier1Entries: BreakdownEntry[],
+	tier2Entries: BreakdownEntry[],
+	overrides: Partial<MarksheetDocument> = {}
+): MarksheetDocument {
+	return confirmed({
+		tiers: [
+			tier({ tierName: 'Higher', breakdown: { entries: tier1Entries, warnings: [] } }),
+			tier({ tierName: 'Foundation', breakdown: { entries: tier2Entries, warnings: [] } })
+		],
+		...overrides
+	});
+}
+
+describe('analyseTier', () => {
 	function analyse(overrides: Partial<MarksheetDocument> = {}) {
-		return analyseMarksheet(confirmed(overrides));
+		return analyseTier(confirmed(overrides), 0);
 	}
 
 	/** A class of one entry, for tests about a single figure. */
 	function oneEntry(marks: number | null, overrides: Partial<MarksheetDocument> = {}) {
 		return analyse({
-			breakdown: {
-				entries: [entry('entry-1', '1', '1', { marks })],
-				warnings: [],
-				aoDescriptions: {}
-			},
+			tiers: [
+				tier({ breakdown: { entries: [entry('entry-1', '1', '1', { marks })], warnings: [] } })
+			],
 			students: [student('student-1', 'Ada', 'Lovelace')],
 			...overrides
 		});
@@ -24,11 +47,11 @@ describe('analysis', () => {
 
 	it('reads facility as the mean counted mark over the available marks', () => {
 		const analysis = analyse({
-			breakdown: {
-				entries: [entry('entry-1', '1', '1', { marks: 4 })],
-				warnings: [],
-				aoDescriptions: {}
-			},
+			tiers: [
+				tier({
+					breakdown: { entries: [entry('entry-1', '1', '1', { marks: 4 })], warnings: [] }
+				})
+			],
 			students: [
 				student('student-1', 'Ada', 'Lovelace'),
 				student('student-2', 'Grace', 'Hopper'),
@@ -62,17 +85,20 @@ describe('analysis', () => {
 
 	it('bands red below 40%, amber from 40% to below 70%, and green from 70%', () => {
 		const analysis = analyse({
-			breakdown: {
-				entries: [
-					entry('entry-1', '1a', '1', { marks: 10 }),
-					entry('entry-2', '1b', '1', { marks: 10 }),
-					entry('entry-3', '1c', '1', { marks: 10 }),
-					entry('entry-4', '1d', '1', { marks: 10 }),
-					entry('entry-5', '1e', '1', { marks: 10 })
-				],
-				warnings: [],
-				aoDescriptions: {}
-			},
+			tiers: [
+				tier({
+					breakdown: {
+						entries: [
+							entry('entry-1', '1a', '1', { marks: 10 }),
+							entry('entry-2', '1b', '1', { marks: 10 }),
+							entry('entry-3', '1c', '1', { marks: 10 }),
+							entry('entry-4', '1d', '1', { marks: 10 }),
+							entry('entry-5', '1e', '1', { marks: 10 })
+						],
+						warnings: []
+					}
+				})
+			],
 			students: [student('student-1', 'Ada', 'Lovelace')],
 			marks: {
 				'student-1': {
@@ -96,7 +122,7 @@ describe('analysis', () => {
 	});
 
 	it('has no figures before a marksheet exists', () => {
-		expect(analyseMarksheet(null)).toEqual({
+		expect(analyseTier(null, 0)).toEqual({
 			entries: [],
 			ordered: [],
 			hardest: [],
@@ -110,20 +136,42 @@ describe('analysis', () => {
 		});
 	});
 
+	it('reads only the entries and students of the tier asked for', () => {
+		const document = twoTiers(
+			[entry('higher-entry', '1', '1', { marks: 4 })],
+			[entry('foundation-entry', '8', '8', { marks: 2 })],
+			{
+				students: [
+					student('higher-student', 'Hana', 'Higher', false, 0),
+					student('foundation-student', 'Flo', 'Foundation', false, 1)
+				],
+				marks: {
+					'higher-student': { 'higher-entry': 4 },
+					'foundation-student': { 'foundation-entry': 1 }
+				}
+			}
+		);
+
+		const higher = analyseTier(document, 0);
+		const foundation = analyseTier(document, 1);
+
+		expect(higher.entries.map(({ entry }) => entry.id)).toEqual(['higher-entry']);
+		expect(higher.entries[0]).toMatchObject({ counted: 1, facility: 1 });
+		expect(higher.summary.studentsCounted).toBe(1);
+		expect(foundation.entries.map(({ entry }) => entry.id)).toEqual(['foundation-entry']);
+		expect(foundation.entries[0]).toMatchObject({ counted: 1, facility: 0.5 });
+		expect(foundation.summary.studentsCounted).toBe(1);
+	});
+
 	it('leaves absent students out of every figure, and counts them again when the flag is cleared', () => {
-		const document = confirmed({
-			breakdown: {
-				entries: [entry('entry-1', '1', '1', { marks: 4 })],
-				warnings: [],
-				aoDescriptions: {}
-			},
+		const document = oneTier([entry('entry-1', '1', '1', { marks: 4 })], {
 			students: [
 				student('student-1', 'Ada', 'Lovelace'),
 				{ ...student('student-2', 'Grace', 'Hopper'), absent: true }
 			],
 			marks: { 'student-1': { 'entry-1': 4 }, 'student-2': { 'entry-1': 0 } }
 		});
-		let analysis = analyseMarksheet(document);
+		let analysis = analyseTier(document, 0);
 
 		expect(analysis.entries[0]).toMatchObject({
 			counted: 1,
@@ -133,7 +181,7 @@ describe('analysis', () => {
 		expect(analysis.summary).toMatchObject({ studentsCounted: 1, absentExcluded: 1 });
 
 		document.students[1].absent = false;
-		analysis = analyseMarksheet(document);
+		analysis = analyseTier(document, 0);
 
 		expect(analysis.entries[0]).toMatchObject({
 			counted: 2,
@@ -160,16 +208,11 @@ describe('analysis', () => {
 	});
 
 	it('leaves a mark above the available marks out of the figure rather than capping it, and flags the entry', () => {
-		const document = confirmed({
-			breakdown: {
-				entries: [entry('entry-1', '1', '1', { marks: 4 })],
-				warnings: [],
-				aoDescriptions: {}
-			},
+		const document = oneTier([entry('entry-1', '1', '1', { marks: 4 })], {
 			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
 			marks: { 'student-1': { 'entry-1': 2 }, 'student-2': { 'entry-1': 40 } }
 		});
-		let analysis = analyseMarksheet(document);
+		let analysis = analyseTier(document, 0);
 
 		expect(analysis.entries[0]).toMatchObject({
 			counted: 1,
@@ -181,7 +224,7 @@ describe('analysis', () => {
 		expect(analysis.summary.invalid).toBe(1);
 
 		document.marks['student-2']['entry-1'] = 4;
-		analysis = analyseMarksheet(document);
+		analysis = analyseTier(document, 0);
 
 		expect(analysis.entries[0]).toMatchObject({
 			counted: 2,
@@ -234,14 +277,17 @@ describe('analysis', () => {
 
 	it('says why an entry is not scored, apart from one nobody has marked yet', () => {
 		const analysis = analyse({
-			breakdown: {
-				entries: [
-					entry('entry-1', '1a', '1', { marks: 4 }),
-					entry('entry-2', '1b', '1', { marks: null })
-				],
-				warnings: [],
-				aoDescriptions: {}
-			},
+			tiers: [
+				tier({
+					breakdown: {
+						entries: [
+							entry('entry-1', '1a', '1', { marks: 4 }),
+							entry('entry-2', '1b', '1', { marks: null })
+						],
+						warnings: []
+					}
+				})
+			],
 			students: [student('student-1', 'Ada', 'Lovelace')]
 		});
 
@@ -261,18 +307,21 @@ describe('analysis', () => {
 
 	it('orders red, then amber, then green worst first, with the entries it cannot score last', () => {
 		const analysis = analyse({
-			breakdown: {
-				entries: [
-					entry('entry-green', '1a', '1', { marks: 10 }),
-					entry('entry-unmarked', '1b', '1', { marks: 10 }),
-					entry('entry-redder', '1c', '1', { marks: 10 }),
-					entry('entry-worst', '1d', '1', { marks: 10 }),
-					entry('entry-amber', '1e', '1', { marks: 10 }),
-					entry('entry-red', '1f', '1', { marks: 10 })
-				],
-				warnings: [],
-				aoDescriptions: {}
-			},
+			tiers: [
+				tier({
+					breakdown: {
+						entries: [
+							entry('entry-green', '1a', '1', { marks: 10 }),
+							entry('entry-unmarked', '1b', '1', { marks: 10 }),
+							entry('entry-redder', '1c', '1', { marks: 10 }),
+							entry('entry-worst', '1d', '1', { marks: 10 }),
+							entry('entry-amber', '1e', '1', { marks: 10 }),
+							entry('entry-red', '1f', '1', { marks: 10 })
+						],
+						warnings: []
+					}
+				})
+			],
 			students: [student('student-1', 'Ada', 'Lovelace')],
 			marks: {
 				'student-1': {
@@ -297,13 +346,16 @@ describe('analysis', () => {
 
 	it('names at most eight red entries in the Hardest strip, worst first', () => {
 		const analysis = analyse({
-			breakdown: {
-				entries: Array.from({ length: 10 }, (_, index) =>
-					entry(`entry-${index + 1}`, `1${index}`, '1', { marks: 100 })
-				),
-				warnings: [],
-				aoDescriptions: {}
-			},
+			tiers: [
+				tier({
+					breakdown: {
+						entries: Array.from({ length: 10 }, (_, index) =>
+							entry(`entry-${index + 1}`, `1${index}`, '1', { marks: 100 })
+						),
+						warnings: []
+					}
+				})
+			],
 			students: [student('student-1', 'Ada', 'Lovelace')],
 			marks: {
 				'student-1': Object.fromEntries(
@@ -326,19 +378,255 @@ describe('analysis', () => {
 
 	it('reads each breakdown entry on its own, never pooling a question’s subquestions', () => {
 		const analysis = analyse({
-			breakdown: {
-				entries: [
-					entry('entry-2a', '2a', '2', { marks: 4 }),
-					entry('entry-2b', '2b', '2', { marks: 4 })
-				],
-				warnings: [],
-				aoDescriptions: {}
-			},
+			tiers: [
+				tier({
+					breakdown: {
+						entries: [
+							entry('entry-2a', '2a', '2', { marks: 4 }),
+							entry('entry-2b', '2b', '2', { marks: 4 })
+						],
+						warnings: []
+					}
+				})
+			],
 			students: [student('student-1', 'Ada', 'Lovelace')],
 			marks: { 'student-1': { 'entry-2a': 4, 'entry-2b': 0 } }
 		});
 
 		expect(analysis.entries.map(({ facility }) => facility)).toEqual([1, 0]);
 		expect(analysis.entries.map(({ band }) => band)).toEqual(['green', 'red']);
+	});
+});
+
+describe('analyseCommonQuestions', () => {
+	/**
+	 * Three pairs stored out of paper order, with a different gap on each: the
+	 * first pair favours Tier 2, the second favours Tier 1, and the third has no
+	 * Tier 2 mark at all.
+	 */
+	function commonDocument(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
+		return twoTiers(
+			[
+				entry('e1a', '1a', '1', { marks: 4 }),
+				entry('e1b', '1b', '1', { marks: 4 }),
+				entry('e1c', '1c', '1', { marks: 4 })
+			],
+			[
+				entry('e2a', '8a', '8', { marks: 4 }),
+				entry('e2b', '8b', '8', { marks: 4 }),
+				entry('e2c', '8c', '8', { marks: 4 })
+			],
+			{
+				commonQuestions: [
+					{ tier1EntryId: 'e1b', tier2EntryId: 'e2b' },
+					{ tier1EntryId: 'e1a', tier2EntryId: 'e2a' },
+					{ tier1EntryId: 'e1c', tier2EntryId: 'e2c' }
+				],
+				students: [
+					student('h1', 'Hana', 'Higher', false, 0),
+					student('f1', 'Flo', 'Foundation', false, 1)
+				],
+				marks: {
+					h1: { e1a: 0, e1b: 2, e1c: 4 },
+					f1: { e2a: 4, e2b: 0 }
+				},
+				...overrides
+			}
+		);
+	}
+
+	it('pools both tiers’ marks over both tiers’ counted students', () => {
+		const document = twoTiers(
+			[entry('e1', '1', '1', { marks: 4 })],
+			[entry('e2', '8', '8', { marks: 4 })],
+			{
+				commonQuestions: [{ tier1EntryId: 'e1', tier2EntryId: 'e2' }],
+				students: [
+					student('h1', 'A', 'Higher', false, 0),
+					student('h2', 'B', 'Higher', false, 0),
+					student('f1', 'C', 'Foundation', false, 1),
+					student('f2', 'D', 'Foundation', false, 1)
+				],
+				marks: { h1: { e1: 4 }, h2: { e1: 2 }, f1: { e2: 0 }, f2: { e2: 2 } }
+			}
+		);
+
+		const [row] = analyseCommonQuestions(document);
+
+		expect(row.tier1.analysis.facility).toBe(0.75);
+		expect(row.tier2.analysis.facility).toBe(0.25);
+		expect(row.pooled).toEqual({
+			facility: 0.5,
+			band: 'amber',
+			marked: 4,
+			of: 4,
+			partMarked: false
+		});
+		expect(row.gap).toBe(50);
+	});
+
+	it('leaves the pooled figure and gap blank until both tiers have a counted mark', () => {
+		const document = commonDocument();
+		let rows = analyseCommonQuestions(document);
+		const last = rows[2];
+
+		expect(last.tier1.analysis.facility).toBe(1);
+		expect(last.tier2.analysis.facility).toBeNull();
+		expect(last.pooled.facility).toBeNull();
+		expect(last.pooled.band).toBeNull();
+		expect(last.gap).toBeNull();
+		expect(last.pooled.marked).toBe(1);
+		expect(last.pooled.of).toBe(2);
+
+		document.marks['f1']['e2c'] = 2;
+		rows = analyseCommonQuestions(document);
+
+		expect(rows[2].tier2.analysis.facility).toBe(0.5);
+		expect(rows[2].pooled.facility).toBe(0.75);
+		expect(rows[2].gap).toBe(50);
+	});
+
+	it('shows the gap signed, Tier 1 minus Tier 2, in whole percentage points', () => {
+		const rows = analyseCommonQuestions(commonDocument());
+
+		// Tier 1 scored nothing on the first pair; Tier 2 scored everything.
+		expect(rows[0].gap).toBe(-100);
+		expect(rows[1].gap).toBe(50);
+	});
+
+	it('orders its rows by Tier 1’s paper order, whatever order the pairs are stored in', () => {
+		const rows = analyseCommonQuestions(commonDocument());
+
+		expect(rows.map((row) => row.tier1.entry.id)).toEqual(['e1a', 'e1b', 'e1c']);
+	});
+
+	it('leaves out a pair whose entry is missing from its tier', () => {
+		const document = commonDocument({
+			commonQuestions: [
+				{ tier1EntryId: 'e1a', tier2EntryId: 'e2a' },
+				{ tier1EntryId: 'e1b', tier2EntryId: 'gone' }
+			]
+		});
+
+		expect(analyseCommonQuestions(document).map((row) => row.pair.tier1EntryId)).toEqual(['e1a']);
+	});
+
+	it('excludes absent students and over-max marks from the pooled figure as it does per tier', () => {
+		const document = twoTiers(
+			[entry('e1', '1', '1', { marks: 4 })],
+			[entry('e2', '8', '8', { marks: 4 })],
+			{
+				commonQuestions: [{ tier1EntryId: 'e1', tier2EntryId: 'e2' }],
+				students: [
+					student('h1', 'A', 'Higher', false, 0),
+					student('h2', 'B', 'Higher', false, 0),
+					{ ...student('h3', 'C', 'Higher', true, 0) },
+					student('f1', 'D', 'Foundation', false, 1)
+				],
+				marks: { h1: { e1: 5 }, h2: { e1: 2 }, h3: { e1: 4 }, f1: { e2: 2 } }
+			}
+		);
+
+		const [row] = analyseCommonQuestions(document);
+
+		// h1's 5 is above the entry's 4: it is marked but not counted; h3 is absent.
+		expect(row.tier1.analysis).toMatchObject({
+			counted: 1,
+			mean: 2,
+			overMax: 1,
+			coverage: { marked: 2, of: 2 }
+		});
+		expect(row.pooled).toEqual({
+			facility: 0.5,
+			band: 'amber',
+			marked: 3,
+			of: 3,
+			partMarked: false
+		});
+	});
+
+	it('marks the pooled figure as resting on part of the class', () => {
+		const document = twoTiers(
+			[entry('e1', '1', '1', { marks: 4 })],
+			[entry('e2', '8', '8', { marks: 4 })],
+			{
+				commonQuestions: [{ tier1EntryId: 'e1', tier2EntryId: 'e2' }],
+				students: [
+					student('h1', 'A', 'Higher', false, 0),
+					student('h2', 'B', 'Higher', false, 0),
+					student('f1', 'C', 'Foundation', false, 1)
+				],
+				marks: { h1: { e1: 4 }, f1: { e2: 2 } }
+			}
+		);
+
+		const [row] = analyseCommonQuestions(document);
+
+		expect(row.pooled).toMatchObject({ facility: 0.75, marked: 2, of: 3, partMarked: true });
+	});
+});
+
+describe('sortCommonQuestions', () => {
+	function rows() {
+		return analyseCommonQuestions(
+			twoTiers(
+				[
+					entry('e1a', '1a', '1', { marks: 4 }),
+					entry('e1b', '1b', '1', { marks: 4 }),
+					entry('e1c', '1c', '1', { marks: 4 })
+				],
+				[
+					entry('e2a', '8a', '8', { marks: 4 }),
+					entry('e2b', '8b', '8', { marks: 4 }),
+					entry('e2c', '8c', '8', { marks: 4 })
+				],
+				{
+					commonQuestions: [
+						{ tier1EntryId: 'e1b', tier2EntryId: 'e2b' },
+						{ tier1EntryId: 'e1a', tier2EntryId: 'e2a' },
+						{ tier1EntryId: 'e1c', tier2EntryId: 'e2c' }
+					],
+					students: [
+						student('h1', 'Hana', 'Higher', false, 0),
+						student('f1', 'Flo', 'Foundation', false, 1)
+					],
+					marks: {
+						h1: { e1a: 0, e1b: 2, e1c: 4 },
+						f1: { e2a: 4, e2b: 0 }
+					}
+				}
+			)
+		);
+	}
+
+	it('puts the biggest absolute gap first and the pairs with no gap last', () => {
+		const sorted = sortCommonQuestions(rows(), 'gap');
+
+		expect(sorted.map((row) => row.tier1.entry.id)).toEqual(['e1a', 'e1b', 'e1c']);
+		expect(sorted.map((row) => row.gap)).toEqual([-100, 50, null]);
+	});
+
+	it('puts the lowest pooled facility first and the unscored pairs last', () => {
+		const sorted = sortCommonQuestions(rows(), 'pooled');
+
+		// e1b pools 25%, e1a 50%, and e1c has no pooled figure.
+		expect(sorted.map((row) => row.tier1.entry.id)).toEqual(['e1b', 'e1a', 'e1c']);
+		expect(sorted.map((row) => row.pooled.facility)).toEqual([0.25, 0.5, null]);
+	});
+
+	it('keeps Tier 1’s paper order', () => {
+		expect(sortCommonQuestions(rows(), 'paper').map((row) => row.tier1.entry.id)).toEqual([
+			'e1a',
+			'e1b',
+			'e1c'
+		]);
+	});
+
+	it('sorts a copy, leaving the rows it was given alone', () => {
+		const input = rows();
+		const sorted = sortCommonQuestions(input, 'pooled');
+
+		expect(sorted).not.toBe(input);
+		expect(input.map((row) => row.tier1.entry.id)).toEqual(['e1a', 'e1b', 'e1c']);
 	});
 });

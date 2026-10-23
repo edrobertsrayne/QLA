@@ -7,8 +7,16 @@
 // from the document as it stands, so there is no run step and no stale figures.
 
 import { entryName } from './breakdown.js';
-import { isOverMax } from './document.js';
-import type { BreakdownEntry, MarksheetDocument, StoredStudent } from './document.js';
+import {
+	isOverMax,
+	pairOfEntry,
+	tierEntries,
+	type BreakdownEntry,
+	type CommonQuestion,
+	type MarksheetDocument,
+	type StoredStudent,
+	type TierIndex
+} from './document.js';
 
 /** Below this facility, a question is one to reteach. */
 export const RED_BELOW = 0.4;
@@ -202,10 +210,12 @@ export function facilityDescription(row: EntryAnalysis): string {
 	return lines.join('\n');
 }
 
-/** Every entry's figures over this marksheet, and what they add up to. */
-export function analyseMarksheet(document: MarksheetDocument | null): MarksheetAnalysis {
-	const entries = document?.breakdown.entries ?? [];
-	if (!document) {
+/** One entry's figures over one tier's class, and what they add up to. */
+export function analyseTier(
+	document: MarksheetDocument | null,
+	tier: TierIndex
+): MarksheetAnalysis {
+	if (document === null) {
 		return {
 			entries: [],
 			ordered: [],
@@ -220,7 +230,9 @@ export function analyseMarksheet(document: MarksheetDocument | null): MarksheetA
 		};
 	}
 
-	const presentStudents = document.students.filter((student) => !student.absent);
+	const entries = tierEntries(document, tier);
+	const tierStudents = document.students.filter((student) => student.tier === tier);
+	const presentStudents = tierStudents.filter((student) => !student.absent);
 	const analysed = entries.map((entry) => analyseEntry(entry, presentStudents, document.marks));
 	// `sort` is stable, so entries of a figure keep the order the paper has them in.
 	const ordered = [...analysed].sort(worstFirst);
@@ -230,10 +242,114 @@ export function analyseMarksheet(document: MarksheetDocument | null): MarksheetA
 		hardest: ordered.filter((analysis) => analysis.band === 'red').slice(0, HARDEST_LIMIT),
 		summary: {
 			studentsCounted: presentStudents.length,
-			absentExcluded: document.students.length - presentStudents.length,
+			absentExcluded: tierStudents.length - presentStudents.length,
 			marksCounted: analysed.reduce((total, analysis) => total + analysis.counted, 0),
 			partMarked: analysed.filter((analysis) => analysis.coverage.partMarked).length,
 			invalid: analysed.filter((analysis) => analysis.overMax > 0).length
 		}
 	};
+}
+
+/** The pooled figure for a pair: both tiers' marks over both tiers' students. */
+export interface PooledAnalysis {
+	/** Both tiers' counted marks over both tiers' students × available marks; null until each tier has one. */
+	facility: number | null;
+	/** The band the pooled facility falls in, or null when there is no figure. */
+	band: RagBand | null;
+	/** Students on either tier with any mark on their side of the pair. */
+	marked: number;
+	/** Present students on either tier: the class the figure is measured over. */
+	of: number;
+	/** The pooled figure rests on part of both tiers' classes. */
+	partMarked: boolean;
+}
+
+/** One common question: each tier's own figures, the pooled figure and the gap. */
+export interface CommonQuestionAnalysis {
+	pair: CommonQuestion;
+	tier1: { entry: BreakdownEntry; analysis: EntryAnalysis };
+	tier2: { entry: BreakdownEntry; analysis: EntryAnalysis };
+	pooled: PooledAnalysis;
+	/** Tier 1 facility minus Tier 2 facility in signed whole percentage points; null unless both are scored. */
+	gap: number | null;
+}
+
+/**
+ * Every confirmed pair's figures, in Tier 1's paper order: the order the
+ * common-questions view reads them in, and the order `paper` sorting keeps.
+ * A pair whose entry is missing from its tier is left out; nothing can be
+ * compared for it.
+ */
+export function analyseCommonQuestions(document: MarksheetDocument): CommonQuestionAnalysis[] {
+	const tier1 = analyseTier(document, 0);
+	const tier2 = analyseTier(document, 1);
+	const tier2ById = new Map<string, EntryAnalysis>();
+	for (const row of tier2.entries) tier2ById.set(row.entry.id, row);
+
+	const rows: CommonQuestionAnalysis[] = [];
+	for (const row of tier1.entries) {
+		const pair = pairOfEntry(document, 0, row.entry.id);
+		if (pair === null) continue;
+		const other = tier2ById.get(pair.tier2EntryId);
+		if (other === undefined) continue;
+
+		const available = row.entry.marks;
+		const counted = row.counted + other.counted;
+		const sum = (row.mean ?? 0) * row.counted + (other.mean ?? 0) * other.counted;
+		// Both sides need a counted mark before the pooled figure stands for a
+		// comparison rather than one tier dressed up as two.
+		const facility =
+			row.counted > 0 && other.counted > 0 && available !== null && available > 0
+				? sum / counted / available
+				: null;
+		const marked = row.coverage.marked + other.coverage.marked;
+		const of = row.coverage.of + other.coverage.of;
+
+		rows.push({
+			pair,
+			tier1: { entry: row.entry, analysis: row },
+			tier2: { entry: other.entry, analysis: other },
+			pooled: {
+				facility,
+				band: facility === null ? null : facilityBand(facility),
+				marked,
+				of,
+				partMarked: facility !== null && marked < of
+			},
+			gap:
+				row.facility !== null && other.facility !== null
+					? facilityPercent(row.facility) - facilityPercent(other.facility)
+					: null
+		});
+	}
+	return rows;
+}
+
+/** How the common-questions view orders its rows. */
+export type CommonQuestionOrder = 'gap' | 'pooled' | 'paper';
+
+/**
+ * The common questions in the order the teacher asked for: biggest absolute
+ * gap first, lowest pooled facility first, or Tier 1's paper order. Rows with
+ * no figure go last; ties keep their paper order.
+ */
+export function sortCommonQuestions(
+	rows: readonly CommonQuestionAnalysis[],
+	order: CommonQuestionOrder
+): CommonQuestionAnalysis[] {
+	if (order === 'paper') return [...rows];
+	return [...rows].sort((a, b) => {
+		if (order === 'gap') {
+			if (a.gap === null && b.gap === null) return 0;
+			if (a.gap === null) return 1;
+			if (b.gap === null) return -1;
+			return Math.abs(b.gap) - Math.abs(a.gap);
+		}
+		const pooledA = a.pooled.facility;
+		const pooledB = b.pooled.facility;
+		if (pooledA === null && pooledB === null) return 0;
+		if (pooledA === null) return 1;
+		if (pooledB === null) return -1;
+		return pooledA - pooledB;
+	});
 }

@@ -1,18 +1,25 @@
 <!--
-	The grade-boundaries editor: the paper's grade scale as (grade label,
+	The grade-boundaries editor: one tier's grade scale as (grade label,
 	lowest raw mark) rows, top grade first. It edits a working copy — nothing
 	reaches the marksheet until Save boundaries — and a grade left blank reads
 	as "not used" and is dropped on save, so a tiered paper awards what it awards.
-	The marksheet banner dialog and the report flow's Grades step share this
-	editor; both mount it fresh when they open.
+	The `tier` prop says whose scale it is; the marksheet banner dialog and the
+	report flow's Grades step share this editor, and both mount it fresh.
 -->
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as Table from '$lib/components/ui/table';
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
-	import { isWholeNumber, studentTotal, totalMarks } from '$lib/marksheet/document.js';
+	import {
+		isWholeNumber,
+		studentTotal,
+		tierEntries,
+		totalMarks,
+		type TierIndex
+	} from '$lib/marksheet/document.js';
 	import {
 		belowLabelOf,
 		boundariesFrom,
@@ -34,14 +41,22 @@
 	import { isEligible } from '$lib/marksheet/report-eligibility.js';
 	import { cn } from '$lib/utils.js';
 
-	let { onDone }: { /** After Save boundaries or Remove grades. */ onDone?: () => void } = $props();
+	let {
+		tier = 0,
+		onDone
+	}: {
+		/** The tier whose boundaries these are; one tier means Tier 1. */
+		tier?: TierIndex;
+		/** After Save boundaries or Remove grades. */
+		onDone?: () => void;
+	} = $props();
 
 	const store = marksheetStore();
 	const document = $derived(store.document);
-	const paperTotal = $derived(document ? totalMarks(document.breakdown.entries) : 0);
+	const paperTotal = $derived(document ? totalMarks(tierEntries(document, tier)) : 0);
 
-	/** The working copy: rows as typed, plus the below-lowest label. */
-	const initial = workingCopyOf(store.document);
+	/** The working copy: rows as typed, plus the below-lowest label. Mounted afresh per open. */
+	const initial = untrack(() => workingCopyOf(store.document, tier));
 	let rows = $state<BoundaryRow[]>(initial.rows);
 	let below = $state(initial.below);
 	/** Which scale the working copy was started from; Custom makes labels editable. */
@@ -102,6 +117,7 @@
 		if (!document || issues.length > 0 || draft.length === 0) return null;
 		const tally: Record<string, number> = {};
 		for (const student of document.students) {
+			if (student.tier !== tier) continue;
 			if (!isEligible(document, student.id)) continue;
 			const grade = gradeOf(studentTotal(document, student.id), draft, belowLabelOf(below));
 			tally[grade.label] = (tally[grade.label] ?? 0) + 1;
@@ -118,12 +134,12 @@
 
 	function save(): void {
 		if (issues.length > 0) return;
-		store.saveBoundaries(draft, below);
+		store.saveBoundaries(tier, draft, below);
 		onDone?.();
 	}
 
 	function remove(): void {
-		store.removeBoundaries();
+		store.removeBoundaries(tier);
 		onDone?.();
 	}
 </script>
@@ -279,7 +295,7 @@
 	{/if}
 </div>
 <div class="flex items-center">
-	{#if document && boundariesOf(document)}
+	{#if document && boundariesOf(document, tier)}
 		<Button variant="ghost" size="sm" class="mr-auto text-muted-foreground" onclick={remove}>
 			Remove grades
 		</Button>

@@ -1,17 +1,44 @@
 import { describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
+import { render } from 'vitest-browser-svelte';
+import { Toaster } from '$lib/components/ui/sonner/index.js';
+import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import {
 	confirmed,
 	entry,
 	seed,
 	readSeeded,
-	student
+	student,
+	tier
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { generationInputFor } from '$lib/marksheet/report-input.js';
 import { openPage } from '../spec-helpers.js';
-import { rowNames, markCell, studentIdAt, focusedCell } from './marksheet.spec-helpers.js';
+import {
+	rowNames,
+	markCell,
+	studentIdAt,
+	progressText,
+	focusedCell,
+	twoTier
+} from './marksheet.spec-helpers.js';
 import MarksheetPage from './+page.svelte';
+
+/** One tier's breakdown and its students: the shape most of these tests override. */
+function withTier(
+	tierOverrides: Parameters<typeof tier>[0],
+	exact: Partial<MarksheetDocument> = {}
+): MarksheetDocument {
+	return confirmed({ tiers: [tier(tierOverrides)], ...exact });
+}
+
+function totalCell(screen: { container: HTMLElement }, studentId: string): HTMLElement {
+	const cell = screen.container.querySelector<HTMLElement>(
+		`[data-testid="total-cell"][data-student-id="${studentId}"]`
+	);
+	if (!cell) throw new Error(`no total cell for ${studentId}`);
+	return cell;
+}
 
 describe('marksheet page', () => {
 	it('starts the class from a pasted column of names', async () => {
@@ -222,15 +249,18 @@ describe('marksheet page', () => {
 
 	it('counts a student’s progress as the entries they have a mark for', async () => {
 		seed(
-			confirmed({
-				breakdown: {
-					entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
-					warnings: [],
-					aoDescriptions: {}
+			withTier(
+				{
+					breakdown: {
+						entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
+						warnings: []
+					}
 				},
-				students: [student('student-1', 'Ada', 'Lovelace')],
-				marks: { 'student-1': { 'entry-1': 3 } }
-			})
+				{
+					students: [student('student-1', 'Ada', 'Lovelace')],
+					marks: { 'student-1': { 'entry-1': 3 } }
+				}
+			)
 		);
 
 		openPage(MarksheetPage);
@@ -261,7 +291,7 @@ describe('marksheet page', () => {
 
 		await page.getByLabelText('Class name').fill('10C1');
 
-		await vi.waitFor(() => expect(marksheetStore().document?.paper.className).toBe('10C1'));
+		await vi.waitFor(() => expect(marksheetStore().document?.className).toBe('10C1'));
 		expect(document.title).toBe('10C1 · Marksheet · QLA');
 	});
 
@@ -282,18 +312,19 @@ describe('marksheet page', () => {
 
 	it('bands consecutive columns under their question, and jumps to a band', async () => {
 		seed(
-			confirmed({
-				breakdown: {
-					entries: [
-						entry('entry-1', '1a', '1'),
-						entry('entry-2', '1b', '1'),
-						entry('entry-3', '2', '2')
-					],
-					warnings: [],
-					aoDescriptions: {}
+			withTier(
+				{
+					breakdown: {
+						entries: [
+							entry('entry-1', '1a', '1'),
+							entry('entry-2', '1b', '1'),
+							entry('entry-3', '2', '2')
+						],
+						warnings: []
+					}
 				},
-				students: [student('student-1', 'Ada', 'Lovelace')]
-			})
+				{ students: [student('student-1', 'Ada', 'Lovelace')] }
+			)
 		);
 
 		const screen = openPage(MarksheetPage);
@@ -323,7 +354,7 @@ describe('marksheet page', () => {
 
 	it('flags a band the parse could not read a question number for', async () => {
 		seed(
-			confirmed({
+			withTier({
 				breakdown: {
 					entries: [entry('entry-1', '3b', '3b')],
 					warnings: [
@@ -337,8 +368,7 @@ describe('marksheet page', () => {
 							code: 'SUMMARY_LENGTH',
 							message: 'Summary is 2 words; expected 3–8 words.'
 						}
-					],
-					aoDescriptions: {}
+					]
 				}
 			})
 		);
@@ -357,7 +387,7 @@ describe('marksheet page', () => {
 
 	it('keeps every stored parse warning reachable, run-level ones included', async () => {
 		seed(
-			confirmed({
+			withTier({
 				breakdown: {
 					entries: [entry('entry-1', '2bii', '2')],
 					warnings: [
@@ -367,8 +397,7 @@ describe('marksheet page', () => {
 							message: 'Summary is 2 words; expected 3–8 words.'
 						},
 						{ questionId: null, code: 'MARKS_TOTAL', message: 'Marks total 76; paper says 86.' }
-					],
-					aoDescriptions: {}
+					]
 				}
 			})
 		);
@@ -396,10 +425,10 @@ describe('marksheet page', () => {
 			entry(`entry-${index}`, `${index + 1}a`, `${index + 1}`)
 		);
 		seed(
-			confirmed({
-				breakdown: { entries, warnings: [], aoDescriptions: {} },
-				students: [student('student-1', 'Alexandrina-Bartholomew-Montgomery', 'Lovelace')]
-			})
+			withTier(
+				{ breakdown: { entries, warnings: [] } },
+				{ students: [student('student-1', 'Alexandrina-Bartholomew-Montgomery', 'Lovelace')] }
+			)
 		);
 
 		const screen = openPage(MarksheetPage);
@@ -428,5 +457,224 @@ describe('marksheet page', () => {
 		// A long name is cut to its column rather than pushing the columns about.
 		const name = find('[data-testid="student-name"]');
 		expect(name.scrollWidth).toBeGreaterThan(name.clientWidth);
+	});
+});
+
+describe('tiers', () => {
+	it('opens on Tier not set while nobody has a tier, with no mark columns', async () => {
+		seed(
+			twoTier({
+				students: [
+					student('student-1', 'Ada', 'Lovelace', false, null),
+					student('student-2', 'Grace', 'Hopper', false, null)
+				]
+			})
+		);
+
+		const screen = openPage(MarksheetPage);
+
+		await expect
+			.element(page.getByRole('radio', { name: /Tier not set/ }))
+			.toHaveAttribute('aria-checked', 'true');
+		await expect
+			.element(page.getByText(/A student needs a tier before their marks can go in/))
+			.toBeInTheDocument();
+		expect(screen.container.querySelector('[data-testid="mark-cell"]')).toBeNull();
+		expect(rowNames(screen)).toEqual(['Ada Lovelace', 'Grace Hopper']);
+	});
+
+	it('opens on Tier 1 once a student has a tier', async () => {
+		seed(
+			twoTier({
+				students: [
+					student('student-1', 'Ada', 'Lovelace', false, 0),
+					student('student-2', 'Grace', 'Hopper', false, null)
+				]
+			})
+		);
+
+		const screen = openPage(MarksheetPage);
+
+		await expect
+			.element(page.getByRole('radio', { name: /Tier 1 · Higher/ }))
+			.toHaveAttribute('aria-checked', 'true');
+		// The open tier's paper, not the waiting students.
+		expect(rowNames(screen)).toEqual(['Ada Lovelace']);
+		expect(markCell(screen, 'student-1', 'higher-1').textContent?.trim()).toBe('');
+		expect(page.getByText(/A student needs a tier/).query()).toBeNull();
+	});
+
+	it('sets a student’s tier one by one and says when every student has one', async () => {
+		seed(
+			twoTier({
+				students: [
+					student('student-1', 'Ada', 'Lovelace', false, null),
+					student('student-2', 'Grace', 'Hopper', false, null)
+				]
+			})
+		);
+
+		openPage(MarksheetPage);
+
+		await page.getByRole('button', { name: 'Tier 1 · Higher' }).first().click();
+		await vi.waitFor(() => expect(marksheetStore().document?.students[0].tier).toBe(0));
+
+		await page.getByRole('button', { name: 'Tier 2 · Foundation' }).click();
+
+		await expect.element(page.getByText('Every student has a tier.')).toBeInTheDocument();
+		expect(marksheetStore().document?.students.map((s) => s.tier)).toEqual([0, 1]);
+		await expect
+			.element(page.getByRole('radio', { name: /Tier 1 · Higher \(1\)/ }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('radio', { name: /Tier 2 · Foundation \(1\)/ }))
+			.toBeInTheDocument();
+	});
+
+	it('dots Tier not set while anyone is waiting, and clears it when nobody is', async () => {
+		seed(
+			twoTier({
+				students: [student('student-1', 'Ada', 'Lovelace', false, null)]
+			})
+		);
+
+		openPage(MarksheetPage);
+
+		await expect.element(page.getByTestId('tier-not-set-dot')).toBeInTheDocument();
+
+		await page.getByRole('button', { name: 'Tier 2 · Foundation' }).click();
+
+		await expect.element(page.getByTestId('tier-not-set-dot')).not.toBeInTheDocument();
+	});
+
+	it('places selected students on a tier in one go', async () => {
+		seed(
+			twoTier({
+				students: [
+					student('student-1', 'Ada', 'Lovelace', false, null),
+					student('student-2', 'Grace', 'Hopper', false, null),
+					student('student-3', 'Alan', 'Turing', false, null)
+				]
+			})
+		);
+
+		openPage(MarksheetPage);
+
+		await page.getByLabelText('Select all').click();
+		await expect.element(page.getByText('3 selected')).toBeInTheDocument();
+		await page.getByRole('button', { name: 'Move to Tier 2' }).click();
+
+		await vi.waitFor(() =>
+			expect(marksheetStore().document?.students.map((s) => s.tier)).toEqual([1, 1, 1])
+		);
+		await expect.element(page.getByText('Every student has a tier.')).toBeInTheDocument();
+	});
+
+	it('moves a student with ⇄, keeping their marks and saying they do not count', async () => {
+		seed(
+			twoTier({
+				students: [
+					student('student-1', 'Ada', 'Lovelace', false, 0),
+					student('student-2', 'Grace', 'Hopper', false, 1)
+				],
+				marks: { 'student-1': { 'higher-1': 4 } }
+			})
+		);
+
+		const screen = openPage(MarksheetPage);
+		render(Toaster);
+
+		await page.getByRole('button', { name: 'Move Ada Lovelace to Tier 2 · Foundation' }).click();
+
+		await vi.waitFor(() => expect(marksheetStore().document?.students[0].tier).toBe(1));
+		expect(marksheetStore().document?.marks).toEqual({ 'student-1': { 'higher-1': 4 } });
+		await expect
+			.element(page.getByText('Ada Lovelace moved to Tier 2 · Foundation'))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('Their marks on the tier they left are kept, not counted.'))
+			.toBeInTheDocument();
+
+		// On Tier 2 her Higher mark is kept, shown as a badge, and outside her progress.
+		await page.getByRole('radio', { name: /Tier 2 · Foundation/ }).click();
+		const badge = page.getByTestId('off-tier-badge');
+		await expect.element(badge).toHaveTextContent('+1 H');
+		const title = badge.element().getAttribute('title') ?? '';
+		expect(title).toContain('kept but not counted');
+		expect(title).toContain('counts again if the student moves back');
+		expect(progressText(screen, 0)).toBe('0/2');
+	});
+
+	it('shows only the open tier’s entries, students and totals', async () => {
+		seed(
+			twoTier({
+				students: [
+					student('student-1', 'Ada', 'Lovelace', false, 0),
+					student('student-2', 'Grace', 'Hopper', false, 1)
+				],
+				marks: {
+					'student-1': { 'higher-1': 4 },
+					'student-2': { 'foundation-1': 5, 'foundation-2': 3 }
+				}
+			})
+		);
+
+		const screen = openPage(MarksheetPage);
+
+		expect(page.getByRole('button', { name: 'Details for F1' }).query()).toBeNull();
+		expect(totalCell(screen, 'student-1').textContent?.trim()).toBe('4');
+
+		await page.getByRole('radio', { name: /Tier 2 · Foundation/ }).click();
+
+		await vi.waitFor(() => expect(rowNames(screen)).toEqual(['Grace Hopper']));
+		expect(totalCell(screen, 'student-2').textContent?.trim()).toBe('8');
+		expect(markCell(screen, 'student-2', 'foundation-2').textContent?.trim()).toBe('3');
+		expect(page.getByRole('button', { name: 'Details for H1' }).query()).toBeNull();
+	});
+
+	it('counts report-ready students across both tiers and names who has no tier', async () => {
+		seed(
+			twoTier({
+				students: [
+					student('student-1', 'Ada', 'Lovelace', false, 0),
+					student('student-2', 'Grace', 'Hopper', false, 1),
+					student('student-3', 'Alan', 'Turing', false, null)
+				],
+				marks: {
+					'student-1': { 'higher-1': 4 },
+					'student-2': { 'foundation-1': 5, 'foundation-2': 3 }
+				}
+			})
+		);
+
+		openPage(MarksheetPage);
+
+		await expect
+			.element(page.getByText(/2 of 3 students are fully marked and can have a report/))
+			.toHaveTextContent(
+				'2 of 3 students are fully marked and can have a report · 1 have no tier yet'
+			);
+	});
+
+	it('keeps a single-tier marksheet free of tier chrome', async () => {
+		seed(
+			confirmed({
+				students: [student('student-1', 'Ada', 'Lovelace')],
+				marks: { 'student-1': { 'entry-1': 3 } }
+			})
+		);
+
+		openPage(MarksheetPage);
+
+		expect(page.getByText('Tier not set').query()).toBeNull();
+		expect(page.getByRole('radio', { name: /Tier 1/ }).query()).toBeNull();
+		expect(page.getByRole('button', { name: /^Move .* to Tier/ }).query()).toBeNull();
+		expect(page.getByTestId('off-tier-badge').query()).toBeNull();
+		await expect
+			.element(page.getByRole('button', { name: 'Export marks to spreadsheet (.csv)' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Set grade boundaries' }))
+			.toBeInTheDocument();
 	});
 });

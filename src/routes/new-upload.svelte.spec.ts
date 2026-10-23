@@ -1,27 +1,51 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
+import { goto } from '$app/navigation';
 import AppNav from '$lib/components/shell/AppNav.svelte';
-import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import { STORAGE_KEY, markCount, type MarksheetDocument } from '$lib/marksheet/document.js';
 import {
-	NOW,
 	confirmed,
 	entry,
 	seed,
 	readSeeded,
-	student
+	student,
+	tier
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import BreakdownPage from './breakdown/+page.svelte';
-import MarksheetPage from './marksheet/+page.svelte';
 
 /** A confirmed marksheet: the surface a teacher wipes from with work in hand. */
 function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({
-		paper: { ...confirmed().paper, className: '10C1' },
-		students: [student('student-1', 'Ada', 'Lovelace')],
+		className: '10C1',
+		tiers: [tier({ breakdown: { entries: [entry('entry-1', '2bii', '2')], warnings: [] } })],
+		students: [student('student-1', 'Ada', 'Lovelace', false, 0)],
 		marks: { 'student-1': { 'entry-1': 3 } },
+		...overrides
+	});
+}
+
+/** A class split across two papers: the assessment a wipe takes in one action. */
+function twoTierMarksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
+	return confirmed({
+		className: '10C1',
+		tiers: [
+			tier({
+				tierName: 'Higher',
+				breakdown: { entries: [entry('higher-1', '1a', '1')], warnings: [] }
+			}),
+			tier({
+				tierName: 'Foundation',
+				breakdown: { entries: [entry('foundation-1', '8a', '8')], warnings: [] }
+			})
+		],
+		students: [
+			student('student-1', 'Ada', 'Lovelace', false, 0),
+			student('student-2', 'Grace', 'Hopper', false, 1)
+		],
+		marks: { 'student-1': { 'higher-1': 4 }, 'student-2': { 'foundation-1': 3 } },
 		...overrides
 	});
 }
@@ -36,11 +60,10 @@ function daysAgo(days: number): string {
 	return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
-/** The nav is where "New upload…" lives now, so the page is rendered under it. */
-function openMarksheetPage() {
+/** The nav alone, for a dialog that belongs to the whole app rather than a surface. */
+function openNav() {
 	marksheetStore().load();
-	render(AppNav);
-	return render(MarksheetPage);
+	return render(AppNav);
 }
 
 function openBreakdownPage() {
@@ -59,19 +82,22 @@ describe('the new-upload dialog', () => {
 	it('names the marks and the students a wipe would take', async () => {
 		seed(
 			marksheet({
-				breakdown: {
-					entries: [entry('entry-1', '2bii', '2'), entry('entry-2', '3a', '3', { marks: 2 })],
-					warnings: [],
-					aoDescriptions: {}
-				},
+				tiers: [
+					tier({
+						breakdown: {
+							entries: [entry('entry-1', '2bii', '2'), entry('entry-2', '3a', '3', { marks: 2 })],
+							warnings: []
+						}
+					})
+				],
 				students: [
-					student('student-1', 'Ada', 'Lovelace'),
-					student('student-2', 'Grace', 'Hopper')
+					student('student-1', 'Ada', 'Lovelace', false, 0),
+					student('student-2', 'Grace', 'Hopper', false, 0)
 				],
 				marks: { 'student-1': { 'entry-1': 3, 'entry-2': 1 }, 'student-2': { 'entry-1': 0 } }
 			})
 		);
-		openMarksheetPage();
+		openNav();
 
 		const dialog = await openNewUpload();
 
@@ -90,13 +116,13 @@ describe('the new-upload dialog', () => {
 		seed(
 			marksheet({
 				students: [
-					student('student-1', 'Ada', 'Lovelace'),
-					student('student-2', 'Grace', 'Hopper')
+					student('student-1', 'Ada', 'Lovelace', false, 0),
+					student('student-2', 'Grace', 'Hopper', false, 0)
 				],
 				marks: {}
 			})
 		);
-		openMarksheetPage();
+		openNav();
 
 		const dialog = await openNewUpload();
 
@@ -131,18 +157,7 @@ describe('the new-upload dialog', () => {
 	});
 
 	it('names a paper the teacher never labelled without one', async () => {
-		seed(
-			parsed({
-				paper: {
-					label: null,
-					className: null,
-					sourceFilenames: [],
-					parsedAt: NOW,
-					boundaries: null,
-					belowLowestLabel: 'U'
-				}
-			})
-		);
+		seed(parsed({ label: null, className: null }));
 		openBreakdownPage();
 
 		const dialog = await openNewUpload();
@@ -154,7 +169,7 @@ describe('the new-upload dialog', () => {
 
 	it('takes a backup from inside the dialog, and says so once it is taken', async () => {
 		seed(marksheet());
-		openMarksheetPage();
+		openNav();
 		await openNewUpload();
 		await expect.element(page.getByTestId('wipe-backup')).toHaveTextContent('Never backed up');
 		const file = captureDownload();
@@ -170,7 +185,7 @@ describe('the new-upload dialog', () => {
 
 	it('offers the marks as a CSV beside it, labelled as the thing it is not', async () => {
 		seed(marksheet());
-		openMarksheetPage();
+		openNav();
 		await openNewUpload();
 
 		await expect
@@ -189,7 +204,7 @@ describe('the new-upload dialog', () => {
 
 	it('reports the backup’s real age when the dialog is opened again', async () => {
 		seed(marksheet({ lastExportedAt: daysAgo(3) }));
-		openMarksheetPage();
+		openNav();
 		await openNewUpload();
 		await expect.element(page.getByTestId('wipe-backup')).toHaveTextContent('Last one 3 days ago');
 
@@ -202,5 +217,53 @@ describe('the new-upload dialog', () => {
 		// The flip belongs to the dialog that made the copy, not to every opening
 		// of it: work done after that backup is not in it.
 		await expect.element(page.getByTestId('wipe-backup')).toHaveTextContent('Last one just now');
+	});
+
+	it('wipes both tiers in one action and names them', async () => {
+		seed(twoTierMarksheet());
+		openNav();
+
+		const dialog = await openNewUpload();
+
+		await expect
+			.element(dialog)
+			.toHaveTextContent(
+				'This deletes 2 marks for 2 students in 10X Ph1 (Higher and Foundation) from this browser.'
+			);
+		// Each tier's marks can leave before the wipe, named so they cannot be mixed up.
+		await expect
+			.element(page.getByRole('button', { name: 'Export Higher CSV' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Export Foundation CSV' }))
+			.toBeInTheDocument();
+		await page.getByRole('button', { name: 'Delete 2 marks and start again' }).click();
+
+		expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+		expect(marksheetStore().document).toBeNull();
+		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/'));
+	});
+
+	it('counts only the marks on each student’s own tier', async () => {
+		// One on-tier mark and one off-tier mark: the off-tier mark is kept in the
+		// document but is not work the teacher has counted, so the dialog says 1.
+		const document = twoTierMarksheet({
+			students: [student('student-1', 'Ada', 'Lovelace', false, 0)],
+			marks: { 'student-1': { 'higher-1': 4, 'foundation-1': 1 } }
+		});
+		expect(markCount(document)).toBe(1);
+		seed(document);
+		openNav();
+
+		const dialog = await openNewUpload();
+
+		await expect
+			.element(dialog)
+			.toHaveTextContent(
+				'This deletes 1 mark for 1 student in 10X Ph1 (Higher and Foundation) from this browser.'
+			);
+		await expect
+			.element(page.getByRole('button', { name: 'Delete 1 mark and start again' }))
+			.toBeInTheDocument();
 	});
 });

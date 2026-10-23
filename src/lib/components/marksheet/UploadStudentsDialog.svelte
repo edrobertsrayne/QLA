@@ -12,12 +12,20 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Table from '$lib/components/ui/table';
+	import type { TierIndex } from '$lib/marksheet/document.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { newNames } from '$lib/marksheet/students.js';
 	import { readStudentCsv } from '$lib/marksheet/students-csv.js';
 	import { count } from '$lib/prose.js';
 
-	let { size = 'sm' }: { size?: 'sm' | 'xs' } = $props();
+	let {
+		tier,
+		size = 'sm'
+	}: {
+		/** The tier the uploaded students join: none while they wait for one. */
+		tier: TierIndex | null;
+		size?: 'sm' | 'xs';
+	} = $props();
 
 	const PREVIEW_ROWS = 5;
 
@@ -59,7 +67,7 @@
 
 	function add(): void {
 		if (!csv?.ok) return;
-		store.addStudentsFromUpload(csv.names);
+		store.addStudentsFromUpload(csv.names, tier);
 		open = false;
 	}
 </script>

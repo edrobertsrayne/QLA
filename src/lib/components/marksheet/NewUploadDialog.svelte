@@ -25,22 +25,34 @@
 	/** The work a wipe would take: how much of it, and whose paper. */
 	const marksEntered = $derived(store.document ? markCount(store.document) : 0);
 	const studentsInClass = $derived(store.document?.students.length ?? 0);
-	const label = $derived(store.document?.paper.label ?? null);
+	const label = $derived(store.label);
+	/** Each tier as the teacher knows it: its printed name, or its position when it has none. */
+	const tierNames = $derived(
+		store.tiers.map((tier, index) => tier.tierName?.trim() || `Tier ${index + 1}`)
+	);
+	/** Both tiers' names on a two-tier assessment, so a wipe names everything it takes. */
+	const bothTiers = $derived(tierNames.length === 2 ? `${tierNames[0]} and ${tierNames[1]}` : null);
 
 	/**
 	 * What the wipe takes, from the state the teacher is in: marks entered, a
 	 * class with nothing marked yet, or a breakdown on its own. It is the middle
-	 * of one sentence, and reads in bold.
+	 * of one sentence, and reads in bold. On two tiers it names both papers.
 	 */
 	const loss = $derived.by(() => {
-		const inPaper = label === null ? '' : ` in ${label}`;
+		const namedTiers = bothTiers === null ? '' : ` (${bothTiers})`;
+		const inPaper = label === null ? '' : ` in ${label}${namedTiers}`;
 		if (marksEntered > 0) {
 			return `${count(marksEntered, 'mark')} for ${count(studentsInClass, 'student')}${inPaper}`;
 		}
 		if (studentsInClass > 0) {
 			return `the class of ${count(studentsInClass, 'student')} and the breakdown${inPaper}`;
 		}
-		return label === null ? 'the stored breakdown' : `the stored breakdown for ${label}`;
+		if (label === null) {
+			return bothTiers === null
+				? 'the stored breakdown'
+				: `the stored breakdown across ${bothTiers}`;
+		}
+		return `the stored breakdown for ${label}${namedTiers}`;
 	});
 
 	/** The button says what the click costs, so it can never be pressed by reflex. */

@@ -16,6 +16,12 @@ export type UndoableChange =
 	  }
 	/** A paste or a class-list upload: the paste notice speaks for it. */
 	| { kind: 'mark-paste' }
+	/** A student put on another tier, or back to no tier. */
+	| { kind: 'student-tier'; name: string }
+	/** A tier renamed; null when its name was cleared. */
+	| { kind: 'tier-name'; name: string | null }
+	/** A common question added, changed or cleared. */
+	| { kind: 'common-question' }
 	| { kind: 'report-edit'; studentId: string }
 	| { kind: 'report-kept'; studentId: string }
 	| { kind: 'grade-boundaries'; action: 'saved' | 'removed' };
@@ -38,6 +44,14 @@ export function undoNotice(undoable: Undoable, document: MarksheetDocument): Und
 			return { verb: 'Removed', subject: undoable.name };
 		case 'mark-paste':
 			return null;
+		case 'student-tier':
+			return { verb: 'Moved', subject: undoable.name };
+		case 'tier-name':
+			return undoable.name === null
+				? { verb: 'Cleared tier name', subject: null }
+				: { verb: 'Renamed tier to', subject: undoable.name };
+		case 'common-question':
+			return { verb: 'Changed common questions', subject: null };
 		case 'grade-boundaries':
 			return {
 				verb: undoable.action === 'saved' ? 'Grade boundaries saved' : 'Grade boundaries removed',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { entry, student } from './fixtures.spec-helpers.js';
-import { progressOf, readName, sortStudentsByName, splitName } from './students.js';
+import { newStudent, progressOf, readName, sortStudentsByName, splitName } from './students.js';
 
 describe('splitName', () => {
 	it('reads a comma as Surname, First name', () => {
@@ -62,6 +62,17 @@ describe('sortStudentsByName', () => {
 			'student-1',
 			'student-2'
 		]);
+	});
+});
+
+describe('newStudent', () => {
+	it('makes a present, unmarked student on the tier they sit', () => {
+		expect(newStudent({ firstName: 'Ada', surname: 'Lovelace' }, 1)).toMatchObject({
+			firstName: 'Ada',
+			surname: 'Lovelace',
+			absent: false,
+			tier: 1
+		});
 	});
 });
 

@@ -141,6 +141,17 @@ export function applyQuestionNumberFallback(breakdown: unknown): void {
 	}
 }
 
+/**
+ * Set the top-level `tierName` to the trimmed string when the model gave text
+ * with content, otherwise null. Never warns: a paper with no tier printed is a
+ * valid answer, and neither is a malformed one worth blocking the run.
+ */
+export function applyTierNameCheck(breakdown: unknown): void {
+	if (!isRecord(breakdown)) return;
+	const value = breakdown['tierName'];
+	breakdown['tierName'] = typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
 /** A description the model gave, or null when it is empty, over-long or not text. */
 function cleanDescription(value: unknown): string | null {
 	if (typeof value !== 'string') return null;

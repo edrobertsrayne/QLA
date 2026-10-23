@@ -83,9 +83,9 @@ export function stored(storage: FakeStorage): MarksheetDocument {
 	return JSON.parse(storage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
 }
 
-/** An entry the document keyed by id, so a test can assert the store's state. */
+/** An entry the document keyed by id, on whichever tier holds it. */
 export function entryOf(store: MarksheetStore, id: string): BreakdownEntry | undefined {
-	return store.document?.breakdown.entries.find((candidate) => candidate.id === id);
+	return store.entries.find((candidate) => candidate.id === id);
 }
 
 /** A student the document keyed by id, so a test can assert the store's state. */

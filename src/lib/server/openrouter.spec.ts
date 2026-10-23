@@ -157,6 +157,8 @@ describe('live structured transport', () => {
 		expect(messages[1]?.role).toBe('user');
 		const parts = messages[1]?.content as Array<{ type: string; text: string }>;
 		expect(parts).toHaveLength(1);
+		// No files: today's payload, without the native file parser plugin.
+		expect(payload).not.toHaveProperty('plugins');
 		const userText = String(parts[0]?.text ?? '');
 		const systemText = String(messages[0]?.content ?? '');
 		// The open/close markers name one shared 32-hex nonce; the system
@@ -171,6 +173,36 @@ describe('live structured transport', () => {
 			'HTTP-Referer': 'https://qla.local/report',
 			'X-Title': 'QLA Phase 3 Report'
 		});
+	});
+
+	it('attaches native PDFs after the fenced data and pins the file parser to native', async () => {
+		nextResponse = () => jsonResponse(chatBody('{"pairs":[]}'));
+
+		await callStructuredModel(
+			structuredInput({
+				files: [
+					{ filename: 'tier1.pdf', pdfBase64: 'AAA' },
+					{ filename: 'tier2.pdf', pdfBase64: 'BBB' }
+				]
+			})
+		);
+
+		const payload = JSON.parse(String(fetchCalls[0]?.init?.body)) as Record<string, unknown>;
+		expect(payload.plugins).toEqual([{ id: 'file-parser', pdf: { engine: 'native' } }]);
+		const messages = payload.messages as Array<{ role: string; content: unknown }>;
+		const parts = messages[1]?.content as Array<Record<string, unknown>>;
+		expect(parts).toHaveLength(3);
+		expect(parts[0]?.type).toBe('text');
+		expect(parts.slice(1)).toEqual([
+			{
+				type: 'file',
+				file: { filename: 'tier1.pdf', file_data: 'data:application/pdf;base64,AAA' }
+			},
+			{
+				type: 'file',
+				file: { filename: 'tier2.pdf', file_data: 'data:application/pdf;base64,BBB' }
+			}
+		]);
 	});
 
 	it('returns the extracted content with mapped usage and logs usage only', async () => {

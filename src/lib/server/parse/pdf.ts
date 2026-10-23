@@ -13,7 +13,7 @@
 // in plain text. See `docs/research/pdf-ingestion.md` (research branch
 // `research/pdf-ingestion`, throwaway, not merged).
 
-import { extractText } from 'unpdf';
+import { extractText, getDocumentProxy } from 'unpdf';
 import { fenceDocuments } from '../fence';
 import { AO_DESCRIPTION_TARGET_WORDS, type ParseWarning } from './schema';
 import { getServerEnv } from './env';
@@ -29,6 +29,15 @@ export const OPENROUTER_TIMEOUT_MS = 120_000;
 
 /** Warning code for the text-only degradation path. */
 export const DIAGRAM_UNVERIFIED_CODE = 'DIAGRAM_UNVERIFIED';
+
+// Verbatim from the #108 tier-name prototype, appended to the parse prompt.
+const TIER_NAME_INSTRUCTION = [
+	'Top level also has tierName: the tier this paper is set at, lifted from the documents themselves (cover, title page or running header) — NEVER from a filename.',
+	'Copy the tier words verbatim as printed (e.g. "Higher Tier", "Foundation Tier", "Higher"), dropping only the wording around them such as the paper number, calculator rubric or brackets (e.g. "Higher (Calculator) Paper 2H" gives "Higher").',
+	'If the tier appears only as the letter suffix of the paper code (e.g. 8300/1H, 1MA1/2F), give the word that letter stands for: H gives "Higher", F gives "Foundation".',
+	'A paper number, paper title, qualification level or calculator rubric is NEVER a tier: "Paper 1", "Paper 2", "01", "Modelling physics", "A-level", "AS", "GCSE", "Non-Calculator" are not tiers.',
+	"When no tier is printed, tierName is null. When the assessment paper and markscheme both name the tier, use the assessment paper's wording."
+].join(' ');
 
 /** Resolve the effective model id: trimmed override, else OPENROUTER_MODEL, else DEFAULT_MODEL_ID. */
 export function resolveModelId(modelOverride?: string): string {
@@ -53,6 +62,28 @@ export interface ParsedPdf {
 	pageCount: number;
 	textPerPage: string[];
 	textWithMarkers: string;
+}
+
+/**
+ * Count a PDF's pages without extracting their text. The page ceiling can then
+ * be enforced before the work of reading every page. Throws on unreadable
+ * input — the route maps that to a 400 before any model call.
+ */
+export async function countPdfPages(bytes: Uint8Array): Promise<number> {
+	let pageCount: number;
+	try {
+		const pdf = await getDocumentProxy(bytes);
+		pageCount = pdf.numPages;
+	} catch (error) {
+		throw new Error(
+			`PDF could not be read: ${error instanceof Error ? error.message : String(error)}`,
+			{ cause: error }
+		);
+	}
+	if (!Number.isInteger(pageCount) || pageCount < 1) {
+		throw new Error('PDF could not be read: no pages found.');
+	}
+	return pageCount;
 }
 
 /**
@@ -155,6 +186,7 @@ export function buildPromptText(input: {
 		nativeHint,
 		'The specification below is extra grounding only: specPoint is still an exact spec reference lifted verbatim from the markscheme, or null when the markscheme gives none — NEVER infer or guess, even when the specification lists candidate codes.',
 		`Top level also has aoDescriptions: one { ao, description } entry for each of AO1, AO2, AO3. description is a single student-readable phrase of about ${AO_DESCRIPTION_TARGET_WORDS} words at most that summarises how the specification text itself defines that assessment objective. Summarise from the specification text ONLY; NEVER invent or infer a description. Use null when no specification is provided or it does not define that objective.`,
+		TIER_NAME_INSTRUCTION,
 		directive,
 		'',
 		'Top level: questions array, one entry per undivided question and one per separately marked subquestion (e.g. 1a, 2bii). A question that is subdivided gets no entry of its own, and neither does an unmarked stem whose marks sit on its own subquestions (e.g. no 2b entry when 2bi and 2bii carry the marks).',

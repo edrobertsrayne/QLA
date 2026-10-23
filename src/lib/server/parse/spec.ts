@@ -33,7 +33,7 @@ import {
 	SPEC_UNREADABLE_CODE,
 	INVALID_SPEC_URL_CODE
 } from './schema';
-import { parsePdfBytes } from './pdf';
+import { countPdfPages, parsePdfBytes } from './pdf';
 import type { IngestedDocument } from './model';
 
 /** Generic message for every network-level failure (blocked, unreachable, non-OK, bad redirect). */
@@ -292,6 +292,28 @@ export async function fetchSpecPdf(url: URL, useNativePdf: boolean): Promise<Ing
 		);
 	}
 
+	// Count pages before extracting text, so an oversize specification never
+	// pays for the extraction the page cap exists to bound. pdf.js detaches the
+	// buffer it reads, so the count works on a copy.
+	let pageCount: number;
+	try {
+		pageCount = await countPdfPages(bytes.slice());
+	} catch (error) {
+		throw new SpecUnreadableError(
+			'The specification PDF could not be read. Re-export it without password protection and try again.',
+			SPEC_UNREADABLE_CODE,
+			{ cause: error }
+		);
+	}
+	if (pageCount > MAX_SPEC_PAGES) {
+		throw new SpecUnreadableError(
+			`The specification has ${pageCount} pages, above the ${MAX_SPEC_PAGES}-page limit.`,
+			'FILE_TOO_BIG'
+		);
+	}
+
+	// pdf.js detaches the buffer it reads, so encode the native copy first.
+	const pdfBase64 = useNativePdf ? Buffer.from(bytes).toString('base64') : null;
 	let parsed;
 	try {
 		parsed = await parsePdfBytes(bytes);
@@ -302,16 +324,10 @@ export async function fetchSpecPdf(url: URL, useNativePdf: boolean): Promise<Ing
 			{ cause: error }
 		);
 	}
-	if (parsed.pageCount > MAX_SPEC_PAGES) {
-		throw new SpecUnreadableError(
-			`The specification has ${parsed.pageCount} pages, above the ${MAX_SPEC_PAGES}-page limit.`,
-			'FILE_TOO_BIG'
-		);
-	}
 	return {
 		filename: filenameFor(url),
-		pageCount: parsed.pageCount,
+		pageCount,
 		text: parsed.textWithMarkers,
-		pdfBase64: useNativePdf ? Buffer.from(bytes).toString('base64') : null
+		pdfBase64
 	};
 }

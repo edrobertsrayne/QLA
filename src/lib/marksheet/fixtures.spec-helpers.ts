@@ -2,9 +2,10 @@
 // back. Test-only: nothing in the app imports this. A spec whose scenario
 // wants other defaults wraps these with overrides rather than redefining them.
 
+import type { ParseQuestion } from '$lib/server/parse/schema.js';
 import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY, entryValuesOf } from './document.js';
-import type { BreakdownEntry, MarksheetDocument, StoredStudent } from './document.js';
-import type { CreateFromParseInput } from './store.svelte.js';
+import type { BreakdownEntry, MarksheetDocument, StoredStudent, StoredTier } from './document.js';
+import type { CreateFromAssessmentInput, TierParse } from './create-assessment.js';
 
 export const NOW = '2026-01-01T10:00:00.000Z';
 
@@ -40,13 +41,27 @@ export function entry(
 	return overrides.original === undefined ? { ...built, original: entryValuesOf(built) } : built;
 }
 
+/** One tier as an untiered parse leaves it: no printed name, one entry, no boundaries. */
+export function tier(overrides: Partial<StoredTier> = {}): StoredTier {
+	return {
+		tierName: null,
+		sourceFilenames: ['10X Ph1.pdf'],
+		parsedAt: NOW,
+		breakdown: { entries: [entry('entry-1', '2bii', '2')], warnings: [] },
+		boundaries: null,
+		belowLowestLabel: 'U',
+		...overrides
+	};
+}
+
 export function student(
 	id: string,
 	firstName: string,
 	surname: string,
-	absent = false
+	absent = false,
+	tier: 0 | 1 | null = 0
 ): StoredStudent {
-	return { id, firstName, surname, absent };
+	return { id, firstName, surname, absent, tier };
 }
 
 /** A confirmed document with no class, students or marks: the state a marksheet exists in. */
@@ -58,17 +73,13 @@ export function confirmed(overrides: Partial<MarksheetDocument> = {}): Marksheet
 		breakdownConfirmedAt: NOW,
 		lastExportedAt: null,
 		firstUnbackedChangeAt: null,
-		paper: {
-			label: '10X Ph1',
-			className: null,
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW,
-			boundaries: null,
-			belowLowestLabel: 'U'
-		},
-		breakdown: { entries: [entry('entry-1', '2bii', '2')], warnings: [], aoDescriptions: {} },
+		label: '10X Ph1',
+		className: null,
+		aoDescriptions: {},
+		tiers: [tier()],
 		students: [],
 		marks: {},
+		commonQuestions: [],
 		topicNames: {},
 		reports: {},
 		...overrides
@@ -80,11 +91,26 @@ export function parsed(overrides: Partial<MarksheetDocument> = {}): MarksheetDoc
 	return confirmed({ breakdownConfirmedAt: null, ...overrides });
 }
 
-/** A document as version 2 stored it: the earlier schema, without the unbacked-change field. */
+/** A document as version 2 stored it: one flat paper, and no unbacked-change field. */
 export function writtenAsV2(document: MarksheetDocument): Record<string, unknown> {
 	const written: Record<string, unknown> = JSON.parse(JSON.stringify(document));
+	const first = document.tiers[0];
 	written.schemaVersion = 2;
 	delete written.firstUnbackedChangeAt;
+	delete written.label;
+	delete written.className;
+	delete written.aoDescriptions;
+	delete written.tiers;
+	delete written.commonQuestions;
+	written.paper = {
+		label: document.label,
+		className: document.className,
+		sourceFilenames: [...first.sourceFilenames],
+		parsedAt: first.parsedAt,
+		boundaries: first.boundaries,
+		belowLowestLabel: first.belowLowestLabel
+	};
+	written.breakdown = { ...first.breakdown, aoDescriptions: document.aoDescriptions };
 	return written;
 }
 
@@ -96,10 +122,8 @@ export function readSeeded(): MarksheetDocument {
 	return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
 }
 
-type ParsedQuestion = CreateFromParseInput['breakdown']['questions'][number];
-
 /** One question as the parse returns it: the one-entry paper `confirmed()` is built from. */
-export function question(overrides: Partial<ParsedQuestion> = {}): ParsedQuestion {
+export function question(overrides: Partial<ParseQuestion> = {}): ParseQuestion {
 	return {
 		id: '2bii',
 		questionNumber: '2',
@@ -112,13 +136,26 @@ export function question(overrides: Partial<ParsedQuestion> = {}): ParsedQuestio
 	};
 }
 
-/** A finished parse run, as the upload page hands it to the store. */
-export function parseRun(overrides: Partial<CreateFromParseInput> = {}): CreateFromParseInput {
+/** One tier as a parse leaves it, with its printed name carried into the breakdown too. */
+export function tierParse(overrides: Partial<TierParse> = {}): TierParse {
+	const tierName = overrides.tierName ?? null;
 	return {
-		breakdown: { questions: [question()], aoDescriptions: [] },
+		tierName,
+		breakdown: { tierName, questions: [question()], aoDescriptions: [] },
 		warnings: [],
-		usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 },
 		filenames: ['10X Ph1.pdf'],
+		...overrides
+	};
+}
+
+/** A finished upload run, as the upload page hands it to the store. */
+export function parseRun(
+	overrides: Partial<CreateFromAssessmentInput> = {}
+): CreateFromAssessmentInput {
+	return {
+		tiers: [tierParse()],
+		pairs: [],
+		usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 },
 		...overrides
 	};
 }

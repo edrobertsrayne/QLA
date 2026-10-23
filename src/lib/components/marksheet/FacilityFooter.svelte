@@ -2,21 +2,30 @@
 	The figures under the columns they belong to: one per entry, on its band's
 	tint, so a weak question is visible while marks are entered. Part-marked ones
 	are drawn as the estimate they are, with their coverage in the row beneath.
+	Every figure is the open tier's, over that tier's students.
 -->
 <script lang="ts">
 	import * as Table from '$lib/components/ui/table';
 	import { facilityDescription, facilityPercent, type RagBand } from '$lib/marksheet/analysis.js';
+	import type { TierIndex } from '$lib/marksheet/document.js';
 	import { boundariesOf } from '$lib/marksheet/grades.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { cn } from '$lib/utils.js';
 	import { FROZEN_PROGRESS, NAME_COLUMN, PROGRESS_PIN } from './grid-layout.js';
 
-	let { onViewAnalysis }: { onViewAnalysis: (entryId: string) => void } = $props();
+	let {
+		tier,
+		onViewAnalysis
+	}: {
+		tier: TierIndex;
+		onViewAnalysis: (entryId: string) => void;
+	} = $props();
 
 	const store = marksheetStore();
-	const analysis = $derived(store.analysis);
+	const document = $derived(store.document);
+	const analysis = $derived(store.analysisOf(tier));
 	/** Spacer cells under the Total | Grade | To next columns: Total always, the rest with boundaries. */
-	const hasGrades = $derived(store.document ? boundariesOf(store.document) !== null : false);
+	const hasGrades = $derived(document !== null && boundariesOf(document, tier) !== null);
 	/**
 	 * What a facility figure is tinted with, per band. A mark cell is a fraction
 	 * of a 40&nbsp;px column, so it takes a heavier fill than the analysis view's

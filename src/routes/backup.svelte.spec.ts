@@ -4,7 +4,15 @@ import { goto } from '$app/navigation';
 import { toast } from 'svelte-sonner';
 import { STORAGE_KEY } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import { confirmed, entry, parsed, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import {
+	NOW,
+	confirmed,
+	entry,
+	parsed,
+	seed,
+	student,
+	tier
+} from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import BreakdownPage from './breakdown/+page.svelte';
@@ -33,16 +41,102 @@ function daysAgo(days: number): string {
 /** A marksheet with a mark in it: the work a backup is for. */
 function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({
-		paper: { ...confirmed().paper, className: '10C1' },
-		breakdown: {
-			entries: [entry('entry-1', '2bii', '2')],
-			warnings: [],
-			aoDescriptions: {}
-		},
-		students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
+		className: '10C1',
+		tiers: [tier({ breakdown: { entries: [entry('entry-1', '2bii', '2')], warnings: [] } })],
+		students: [
+			student('student-1', 'Ada', 'Lovelace', false, 0),
+			student('student-2', 'Grace', 'Hopper', false, 0)
+		],
 		marks: { 'student-1': { 'entry-1': 3 } },
 		...overrides
 	});
+}
+
+/** A confirmed assessment with two papers: each tier keeps its own breakdown, boundaries and students. */
+function twoTierMarksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
+	return confirmed({
+		className: '10C1',
+		tiers: [
+			tier({
+				tierName: 'Higher',
+				sourceFilenames: ['10X Ph1 Higher.pdf'],
+				breakdown: { entries: [entry('higher-1', '1a', '1')], warnings: [] },
+				boundaries: [{ label: '9', minimum: 40 }],
+				belowLowestLabel: 'U'
+			}),
+			tier({
+				tierName: 'Foundation',
+				sourceFilenames: ['10X Ph1 Foundation.pdf'],
+				breakdown: { entries: [entry('foundation-1', '1a', '1')], warnings: [] },
+				boundaries: [{ label: '5', minimum: 20 }],
+				belowLowestLabel: 'U'
+			})
+		],
+		students: [
+			student('student-1', 'Ada', 'Lovelace', false, 0),
+			student('student-2', 'Grace', 'Hopper', false, 1),
+			student('student-3', 'Alan', 'Turing', false, null)
+		],
+		marks: {
+			'student-1': { 'higher-1': 4 },
+			'student-2': { 'foundation-1': 3 },
+			'student-3': { 'higher-1': 2 }
+		},
+		commonQuestions: [{ tier1EntryId: 'higher-1', tier2EntryId: 'foundation-1' }],
+		topicNames: { '3.2.1.4': 'Rates of reaction' },
+		...overrides
+	});
+}
+
+/** A document as version 2 wrote it: one paper, one breakdown and no tiers. */
+function version2Marksheet(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+	return {
+		schemaVersion: 2,
+		createdAt: NOW,
+		updatedAt: NOW,
+		breakdownConfirmedAt: NOW,
+		lastExportedAt: hoursAgo(2),
+		paper: {
+			label: '10X Ph1',
+			className: '10C1',
+			sourceFilenames: ['10X Ph1.pdf'],
+			parsedAt: NOW,
+			boundaries: [{ label: '9', minimum: 40 }],
+			belowLowestLabel: 'U'
+		},
+		breakdown: {
+			entries: [entry('entry-1', '2bii', '2')],
+			warnings: [],
+			aoDescriptions: { AO2: 'Explain the rate' }
+		},
+		students: [{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false }],
+		marks: { 'student-1': { 'entry-1': 3 } },
+		topicNames: { '3.2.1.4': 'Rates of reaction' },
+		reports: {
+			'student-1': {
+				strengths: ['Clear method'],
+				areasForImprovement: ['Units'],
+				edit: null,
+				input: {
+					paperLabel: '10X Ph1',
+					entries: [
+						{
+							label: '2bii',
+							summary: 'Describe the rate change',
+							commandWord: 'Describe',
+							ao: 'AO2',
+							topics: ['Rates of reaction'],
+							gained: 3,
+							available: 4
+						}
+					]
+				},
+				model: 'test/model',
+				generatedAt: NOW
+			}
+		},
+		...overrides
+	};
 }
 
 function backupFile(
@@ -50,6 +144,11 @@ function backupFile(
 	filename = 'qla-backup-10x-ph1-2026-01-01.json'
 ): File {
 	return new File([JSON.stringify(stored)], filename, { type: 'application/json' });
+}
+
+/** A file written by another version: the restore must decide whether it can read it. */
+function foreignBackupFile(value: unknown, filename = 'qla-backup-old.json'): File {
+	return new File([JSON.stringify(value)], filename, { type: 'application/json' });
 }
 
 /** The toast's "Back up now" action, once sonner has rendered it. */
@@ -245,7 +344,7 @@ describe('restoring a backup on the upload surface', () => {
 
 		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/marksheet'));
 		const restored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
-		expect(restored.paper.label).toBe('10X Ph1');
+		expect(restored.label).toBe('10X Ph1');
 		expect(restored.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
 		expect(restored.firstUnbackedChangeAt).toBeNull();
 		expect(marksheetStore().route()).toBe('/marksheet');
@@ -285,5 +384,101 @@ describe('restoring a backup on the upload surface', () => {
 		await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
 		expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
 		expect(goto).not.toHaveBeenCalled();
+	});
+
+	it('restores every tier, pair, boundary and student tier from a two-tier backup', async () => {
+		const source = twoTierMarksheet({ lastExportedAt: hoursAgo(2) });
+		openPage(UploadPage);
+
+		await page.getByLabelText('Backup file').upload(backupFile(source));
+
+		const dialog = page.getByRole('dialog');
+		await expect.element(dialog).toHaveTextContent('3 students and 3 marks');
+		await page.getByRole('button', { name: 'Restore marksheet' }).click();
+
+		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/marksheet'));
+		const restored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
+		expect(restored.schemaVersion).toBe(3);
+		expect(restored.tiers.map((stored) => stored.tierName)).toEqual(['Higher', 'Foundation']);
+		expect(
+			restored.tiers.map((stored) => stored.breakdown.entries.map((entry) => entry.label))
+		).toEqual([['1a'], ['1a']]);
+		expect(restored.tiers.map((stored) => stored.boundaries)).toEqual([
+			[{ label: '9', minimum: 40 }],
+			[{ label: '5', minimum: 20 }]
+		]);
+		expect(restored.commonQuestions).toEqual([
+			{ tier1EntryId: 'higher-1', tier2EntryId: 'foundation-1' }
+		]);
+		expect(restored.students.map((stored) => stored.tier)).toEqual([0, 1, null]);
+		expect(restored.marks).toEqual(source.marks);
+		expect(restored.topicNames).toEqual({ '3.2.1.4': 'Rates of reaction' });
+	});
+
+	it('restores a version 2 backup as one tier and writes it back as version 3 at once', async () => {
+		const source = version2Marksheet();
+		openPage(UploadPage);
+
+		await page.getByLabelText('Backup file').upload(foreignBackupFile(source));
+
+		const dialog = page.getByRole('dialog');
+		await expect.element(dialog).toHaveTextContent('1 student and 1 mark');
+		await page.getByRole('button', { name: 'Restore marksheet' }).click();
+
+		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/marksheet'));
+		const restored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
+		expect(restored.schemaVersion).toBe(3);
+		expect(restored.label).toBe('10X Ph1');
+		expect(restored.className).toBe('10C1');
+		expect(restored.tiers).toHaveLength(1);
+		expect(restored.tiers[0]).toMatchObject({
+			tierName: null,
+			sourceFilenames: ['10X Ph1.pdf'],
+			parsedAt: NOW,
+			boundaries: [{ label: '9', minimum: 40 }],
+			belowLowestLabel: 'U'
+		});
+		expect(restored.tiers[0].breakdown.entries.map((entry) => entry.label)).toEqual(['2bii']);
+		expect(restored.aoDescriptions).toEqual({ AO2: 'Explain the rate' });
+		expect(restored.students).toEqual([
+			{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false, tier: 0 }
+		]);
+		expect(restored.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+		expect(restored.commonQuestions).toEqual([]);
+		expect(restored.topicNames).toEqual({ '3.2.1.4': 'Rates of reaction' });
+		// The report carries over verbatim, so converting the document does not
+		// put it out of date.
+		expect(restored.reports).toEqual(source['reports']);
+	});
+
+	it('counts only marks on the tier a student sits in the summary', async () => {
+		openPage(UploadPage);
+
+		await page.getByLabelText('Backup file').upload(
+			backupFile(
+				twoTierMarksheet({
+					students: [student('student-1', 'Ada', 'Lovelace', false, 0)],
+					marks: { 'student-1': { 'higher-1': 4, 'foundation-1': 1 } }
+				})
+			)
+		);
+
+		// The off-tier mark is stored, but it is not a mark the teacher has entered
+		// towards a figure, so the summary does not count it.
+		await expect.element(page.getByRole('dialog')).toHaveTextContent('1 student and 1 mark');
+	});
+
+	it('refuses a backup from an unknown version, leaving everything as it was', async () => {
+		openPage(UploadPage);
+
+		await page
+			.getByLabelText('Backup file')
+			.upload(foreignBackupFile({ ...version2Marksheet(), schemaVersion: 4 }));
+
+		await expect.element(page.getByTestId('restore-error')).toBeInTheDocument();
+		expect(page.getByRole('dialog').query()).toBeNull();
+		expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+		expect(goto).not.toHaveBeenCalled();
+		expect(marksheetStore().document).toBeNull();
 	});
 });

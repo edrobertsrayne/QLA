@@ -1,6 +1,8 @@
 <!--
 	The row above the grid: the way into the analysis and the hardest questions,
-	sorting the class, what the parse said, and the data tools.
+	sorting the class, what the parse said, and the data tools. The analysis, the
+	hardest strip and the marks export follow the open tier; the class tools do
+	not, because the class is one list across both papers.
 -->
 <script lang="ts">
 	import ChartColumnIcon from '@lucide/svelte/icons/chart-column';
@@ -17,43 +19,64 @@
 		entryName,
 		fallbackBands,
 		runWarnings,
-		warningsForEntry
+		warningsForEntry,
+		type QuestionBand
 	} from '$lib/marksheet/breakdown.js';
+	import type { TierIndex } from '$lib/marksheet/document.js';
 	import { exportMarksNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { count } from '$lib/prose.js';
+	import { tierNameLabel } from './tier-label.js';
 
-	let { onViewAnalysis }: { onViewAnalysis: (entryId: string | null) => void } = $props();
+	let {
+		tier,
+		onViewAnalysis
+	}: {
+		tier: TierIndex | null;
+		onViewAnalysis: (entryId: string | null) => void;
+	} = $props();
 
 	const store = marksheetStore();
-	const entries = $derived(store.entries);
-	const warnings = $derived(store.warnings);
-	const fallbacks = $derived(fallbackBands(store.questionBands, warnings));
-	const hardest = $derived(store.analysis.hardest);
+	const document = $derived(store.document);
+	const entries = $derived(tier === null ? [] : store.entriesOf(tier));
+	/** The open tier's findings, plus the run-level ones that belong to every tier. */
+	const warnings = $derived(
+		tier === null
+			? store.warnings
+			: store.warnings.filter(
+					(warning) =>
+						warning.questionId === null || entries.some((entry) => entry.id === warning.questionId)
+				)
+	);
+	const bands = $derived<QuestionBand[]>(tier === null ? [] : store.bandsOf(tier));
+	const fallbacks = $derived(fallbackBands(bands, warnings));
+	const hardest = $derived(tier === null ? [] : store.analysisOf(tier).hardest);
 </script>
 
 <div class="flex flex-wrap items-center gap-2" data-testid="grid-toolbar">
-	<Button variant="outline" size="xs" onclick={() => onViewAnalysis(null)}>
-		<ChartColumnIcon class="size-3.5" /> View analysis
-	</Button>
-	{#if hardest.length > 0}
-		<!-- The worst questions by name, so the ones to reteach are named without
-		     opening anything. Every one of them is there with its figure. -->
-		<span class="flex flex-wrap items-center gap-1.5 text-xs" data-testid="hardest">
-			<span class="font-medium">Hardest</span>
-			{#each hardest as row (row.entry.id)}
-				{#if row.facility !== null}
-					<button
-						type="button"
-						class="rounded border border-red-600/50 bg-red-500/10 px-1.5 py-0.5 tabular-nums hover:bg-red-500/20"
-						title={facilityDescription(row)}
-						onclick={() => onViewAnalysis(row.entry.id)}
-					>
-						{entryName(row.entry)}
-						<span class="text-muted-foreground">{facilityPercent(row.facility)}%</span>
-					</button>
-				{/if}
-			{/each}
-		</span>
+	{#if tier !== null}
+		<Button variant="outline" size="xs" onclick={() => onViewAnalysis(null)}>
+			<ChartColumnIcon class="size-3.5" /> View analysis
+		</Button>
+		{#if hardest.length > 0}
+			<!-- The worst questions by name, so the ones to reteach are named without
+			     opening anything. Every one of them is there with its figure. -->
+			<span class="flex flex-wrap items-center gap-1.5 text-xs" data-testid="hardest">
+				<span class="font-medium">Hardest</span>
+				{#each hardest as row (row.entry.id)}
+					{#if row.facility !== null}
+						<button
+							type="button"
+							class="rounded border border-red-600/50 bg-red-500/10 px-1.5 py-0.5 tabular-nums hover:bg-red-500/20"
+							title={facilityDescription(row)}
+							onclick={() => onViewAnalysis(row.entry.id)}
+						>
+							{entryName(row.entry)}
+							<span class="text-muted-foreground">{facilityPercent(row.facility)}%</span>
+						</button>
+					{/if}
+				{/each}
+			</span>
+		{/if}
 	{/if}
 	<span class="text-xs text-muted-foreground">Sort the class</span>
 	<Button variant="outline" size="xs" onclick={() => store.sortStudents('firstName')}>
@@ -62,7 +85,7 @@
 	<Button variant="outline" size="xs" onclick={() => store.sortStudents('surname')}>
 		By surname
 	</Button>
-	<UploadStudentsDialog size="xs" />
+	<UploadStudentsDialog size="xs" {tier} />
 	{#if fallbacks.length > 0}
 		<Popover.Root>
 			<Popover.Trigger>
@@ -120,9 +143,14 @@
 	<div class="ml-auto flex items-center gap-2">
 		<BackupControl />
 		<EditBreakdownDialog />
-		<Button variant="outline" size="xs" onclick={exportMarksNow}>
-			<FileSpreadsheetIcon class="size-3.5" /> Export marks to spreadsheet (.csv)
-		</Button>
+		{#if tier !== null}
+			<Button variant="outline" size="xs" onclick={() => exportMarksNow(tier)}>
+				<FileSpreadsheetIcon class="size-3.5" />
+				{store.tierCount === 1
+					? 'Export marks to spreadsheet (.csv)'
+					: `Export ${tierNameLabel(document, tier)} marks (.csv)`}
+			</Button>
+		{/if}
 		<span class="text-[11px] text-muted-foreground" title="Not a backup: it cannot be restored">
 			Not a backup
 		</span>

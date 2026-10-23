@@ -22,7 +22,9 @@ The app reads a version 2 document, from storage or a backup, by converting
 it on load into an assessment with a single tier: the old paper becomes that
 tier, with a blank tier name, its breakdown and grade boundaries; marks,
 topic names, AO descriptions and reports carry over unchanged; there are no
-common questions. The next save writes the new version.
+common questions. The next save writes the new version. A version 3 document
+written before tiers existed has the same flat shape, and is read as one tier
+too.
 
 ## Consequences
 

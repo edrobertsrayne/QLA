@@ -1,4 +1,4 @@
-// Grade boundaries for one paper: an ordered list of (grade label, minimum
+// Grade boundaries for one tier: an ordered list of (grade label, minimum
 // total mark), top grade first, plus the label for a total below the lowest
 // boundary. Pure functions over plain values — no I/O, no reactive state — so
 // the dialog, the marksheet grid and the report header share one rule; the
@@ -10,11 +10,13 @@
 
 import {
 	DEFAULT_BELOW_LOWEST_LABEL,
+	entriesOfStudent,
 	isOverMax,
 	studentTotal,
 	type GradeBoundary,
 	type MarksheetDocument,
-	type StoredStudent
+	type StoredStudent,
+	type TierIndex
 } from './document.js';
 import { progressOf } from './students.js';
 
@@ -99,20 +101,27 @@ export function isUnused(row: BoundaryRow): boolean {
 	return row.min.trim() === '';
 }
 
-/** The paper's boundaries, or null when it has none (null or empty): the one "has grades" check. */
-export function boundariesOf(document: MarksheetDocument): readonly GradeBoundary[] | null {
-	const boundaries = document.paper.boundaries;
-	return boundaries === null || boundaries.length === 0 ? null : boundaries;
+/** One tier's boundaries, or null when it has none (null or empty): the one "has grades" check. */
+export function boundariesOf(
+	document: MarksheetDocument,
+	tier: TierIndex
+): readonly GradeBoundary[] | null {
+	const boundaries = document.tiers[tier]?.boundaries;
+	if (boundaries === undefined || boundaries === null || boundaries.length === 0) return null;
+	return boundaries;
 }
 
-/** The boundary editor's working copy, started from what the paper stores. */
-export function workingCopyOf(document: MarksheetDocument | null): {
+/** The boundary editor's working copy for one tier, started from what that tier stores. */
+export function workingCopyOf(
+	document: MarksheetDocument | null,
+	tier: TierIndex
+): {
 	rows: BoundaryRow[];
 	below: string;
 	scale: string;
 } {
-	const below = document?.paper.belowLowestLabel ?? DEFAULT_BELOW_LOWEST_LABEL;
-	const stored = document ? boundariesOf(document) : null;
+	const below = document?.tiers[tier]?.belowLowestLabel ?? DEFAULT_BELOW_LOWEST_LABEL;
+	const stored = document ? boundariesOf(document, tier) : null;
 	if (!stored) return { rows: [], below, scale: '' };
 	const labels = stored.map((boundary) => boundary.label).join('|');
 	const scale =
@@ -227,28 +236,40 @@ export function toNextText(grade: GradeResult): string {
 	return grade.next === null ? '' : `${grade.next.marks} to ${grade.next.label}`;
 }
 
-/** The grade a total earns on this paper, or null when it has no boundaries. */
-export function paperGrade(document: MarksheetDocument, total: number): GradeResult | null {
-	const boundaries = boundariesOf(document);
-	return boundaries === null ? null : gradeOf(total, boundaries, document.paper.belowLowestLabel);
+/** The grade a total earns on one tier's paper, or null when that tier has no boundaries. */
+export function paperGrade(
+	document: MarksheetDocument,
+	tier: TierIndex,
+	total: number
+): GradeResult | null {
+	const stored = document.tiers[tier];
+	const boundaries = boundariesOf(document, tier);
+	if (stored === undefined || boundaries === null) return null;
+	return gradeOf(total, boundaries, stored.belowLowestLabel);
 }
 
 export type StudentGrade =
+	| { kind: 'no-tier' }
 	| { kind: 'absent' }
 	| { kind: 'over-max' }
 	| { kind: 'complete'; total: number; grade: GradeResult | null }
 	| { kind: 'partial'; total: number; grade: GradeResult | null };
 
-/** What the marksheet knows about one student's grade: totals are live figures. */
+/**
+ * What the marksheet knows about one student's grade: totals are live figures.
+ * A student without a tier has no paper, so no grade is read from anyone
+ * else's boundaries.
+ */
 export function studentGrade(document: MarksheetDocument, student: StoredStudent): StudentGrade {
+	if (student.tier === null) return { kind: 'no-tier' };
 	if (student.absent) return { kind: 'absent' };
-	const entries = document.breakdown.entries;
+	const entries = entriesOfStudent(document, student);
 	const marks = document.marks[student.id] ?? {};
 	if (entries.some((entry) => marks[entry.id] !== undefined && isOverMax(marks[entry.id], entry))) {
 		return { kind: 'over-max' };
 	}
 	const total = studentTotal(document, student.id);
-	const grade = paperGrade(document, total);
+	const grade = paperGrade(document, student.tier, total);
 	const { marked, total: of } = progressOf(marks, entries);
 	return marked === of ? { kind: 'complete', total, grade } : { kind: 'partial', total, grade };
 }
@@ -256,26 +277,30 @@ export function studentGrade(document: MarksheetDocument, student: StoredStudent
 // Commands: mutate a document in place.
 
 /**
- * Store the paper's grade boundaries, top grade first, and the below-lowest
+ * Store one tier's grade boundaries, top grade first, and its below-lowest
  * label. Saving what amounts to nothing is marks only: no boundaries stores
  * null, like a paper that never had grades.
  */
 export function setBoundaries(
 	document: MarksheetDocument,
+	tier: TierIndex,
 	boundaries: readonly GradeBoundary[],
 	belowLowestLabel: string
 ): void {
-	document.paper.boundaries = boundaries.length === 0 ? null : boundaries.map((b) => ({ ...b }));
-	document.paper.belowLowestLabel = belowLabelOf(belowLowestLabel);
+	const stored = document.tiers[tier];
+	if (stored === undefined) return;
+	stored.boundaries = boundaries.length === 0 ? null : boundaries.map((b) => ({ ...b }));
+	stored.belowLowestLabel = belowLabelOf(belowLowestLabel);
 }
 
 /**
- * Drop every boundary, back to marks only. The below-lowest label stays
- * where it was, so re-adding grades finds it as the teacher left it. False
- * when the paper already had none.
+ * Drop one tier's every boundary, back to marks only. The below-lowest label
+ * stays where it was, so re-adding grades finds it as the teacher left it.
+ * False when the tier already had none.
  */
-export function clearBoundaries(document: MarksheetDocument): boolean {
-	if (document.paper.boundaries === null) return false;
-	document.paper.boundaries = null;
+export function clearBoundaries(document: MarksheetDocument, tier: TierIndex): boolean {
+	const stored = document.tiers[tier];
+	if (stored === undefined || stored.boundaries === null) return false;
+	stored.boundaries = null;
 	return true;
 }

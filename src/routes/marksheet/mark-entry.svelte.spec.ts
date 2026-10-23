@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
-import { confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { confirmed, entry, seed, student, tier } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { openPage } from '../spec-helpers.js';
 import {
@@ -17,11 +17,14 @@ describe('mark entry', () => {
 	function openGrid(marks: Record<string, Record<string, number>> = {}) {
 		seed(
 			confirmed({
-				breakdown: {
-					entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
-					warnings: [],
-					aoDescriptions: {}
-				},
+				tiers: [
+					tier({
+						breakdown: {
+							entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
+							warnings: []
+						}
+					})
+				],
 				students: [
 					student('student-1', 'Ada', 'Lovelace'),
 					student('student-2', 'Grace', 'Hopper')
@@ -299,13 +302,16 @@ describe('mark entry', () => {
 	it('scrolls the cursor into view, clear of the frozen columns', async () => {
 		seed(
 			confirmed({
-				breakdown: {
-					entries: Array.from({ length: 24 }, (_, index) =>
-						entry(`entry-${index + 1}`, `${index + 1}`, `${index + 1}`)
-					),
-					warnings: [],
-					aoDescriptions: {}
-				},
+				tiers: [
+					tier({
+						breakdown: {
+							entries: Array.from({ length: 24 }, (_, index) =>
+								entry(`entry-${index + 1}`, `${index + 1}`, `${index + 1}`)
+							),
+							warnings: []
+						}
+					})
+				],
 				students: [student('student-1', 'Ada', 'Lovelace')]
 			})
 		);

@@ -120,7 +120,7 @@ describe('report step routes', () => {
 
 		it('names the step in the page title', async () => {
 			const doc = plain();
-			doc.paper.className = '10C1';
+			doc.className = '10C1';
 			writeFor(doc, ['ada']);
 			seed(doc);
 			stubFetch();

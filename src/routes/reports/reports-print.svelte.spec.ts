@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { cleanup } from 'vitest-browser-svelte';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import { confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { confirmed, entry, seed, student, tier } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { generationInputFor } from '$lib/marksheet/report-input.js';
 import { stubFetch, openReports } from './reports.spec-helpers.js';
 
@@ -30,7 +30,7 @@ describe('one-page fit', () => {
 		const marks: Record<string, number> = {};
 		for (const candidate of entries) marks[candidate.id] = 3;
 		const doc = confirmed({
-			breakdown: { entries, warnings: [], aoDescriptions: {} },
+			tiers: [tier({ breakdown: { entries, warnings: [] } })],
 			students: [student('ada', 'Ada', 'Lovelace')],
 			marks: { ada: marks }
 		});
@@ -94,7 +94,7 @@ describe('one-page fit', () => {
 
 	it('switches the question table between one and two columns as feedback grows and shrinks, in screen and print alike', async () => {
 		const doc = fitting();
-		doc.breakdown.entries = doc.breakdown.entries.slice(0, 14);
+		doc.tiers[0].breakdown.entries = doc.tiers[0].breakdown.entries.slice(0, 14);
 		seed(doc);
 		stubFetch();
 		await openReports();
@@ -144,7 +144,7 @@ describe('one-page fit', () => {
 		const marks: Record<string, number> = {};
 		for (const candidate of entries) marks[candidate.id] = 2;
 		const doc = confirmed({
-			breakdown: { entries, warnings: [], aoDescriptions: {} },
+			tiers: [tier({ breakdown: { entries, warnings: [] } })],
 			students: [student('ada', 'Ada', 'Lovelace')],
 			marks: { ada: marks },
 			topicNames

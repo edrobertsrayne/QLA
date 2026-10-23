@@ -5,7 +5,7 @@
 // rules for reading a pasted name are in one place rather than repeated by
 // every surface that takes one.
 
-import { localId, type BreakdownEntry, type StoredStudent } from './document.js';
+import { localId, type BreakdownEntry, type StoredStudent, type TierIndex } from './document.js';
 
 /** A student's two name parts, as the stored document holds them. */
 export interface StudentName {
@@ -67,9 +67,9 @@ export function newNames(
 	return { added, skipped: uploaded.length - added.length };
 }
 
-/** A new student on this device, unmarked and present. */
-export function newStudent(name: StudentName): StoredStudent {
-	return { id: localId(), firstName: name.firstName, surname: name.surname, absent: false };
+/** A new student on this device, unmarked, present, and on the tier they sit. */
+export function newStudent(name: StudentName, tier: TierIndex): StoredStudent {
+	return { id: localId(), firstName: name.firstName, surname: name.surname, absent: false, tier };
 }
 
 /** A student's name as one string: what a heading, a button or a message calls them. */

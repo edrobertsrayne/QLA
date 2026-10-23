@@ -25,6 +25,19 @@
 	/** A copy taken from this dialog: the row says so, and stops asking for another. */
 	let backedUp = $state(false);
 
+	/** An array position as the tier handle the export takes. */
+	function tierIndexOf(position: number): 0 | 1 {
+		return position === 1 ? 1 : 0;
+	}
+
+	/** One marks export per tier: its handle, and the name that tells it apart. */
+	const tierExports = $derived(
+		store.tiers.map((tier, index) => ({
+			tier: tierIndexOf(index),
+			name: tier.tierName?.trim() || `Tier ${index + 1}`
+		}))
+	);
+
 	/** Take the copy the dialog is offering, and let its row say it was taken. */
 	function backUp(): void {
 		backedUp = backUpNow();
@@ -50,7 +63,13 @@
 		<div class="flex-1 space-y-1">
 			<p class="font-medium">Marks for a spreadsheet (optional)</p>
 			<p class="text-muted-foreground">Not a backup — it cannot be restored from.</p>
-			<Button variant="ghost" size="sm" onclick={exportMarksNow}>Export CSV</Button>
+			<div class="flex flex-wrap gap-2">
+				{#each tierExports as tierExport (tierExport.tier)}
+					<Button variant="ghost" size="sm" onclick={() => exportMarksNow(tierExport.tier)}>
+						{tierExports.length === 1 ? 'Export CSV' : `Export ${tierExport.name} CSV`}
+					</Button>
+				{/each}
+			</div>
 		</div>
 	</li>
 </ul>

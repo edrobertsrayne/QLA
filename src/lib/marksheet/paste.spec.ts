@@ -1,17 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import type { MarksheetDocument } from './document.js';
-import { confirmed, entry, student } from './fixtures.spec-helpers.js';
+import { confirmed, entry, student, tier } from './fixtures.spec-helpers.js';
 import { applyPaste, describePaste, emptyPasteResult } from './paste.js';
 
-/** A marksheet with two entries and two students: a paste has room to miss both. */
+/** A one-tier marksheet with two entries and two students: a paste has room to miss both. */
 function pasteSheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({
-		breakdown: {
-			entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
-			warnings: [],
-			aoDescriptions: {}
-		},
-		students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
+		tiers: [
+			tier({
+				breakdown: {
+					entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
+					warnings: []
+				}
+			})
+		],
+		students: [
+			student('student-1', 'Ada', 'Lovelace', false, 0),
+			student('student-2', 'Grace', 'Hopper', false, 0)
+		],
+		...overrides
+	});
+}
+
+/** Two tiers: two Higher entries and one Foundation entry, with a Foundation student. */
+function tieredSheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
+	return confirmed({
+		tiers: [
+			tier({
+				tierName: 'Higher',
+				breakdown: {
+					entries: [entry('h1', '1a', '1'), entry('h2', '1b', '1')],
+					warnings: []
+				}
+			}),
+			tier({
+				tierName: 'Foundation',
+				breakdown: { entries: [entry('f1', '8a', '8')], warnings: [] }
+			})
+		],
+		students: [student('student-1', 'Ada', 'Lovelace', false, 0)],
 		...overrides
 	});
 }
@@ -28,7 +55,8 @@ describe('applying a block', () => {
 				['2', '3'],
 				['', '1']
 			],
-			{ kind: 'marks', studentId: 'student-1', entryId: 'entry-1' }
+			{ kind: 'marks', studentId: 'student-1', entryId: 'entry-1' },
+			0
 		);
 
 		expect(result).toMatchObject({ changed: true, marksStored: 3, marksCleared: 0 });
@@ -41,11 +69,12 @@ describe('applying a block', () => {
 	it('clears a mark when the pasted cell is empty', () => {
 		const document = pasteSheet({ marks: { 'student-1': { 'entry-1': 2 } } });
 
-		const result = applyPaste(document, [['', '3']], {
-			kind: 'marks',
-			studentId: 'student-1',
-			entryId: 'entry-1'
-		});
+		const result = applyPaste(
+			document,
+			[['', '3']],
+			{ kind: 'marks', studentId: 'student-1', entryId: 'entry-1' },
+			0
+		);
 
 		expect(result).toMatchObject({ changed: true, marksStored: 1, marksCleared: 1 });
 		expect(document.marks).toEqual({ 'student-1': { 'entry-2': 3 } });
@@ -60,7 +89,8 @@ describe('applying a block', () => {
 				['Lovelace, Ada', '3', '2'],
 				['Grace Brewster Hopper', '4', '1']
 			],
-			{ kind: 'names', studentId: 'student-1' }
+			{ kind: 'names', studentId: 'student-1' },
+			0
 		);
 
 		expect(result).toMatchObject({ changed: true, marksStored: 4, studentsAdded: 0 });
@@ -76,7 +106,7 @@ describe('applying a block', () => {
 		});
 	});
 
-	it('turns pasted rows past the class into students, mapping their names', () => {
+	it('turns pasted rows past the class into students on the tier being pasted', () => {
 		const document = pasteSheet();
 
 		const result = applyPaste(
@@ -87,7 +117,8 @@ describe('applying a block', () => {
 				['Cher', '0', '0'],
 				['Alan Turing', '1', '2']
 			],
-			{ kind: 'names', studentId: 'student-1' }
+			{ kind: 'names', studentId: 'student-1' },
+			0
 		);
 
 		expect(result).toMatchObject({ changed: true, marksStored: 8, studentsAdded: 2 });
@@ -99,6 +130,7 @@ describe('applying a block', () => {
 				[expect.any(String), 'Alan', 'Turing']
 			]
 		);
+		expect(document.students.slice(2).every((added) => added.tier === 0)).toBe(true);
 		expect(document.marks).toMatchObject({
 			'student-1': { 'entry-1': 3, 'entry-2': 2 },
 			'student-2': { 'entry-1': 4, 'entry-2': 1 }
@@ -116,7 +148,8 @@ describe('applying a block', () => {
 				['', ''],
 				[name, '3']
 			],
-			{ kind: 'names', studentId: 'student-2' }
+			{ kind: 'names', studentId: 'student-2' },
+			0
 		);
 
 		expect(result).toMatchObject({ changed: false, studentsAdded: 0, rowsDropped: 1 });
@@ -127,10 +160,12 @@ describe('applying a block', () => {
 	it('clips columns past the last entry and says how many', () => {
 		const document = pasteSheet();
 
-		const result = applyPaste(document, [['Lovelace, Ada', '3', '2', '1', '0']], {
-			kind: 'names',
-			studentId: 'student-1'
-		});
+		const result = applyPaste(
+			document,
+			[['Lovelace, Ada', '3', '2', '1', '0']],
+			{ kind: 'names', studentId: 'student-1' },
+			0
+		);
 
 		expect(result.columnsClipped).toBe(2);
 		expect(document.marks).toEqual({ 'student-1': { 'entry-1': 3, 'entry-2': 2 } });
@@ -145,7 +180,8 @@ describe('applying a block', () => {
 				['2.5', '3'],
 				['two', '']
 			],
-			{ kind: 'marks', studentId: 'student-1', entryId: 'entry-1' }
+			{ kind: 'marks', studentId: 'student-1', entryId: 'entry-1' },
+			0
 		);
 
 		expect(result.refused).toEqual([
@@ -158,15 +194,73 @@ describe('applying a block', () => {
 	it('counts the marks a paste put above their entry’s available marks', () => {
 		const document = pasteSheet();
 
-		const result = applyPaste(document, [['5', '4']], {
-			kind: 'marks',
-			studentId: 'student-1',
-			entryId: 'entry-1'
-		});
+		const result = applyPaste(
+			document,
+			[['5', '4']],
+			{ kind: 'marks', studentId: 'student-1', entryId: 'entry-1' },
+			0
+		);
 
 		expect(result.overMax).toBe(1);
 		// Kept as pasted, never clamped to the entry's four.
 		expect(document.marks['student-1']).toEqual({ 'entry-1': 5, 'entry-2': 4 });
+	});
+
+	it('pastes against the tier’s own entries, never the other tier’s', () => {
+		const document = tieredSheet();
+
+		const result = applyPaste(
+			document,
+			[['3', '2']],
+			{ kind: 'marks', studentId: 'student-1', entryId: 'h1' },
+			0
+		);
+
+		expect(result).toMatchObject({ marksStored: 2, columnsClipped: 0 });
+		expect(document.marks['student-1']).toEqual({ h1: 3, h2: 2 });
+	});
+
+	it('lines rows up with that tier’s students, skipping the other tier’s', () => {
+		const document = tieredSheet({
+			students: [
+				student('student-1', 'Ada', 'Lovelace', false, 0),
+				student('foundation-student', 'Flo', 'Foundation', false, 1),
+				student('student-2', 'Grace', 'Hopper', false, 0)
+			]
+		});
+
+		applyPaste(
+			document,
+			[
+				['3', '2'],
+				['1', '4']
+			],
+			{ kind: 'marks', studentId: 'student-1', entryId: 'h1' },
+			0
+		);
+
+		expect(document.marks).toEqual({
+			'student-1': { h1: 3, h2: 2 },
+			'student-2': { h1: 1, h2: 4 }
+		});
+	});
+
+	it('gives a student added on a tier that tier', () => {
+		const document = tieredSheet({ students: [] });
+
+		const result = applyPaste(
+			document,
+			[
+				['Lovelace, Ada', '3'],
+				['Hopper, Grace', '4']
+			],
+			{ kind: 'names', studentId: null },
+			1
+		);
+
+		expect(result.studentsAdded).toBe(2);
+		expect(document.students.map(({ tier: sits }) => sits)).toEqual([1, 1]);
+		expect(Object.values(document.marks).map((byEntry) => byEntry['f1'])).toEqual([3, 4]);
 	});
 });
 

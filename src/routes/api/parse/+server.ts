@@ -23,6 +23,7 @@ import {
 import {
 	applyAoDescriptionChecks,
 	applyQuestionNumberFallback,
+	applyTierNameCheck,
 	validateBreakdown
 } from '$lib/server/parse/validate';
 import {
@@ -34,6 +35,7 @@ import {
 } from '$lib/server/parse/model';
 import {
 	buildDiagramUnverifiedWarning,
+	countPdfPages,
 	parsePdfBytes,
 	resolveModelId,
 	supportsNativePdf
@@ -130,19 +132,28 @@ export const POST: RequestHandler = async ({ request }) => {
 	// `useNativePdf`, so there is no silent paid-OCR fallback).
 	const useNativePdf = supportsNativePdf(modelId);
 
-	// Ingest whichever PDFs were provided: deterministic per-page text plus
-	// the originals forwarded natively on supporting models. Caps enforced
-	// before any model spend.
-	async function ingest(file: File): Promise<{
-		doc: IngestedDocument;
-		pages: number;
-	}> {
-		let bytes: Uint8Array;
+	// Read each PDF's bytes and count its pages before extracting any text, so
+	// the page ceiling refuses an oversize upload without doing the work it
+	// exists to bound. Both caps are per call.
+	async function readBytes(file: File): Promise<Uint8Array> {
 		try {
-			bytes = new Uint8Array(await file.arrayBuffer());
+			return new Uint8Array(await file.arrayBuffer());
 		} catch {
 			throw new Error('unreadable');
 		}
+	}
+
+	async function countPages(bytes: Uint8Array): Promise<number> {
+		try {
+			return await countPdfPages(bytes);
+		} catch {
+			throw new Error('unreadable');
+		}
+	}
+
+	async function extract(file: File, bytes: Uint8Array, pages: number): Promise<IngestedDocument> {
+		// pdf.js detaches the buffer it reads, so encode the native copy first.
+		const pdfBase64 = useNativePdf ? Buffer.from(bytes).toString('base64') : null;
 		let parsed;
 		try {
 			parsed = await parsePdfBytes(bytes);
@@ -150,30 +161,54 @@ export const POST: RequestHandler = async ({ request }) => {
 			throw new Error('unreadable');
 		}
 		return {
-			doc: {
-				filename: file.name,
-				pageCount: parsed.pageCount,
-				text: parsed.textWithMarkers,
-				pdfBase64: useNativePdf ? Buffer.from(bytes).toString('base64') : null
-			},
-			pages: parsed.pageCount
+			filename: file.name,
+			pageCount: pages,
+			text: parsed.textWithMarkers,
+			pdfBase64
 		};
+	}
+
+	let paperBytes: Uint8Array | undefined;
+	let markschemeBytes: Uint8Array | undefined;
+	let paperPages = 0;
+	let markschemePages = 0;
+	let totalPages = 0;
+	try {
+		if (paperFile) {
+			paperBytes = await readBytes(paperFile);
+			// pdf.js detaches the buffer it reads; count a copy so extraction still has one.
+			paperPages = await countPages(paperBytes.slice());
+			totalPages += paperPages;
+		}
+		if (markschemeFile) {
+			markschemeBytes = await readBytes(markschemeFile);
+			markschemePages = await countPages(markschemeBytes.slice());
+			totalPages += markschemePages;
+		}
+	} catch {
+		return error(
+			'PDF_UNREADABLE',
+			'The PDFs could not be read. Re-export them without password protection and try again.'
+		);
+	}
+
+	if (totalPages > MAX_TOTAL_PAGES) {
+		return error(
+			'FILE_TOO_BIG',
+			`The PDFs total ${totalPages} pages, above the ${MAX_TOTAL_PAGES}-page ceiling. Split or compress them and try again.`,
+			{ totalPages, limit: MAX_TOTAL_PAGES }
+		);
 	}
 
 	let paperDoc: IngestedDocument | undefined;
 	let markschemeDoc: IngestedDocument | undefined;
 	let specDoc: IngestedDocument | undefined;
-	let totalPages = 0;
 	try {
-		if (paperFile) {
-			const ingested = await ingest(paperFile);
-			paperDoc = ingested.doc;
-			totalPages += ingested.pages;
+		if (paperFile && paperBytes !== undefined) {
+			paperDoc = await extract(paperFile, paperBytes, paperPages);
 		}
-		if (markschemeFile) {
-			const ingested = await ingest(markschemeFile);
-			markschemeDoc = ingested.doc;
-			totalPages += ingested.pages;
+		if (markschemeFile && markschemeBytes !== undefined) {
+			markschemeDoc = await extract(markschemeFile, markschemeBytes, markschemePages);
 		}
 	} catch {
 		return error(
@@ -187,13 +222,6 @@ export const POST: RequestHandler = async ({ request }) => {
 	// The paper+markscheme page ceiling is checked first so an already-oversize
 	// upload never pays for a spec download; the spec has its own byte and page
 	// caps (`MAX_SPEC_BYTES`, `MAX_SPEC_PAGES`) enforced in `fetchSpecPdf`.
-	if (totalPages > MAX_TOTAL_PAGES) {
-		return error(
-			'FILE_TOO_BIG',
-			`The PDFs total ${totalPages} pages, above the ${MAX_TOTAL_PAGES}-page ceiling. Split or compress them and try again.`,
-			{ totalPages, limit: MAX_TOTAL_PAGES }
-		);
-	}
 	const specUrlText =
 		typeof specUrlRaw === 'string' && specUrlRaw.trim() !== '' ? specUrlRaw.trim() : undefined;
 	if (specUrlText !== undefined) {
@@ -275,6 +303,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const warnings = validateBreakdown(parsed);
 	applyQuestionNumberFallback(parsed);
 	applyAoDescriptionChecks(parsed, specDoc !== undefined);
+	applyTierNameCheck(parsed);
 
 	if (!useNativePdf) {
 		warnings.push(buildDiagramUnverifiedWarning());

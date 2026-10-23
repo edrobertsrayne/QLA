@@ -69,8 +69,8 @@ export function readBackup(
 	return {
 		document,
 		summary: {
-			paperLabel: document.paper.label,
-			className: document.paper.className,
+			paperLabel: document.label,
+			className: document.className,
 			students: document.students.length,
 			marks: markCount(document),
 			takenAt: backupTakenAt(document)

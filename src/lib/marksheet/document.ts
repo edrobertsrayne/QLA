@@ -3,12 +3,25 @@
 // This module owns the document's shape and the single validator used both by
 // boot-time load and (later) backup restore, so a file we accept from disk is
 // the same thing we accept from storage. It has no I/O and no reactive state.
+//
+// Version 2 documents, and the flat version 3 written before tiers existed, are
+// read as version 3 single-tier assessments; see `document-v2.ts`.
 
-import {
-	assessmentObjectiveOf,
-	type AssessmentObjective
-} from '$lib/parse/assessment-objectives.js';
+import type { AssessmentObjective } from '$lib/parse/assessment-objectives.js';
 import { isRecord } from '$lib/parse/is-breakdown.js';
+import { fromVersion2, parseVersion2Document } from './document-v2.js';
+import {
+	DEFAULT_BELOW_LOWEST_LABEL,
+	entryValuesOf,
+	isStringOrNull,
+	parseAll,
+	parseAoDescriptions,
+	parseBoundaries,
+	parseMarks,
+	parseReports,
+	parseStoredBreakdown,
+	parseTopicNames
+} from './document-values.js';
 
 /** localStorage key holding the marksheet document. */
 export const STORAGE_KEY = 'qla:marksheet:v1';
@@ -18,15 +31,17 @@ export const CORRUPT_KEY_PREFIX = 'qla:marksheet:corrupt:';
 
 /**
  * The version this app writes. v2 documents, written before changes were
- * tracked, are still read; anything else is treated as unreadable.
+ * tracked, are still read; so are v3 documents written before tiers existed.
+ * Anything else is treated as unreadable.
  */
 export const DOCUMENT_SCHEMA_VERSION = 3;
 
 /** The version written before `firstUnbackedChangeAt` existed. */
 const EARLIER_SCHEMA_VERSION = 2;
 
-/** The label for a total below every grade boundary, when the paper has grades. */
-export const DEFAULT_BELOW_LOWEST_LABEL = 'U';
+// Parsed by the version-neutral value module; re-exported so importers keep
+// the document module as their entry point.
+export { DEFAULT_BELOW_LOWEST_LABEL, entryValuesOf };
 
 /**
  * The editable values of one entry, as the parse produced them and as the
@@ -70,21 +85,32 @@ export interface StoredWarning {
 	message: string;
 }
 
-export interface StoredPaper {
-	label: string | null;
-	className: string | null;
+/** A tier's position in the assessment: its stable handle, never its name. */
+export type TierIndex = 0 | 1;
+
+/** One tier of an assessment: one paper's breakdown, boundaries and printed name. */
+export interface StoredTier {
+	/** The tier as printed on the paper, verbatim; null when none is printed. */
+	tierName: string | null;
 	sourceFilenames: string[];
 	parsedAt: string;
+	breakdown: StoredBreakdown;
 	/**
-	 * Grade boundaries, top grade first, or null when the paper shows marks
-	 * only. A blank row is never stored: it reads as "not used".
+	 * Grade boundaries, top grade first, or null when the tier's paper shows
+	 * marks only. A blank row is never stored: it reads as "not used".
 	 */
 	boundaries: GradeBoundary[] | null;
 	/** The label for a total below every boundary. */
 	belowLowestLabel: string;
 }
 
-/** The minimum total mark on this paper for a grade, in raw marks. */
+/** A question printed in both tiers' papers: its entry id on each tier. */
+export interface CommonQuestion {
+	tier1EntryId: string;
+	tier2EntryId: string;
+}
+
+/** The minimum total mark on one tier's paper for a grade, in raw marks. */
 export interface GradeBoundary {
 	label: string;
 	minimum: number;
@@ -95,20 +121,20 @@ export interface StoredStudent {
 	firstName: string;
 	surname: string;
 	absent: boolean;
+	/** The tier this student sits; always 0 on a single-tier assessment. */
+	tier: TierIndex | null;
 }
 
 /** A short, student-readable description per assessment objective that has one. */
 export type AoDescriptions = Partial<Record<AssessmentObjective, string>>;
 
 /**
- * The breakdown as stored: its entries, the findings the parse left beside
- * them, and the AO descriptions lifted from the specification. The
- * descriptions are display only: reports are written without them.
+ * The breakdown as stored: its entries and the findings the parse left beside
+ * them. One per tier; the AO descriptions are shared by the assessment.
  */
 export interface StoredBreakdown {
 	entries: BreakdownEntry[];
 	warnings: StoredWarning[];
-	aoDescriptions: AoDescriptions;
 }
 
 /** One breakdown entry's figures as a report was written from them. */
@@ -147,10 +173,10 @@ export interface StoredReport extends ReportProse {
 }
 
 export interface MarksheetDocument {
-	schemaVersion: number;
+	schemaVersion: typeof DOCUMENT_SCHEMA_VERSION;
 	createdAt: string;
 	updatedAt: string;
-	/** Null while the breakdown is still under review. */
+	/** Null while any tier's breakdown or the pairs are still under review. */
 	breakdownConfirmedAt: string | null;
 	/** Last backup download. Marks export never touches it. */
 	lastExportedAt: string | null;
@@ -160,24 +186,23 @@ export interface MarksheetDocument {
 	 * `createdAt`, whatever this records.
 	 */
 	firstUnbackedChangeAt: string | null;
-	paper: StoredPaper;
-	breakdown: StoredBreakdown;
+	/** The assessment's paper label, defaulted from the first tier's filename. */
+	label: string | null;
+	className: string | null;
+	/** One shared set of AO descriptions for the whole assessment. */
+	aoDescriptions: AoDescriptions;
+	/** One or two tiers; array position is the tier's handle. */
+	tiers: StoredTier[];
 	/** Array order is display order. */
 	students: StoredStudent[];
 	/** Sparse: `marks[studentId][entryId]`, absent key = unmarked. */
 	marks: Record<string, Record<string, number>>;
+	/** Questions printed in both tiers' papers. Empty on one tier. */
+	commonQuestions: CommonQuestion[];
 	/** Student-readable name per normalised specification-point code. */
 	topicNames: Record<string, string>;
 	/** One report per student, keyed by student id. */
 	reports: Record<string, StoredReport>;
-}
-
-function isStringOrNull(value: unknown): value is string | null {
-	return value === null || typeof value === 'string';
-}
-
-function isAssessmentObjective(value: unknown): value is AssessmentObjective {
-	return typeof value === 'string' && assessmentObjectiveOf(value) !== null;
 }
 
 /**
@@ -200,255 +225,48 @@ export const EDITABLE_FIELDS = Object.keys(FIELDS) as EditableField[];
 /** One field of an entry. */
 export type EditableField = keyof EntryValues;
 
-/** Whether a value is a set of editable values: an entry, or an entry's remembered parse values. */
-function isEntryValues(value: unknown): value is EntryValues {
-	if (!isRecord(value)) return false;
-	const { label, questionNumber, marks, summary, specPoint, commandWord, ao } = value;
-	if (typeof label !== 'string' || typeof questionNumber !== 'string') return false;
-	if (marks !== null && !(typeof marks === 'number' && Number.isInteger(marks))) return false;
-	if (typeof summary !== 'string') return false;
-	if (!isStringOrNull(specPoint) || !isStringOrNull(commandWord)) return false;
-	return ao === null || isAssessmentObjective(ao);
-}
-
-/** The editable values of an entry, or of an entry's remembered parse values, as they stand. */
-export function entryValuesOf(entry: EntryValues): EntryValues {
-	return {
-		label: entry.label,
-		questionNumber: entry.questionNumber,
-		marks: entry.marks,
-		summary: entry.summary,
-		specPoint: entry.specPoint,
-		commandWord: entry.commandWord,
-		ao: entry.ao
-	};
-}
-
-/** Parse every item, or nothing: one unreadable item makes the whole document unreadable. */
-function parseAll<T>(values: unknown[], parse: (value: unknown) => T | null): T[] | null {
-	const parsed: T[] = [];
-	for (const value of values) {
-		const item = parse(value);
-		if (item === null) return null;
-		parsed.push(item);
-	}
-	return parsed;
-}
-
-function parseEntry(value: unknown): BreakdownEntry | null {
+function parseStudent(value: unknown, tierCount: number): StoredStudent | null {
 	if (!isRecord(value)) return null;
-	const { id, original } = value;
-	if (typeof id !== 'string' || id === '') return null;
-	// Absent, null (added by the teacher) or the parse's values — nothing else.
-	if (original !== undefined && original !== null && !isEntryValues(original)) return null;
-	if (!isEntryValues(value)) return null;
-	return {
-		id,
-		...entryValuesOf(value),
-		original: original === null ? null : entryValuesOf(original ?? value)
-	};
-}
-
-/** Absent in a document written before descriptions existed: none. `null` means invalid. */
-function parseAoDescriptions(value: unknown): AoDescriptions | null {
-	if (value === undefined) return {};
-	if (!isRecord(value)) return null;
-	const descriptions: AoDescriptions = {};
-	for (const [key, description] of Object.entries(value)) {
-		const ao = assessmentObjectiveOf(key);
-		if (ao === null || typeof description !== 'string') return null;
-		descriptions[ao] = description;
-	}
-	return descriptions;
-}
-
-function parseWarning(value: unknown): StoredWarning | null {
-	if (!isRecord(value)) return null;
-	const { questionId, code, message } = value;
-	if (!isStringOrNull(questionId)) return null;
-	if (typeof code !== 'string' || typeof message !== 'string') return null;
-	return { questionId: questionId as string | null, code, message };
-}
-
-function parseStudent(value: unknown): StoredStudent | null {
-	if (!isRecord(value)) return null;
-	const { id, firstName, surname, absent } = value;
+	const { id, firstName, surname, absent, tier } = value;
 	if (typeof id !== 'string' || id === '') return null;
 	if (typeof firstName !== 'string' || typeof surname !== 'string') return null;
 	if (typeof absent !== 'boolean') return null;
-	return { id, firstName, surname, absent };
-}
-
-function parseMarks(value: unknown): Record<string, Record<string, number>> | null {
-	if (!isRecord(value)) return null;
-	const marks: Record<string, Record<string, number>> = {};
-	for (const [studentId, byEntry] of Object.entries(value)) {
-		if (!isRecord(byEntry)) return null;
-		const studentMarks: Record<string, number> = {};
-		for (const [entryId, mark] of Object.entries(byEntry)) {
-			if (typeof mark !== 'number' || !Number.isInteger(mark) || mark < 0) return null;
-			studentMarks[entryId] = mark;
-		}
-		marks[studentId] = studentMarks;
+	// A single-tier assessment has no other tier for a student to sit.
+	if (tierCount === 1) {
+		if (tier !== 0) return null;
+		return { id, firstName, surname, absent, tier: 0 };
 	}
-	return marks;
-}
-function parseGradeBoundary(value: unknown): GradeBoundary | null {
-	if (!isRecord(value)) return null;
-	const { label, minimum } = value;
-	if (typeof label !== 'string' || label === '') return null;
-	if (typeof minimum !== 'number' || !Number.isFinite(minimum)) return null;
-	return { label, minimum };
-}
-
-/**
- * Grade boundaries when present, null when the paper shows marks only.
- * `undefined` means invalid: callers reject the document.
- */
-function parseBoundaries(value: unknown): GradeBoundary[] | null | undefined {
-	if (value === null || value === undefined) return null;
-	if (!Array.isArray(value)) return undefined;
-	const boundaries = parseAll(value, parseGradeBoundary);
-	return boundaries ?? undefined;
-}
-
-function parseTopicNames(value: unknown): Record<string, string> | null {
-	if (!isRecord(value)) return null;
-	const topicNames: Record<string, string> = {};
-	for (const [code, name] of Object.entries(value)) {
-		if (typeof name !== 'string') return null;
-		topicNames[code] = name;
+	if (tier === 0 || tier === 1 || tier === null) {
+		return { id, firstName, surname, absent, tier };
 	}
-	return topicNames;
+	return null;
 }
 
-function isAssessmentObjectiveOrNull(value: unknown): value is AssessmentObjective | null {
-	return value === null || isAssessmentObjective(value);
-}
-
-function parseReportEntry(value: unknown): ReportEntryInput | null {
-	if (!isRecord(value)) return null;
-	const { label, summary, commandWord, ao, topics, gained, available } = value;
-	if (typeof label !== 'string' || typeof summary !== 'string') return null;
-	if (!isStringOrNull(commandWord) || !isAssessmentObjectiveOrNull(ao)) return null;
-	const parsedTopics = parseStringArray(topics);
-	if (!parsedTopics) return null;
-	if (typeof gained !== 'number' || !Number.isFinite(gained)) return null;
-	if (typeof available !== 'number' || !Number.isFinite(available)) return null;
-	return { label, summary, commandWord, ao, topics: parsedTopics, gained, available };
-}
-
-function parseReportInput(value: unknown): ReportGenerationInput | null {
-	if (!isRecord(value)) return null;
-	const { paperLabel, entries } = value;
-	if (typeof paperLabel !== 'string') return null;
-	if (!Array.isArray(entries)) return null;
-	const parsed = parseAll(entries, parseReportEntry);
-	if (!parsed) return null;
-	return { paperLabel, entries: parsed };
-}
-
-function parseStringArray(value: unknown): string[] | null {
-	if (!Array.isArray(value)) return null;
-	if (!value.every((item) => typeof item === 'string')) return null;
-	return [...value];
-}
-
-function parseReportProse(value: unknown): ReportProse | null {
-	if (!isRecord(value)) return null;
-	const strengths = parseStringArray(value['strengths']);
-	const areasForImprovement = parseStringArray(value['areasForImprovement']);
-	if (!strengths || !areasForImprovement) return null;
-	return { strengths, areasForImprovement };
-}
-
-/**
- * The teacher's edit beside the generated prose: null when unedited.
- * `undefined` means invalid: callers reject the document.
- */
-function parseReportEdit(value: unknown): ReportProse | null | undefined {
-	if (value === null || value === undefined) return null;
-	return parseReportProse(value) ?? undefined;
-}
-
-function parseReport(value: unknown): StoredReport | null {
-	if (!isRecord(value)) return null;
-	const prose = parseReportProse(value);
-	const edit = parseReportEdit(value['edit']);
-	const input = parseReportInput(value['input']);
-	const { model, generatedAt } = value;
-	if (!prose || edit === undefined) return null;
-	if (!input) return null;
-	if (typeof model !== 'string' || typeof generatedAt !== 'string') return null;
-	return { ...prose, edit, input, model, generatedAt };
-}
-
-function parseReports(value: unknown): Record<string, StoredReport> | null {
-	if (!isRecord(value)) return null;
-	const reports: Record<string, StoredReport> = {};
-	for (const [studentId, report] of Object.entries(value)) {
-		const parsed = parseReport(report);
-		if (!parsed) return null;
-		reports[studentId] = parsed;
+function parseStudents(values: unknown[], tierCount: number): StoredStudent[] | null {
+	const students: StoredStudent[] = [];
+	for (const value of values) {
+		const student = parseStudent(value, tierCount);
+		if (!student) return null;
+		students.push(student);
 	}
-	return reports;
+	return students;
 }
 
-/**
- * The oldest change not yet in a backup. A v2 document kept none: it is
- * unbacked exactly while its last write is later than its last backup, and the
- * last write is the one moment it can name for that change.
- */
-function parseFirstUnbackedChangeAt(
-	value: unknown,
-	schemaVersion: unknown,
-	updatedAt: string,
-	lastExportedAt: string | null
-): string | null | undefined {
-	if (schemaVersion === EARLIER_SCHEMA_VERSION) {
-		if (lastExportedAt === null) return null;
-		return Date.parse(updatedAt) > Date.parse(lastExportedAt) ? updatedAt : null;
-	}
-	return isStringOrNull(value) ? value : undefined;
-}
-
-/**
- * The one "is this a valid document" check, shared by boot-time load and
- * restore. Returns a fresh document with only known fields, or null when the
- * value is not a document we can read (wrong version included).
- */
-function parseDocumentValue(value: unknown): MarksheetDocument | null {
+/** One tier, or null when any part of it is unreadable. */
+function parseTier(value: unknown): StoredTier | null {
 	if (!isRecord(value)) return null;
-	const schemaVersion = value['schemaVersion'];
-	if (schemaVersion !== EARLIER_SCHEMA_VERSION && schemaVersion !== DOCUMENT_SCHEMA_VERSION) {
-		return null;
-	}
-
-	const createdAt = value['createdAt'];
-	const updatedAt = value['updatedAt'];
-	const breakdownConfirmedAt = value['breakdownConfirmedAt'];
-	const lastExportedAt = value['lastExportedAt'];
-	if (typeof createdAt !== 'string' || typeof updatedAt !== 'string') return null;
-	if (!isStringOrNull(breakdownConfirmedAt) || !isStringOrNull(lastExportedAt)) return null;
-	const firstUnbackedChangeAt = parseFirstUnbackedChangeAt(
-		value['firstUnbackedChangeAt'],
-		schemaVersion,
-		updatedAt,
-		lastExportedAt
-	);
-	if (firstUnbackedChangeAt === undefined) return null;
-
-	const paper = value['paper'];
-	if (!isRecord(paper)) return null;
-	const { label, className, sourceFilenames, parsedAt } = paper;
-	if (!isStringOrNull(label) || !isStringOrNull(className)) return null;
+	const { tierName, sourceFilenames, parsedAt } = value;
+	// A blank name is allowed here: only the commands trim it to null.
+	if (!isStringOrNull(tierName)) return null;
 	if (!Array.isArray(sourceFilenames) || !sourceFilenames.every((n) => typeof n === 'string')) {
 		return null;
 	}
 	if (typeof parsedAt !== 'string') return null;
-	const boundaries = parseBoundaries(paper['boundaries']);
+	const breakdown = parseStoredBreakdown(value['breakdown']);
+	if (!breakdown) return null;
+	const boundaries = parseBoundaries(value['boundaries']);
 	if (boundaries === undefined) return null;
-	const rawBelowLowest = paper['belowLowestLabel'];
+	const rawBelowLowest = value['belowLowestLabel'];
 	// Absent in a document written before the field existed: the default. An
 	// empty label is unreadable rather than silently corrected, so a stored
 	// document always reads back unchanged.
@@ -458,26 +276,80 @@ function parseDocumentValue(value: unknown): MarksheetDocument | null {
 	) {
 		return null;
 	}
-	const belowLowestLabel = rawBelowLowest ?? DEFAULT_BELOW_LOWEST_LABEL;
+	return {
+		tierName,
+		sourceFilenames: [...sourceFilenames],
+		parsedAt,
+		breakdown,
+		boundaries,
+		belowLowestLabel: rawBelowLowest ?? DEFAULT_BELOW_LOWEST_LABEL
+	};
+}
 
-	const breakdown = value['breakdown'];
-	if (!isRecord(breakdown)) return null;
-	const rawEntries = breakdown['entries'];
-	const rawWarnings = breakdown['warnings'];
-	if (!Array.isArray(rawEntries) || !Array.isArray(rawWarnings)) return null;
-	const entries = parseAll(rawEntries, parseEntry);
-	const warnings = parseAll(rawWarnings, parseWarning);
-	if (!entries || !warnings) return null;
-	const aoDescriptions = parseAoDescriptions(breakdown['aoDescriptions']);
+/** An assessment has one tier or two: no tier is added, removed or reordered later. */
+function parseTiers(value: unknown): StoredTier[] | null {
+	if (!Array.isArray(value)) return null;
+	if (value.length !== 1 && value.length !== 2) return null;
+	return parseAll(value, parseTier);
+}
+
+function parseCommonQuestion(value: unknown): CommonQuestion | null {
+	if (!isRecord(value)) return null;
+	const { tier1EntryId, tier2EntryId } = value;
+	if (typeof tier1EntryId !== 'string' || tier1EntryId === '') return null;
+	if (typeof tier2EntryId !== 'string' || tier2EntryId === '') return null;
+	return { tier1EntryId, tier2EntryId };
+}
+
+/**
+ * Every pair, or nothing: an entry can pair with at most one entry on the other
+ * tier, so an id repeated on either side makes the document unreadable.
+ */
+function parseCommonQuestions(value: unknown): CommonQuestion[] | null {
+	if (!Array.isArray(value)) return null;
+	const pairs = parseAll(value, parseCommonQuestion);
+	if (!pairs) return null;
+	const used = new Set<string>();
+	for (const pair of pairs) {
+		if (used.has(pair.tier1EntryId) || used.has(pair.tier2EntryId)) return null;
+		used.add(pair.tier1EntryId);
+		used.add(pair.tier2EntryId);
+	}
+	return pairs;
+}
+
+/** The current document version, with only known fields kept. */
+function parseVersion3Document(value: Record<string, unknown>): MarksheetDocument | null {
+	const createdAt = value['createdAt'];
+	const updatedAt = value['updatedAt'];
+	const breakdownConfirmedAt = value['breakdownConfirmedAt'];
+	const lastExportedAt = value['lastExportedAt'];
+	if (typeof createdAt !== 'string' || typeof updatedAt !== 'string') return null;
+	if (!isStringOrNull(breakdownConfirmedAt) || !isStringOrNull(lastExportedAt)) return null;
+
+	const firstUnbackedChangeAt = value['firstUnbackedChangeAt'];
+	if (!isStringOrNull(firstUnbackedChangeAt)) return null;
+
+	const label = value['label'];
+	const className = value['className'];
+	if (!isStringOrNull(label) || !isStringOrNull(className)) return null;
+
+	const aoDescriptions = parseAoDescriptions(value['aoDescriptions']);
 	if (!aoDescriptions) return null;
+
+	const tiers = parseTiers(value['tiers']);
+	if (!tiers) return null;
 
 	const rawStudents = value['students'];
 	if (!Array.isArray(rawStudents)) return null;
-	const students = parseAll(rawStudents, parseStudent);
+	const students = parseStudents(rawStudents, tiers.length);
 	if (!students) return null;
 
 	const marks = parseMarks(value['marks']);
 	if (!marks) return null;
+
+	const commonQuestions = parseCommonQuestions(value['commonQuestions']);
+	if (!commonQuestions) return null;
 
 	const topicNames = parseTopicNames(value['topicNames'] ?? {});
 	if (!topicNames) return null;
@@ -492,20 +364,37 @@ function parseDocumentValue(value: unknown): MarksheetDocument | null {
 		breakdownConfirmedAt,
 		lastExportedAt,
 		firstUnbackedChangeAt,
-		paper: {
-			label,
-			className,
-			sourceFilenames: [...sourceFilenames],
-			parsedAt,
-			boundaries,
-			belowLowestLabel
-		},
-		breakdown: { entries, warnings, aoDescriptions },
+		label,
+		className,
+		aoDescriptions,
+		tiers,
 		students,
 		marks,
+		commonQuestions,
 		topicNames,
 		reports
 	};
+}
+
+/**
+ * The one "is this a valid document" check, shared by boot-time load and
+ * restore. A value with `tiers` is the current document; a flat one with
+ * `paper` is either version 2 or a version 3 written before tiers existed,
+ * and is read as a single tier; any other version is unreadable. Returns a
+ * fresh document with only known fields.
+ */
+function parseDocumentValue(value: unknown): MarksheetDocument | null {
+	if (!isRecord(value)) return null;
+	if (Array.isArray(value['tiers'])) {
+		if (value['schemaVersion'] !== DOCUMENT_SCHEMA_VERSION) return null;
+		return parseVersion3Document(value);
+	}
+	const schemaVersion = value['schemaVersion'];
+	if (schemaVersion !== EARLIER_SCHEMA_VERSION && schemaVersion !== DOCUMENT_SCHEMA_VERSION) {
+		return null;
+	}
+	const document = parseVersion2Document(value, schemaVersion);
+	return document === null ? null : fromVersion2(document);
 }
 
 /** The one validator: parse stored (or restored) document text, or null when unreadable. */
@@ -520,13 +409,13 @@ export function parseStoredDocument(raw: string): MarksheetDocument | null {
 }
 
 /**
- * Drop marks pointing at a student or entry that no longer exists. Reached
- * data raises no error and is never shown, so it is thrown away on load rather
- * than carried around.
+ * Drop marks pointing at a student or entry that no longer exists. Marks on a
+ * tier the student is not set to are kept: they count again if the student
+ * moves back, and they are removed with the entry they were entered on.
  */
 export function dropUnreachableMarks(document: MarksheetDocument): MarksheetDocument {
 	const studentIds = new Set(document.students.map((student) => student.id));
-	const entryIds = new Set(document.breakdown.entries.map((entry) => entry.id));
+	const entryIds = new Set(allEntries(document).map((entry) => entry.id));
 	const marks: Record<string, Record<string, number>> = {};
 	for (const [studentId, byEntry] of Object.entries(document.marks)) {
 		if (!studentIds.has(studentId)) continue;
@@ -537,6 +426,21 @@ export function dropUnreachableMarks(document: MarksheetDocument): MarksheetDocu
 		marks[studentId] = kept;
 	}
 	return { ...document, marks };
+}
+
+/**
+ * Drop pairs whose id is missing from its own tier: the first id must be on
+ * tier 0, the second on tier 1. A pair with unequal marks stays: it blocks
+ * confirmation rather than disappearing silently.
+ */
+function dropUnreachableCommonQuestions(
+	document: MarksheetDocument
+): MarksheetDocument['commonQuestions'] {
+	const tier1 = new Set(tierEntries(document, 0).map((entry) => entry.id));
+	const tier2 = new Set(tierEntries(document, 1).map((entry) => entry.id));
+	return document.commonQuestions.filter(
+		(pair) => tier1.has(pair.tier1EntryId) && tier2.has(pair.tier2EntryId)
+	);
 }
 
 /**
@@ -565,16 +469,16 @@ export function specPointCodes(specPoint: string | null): string[] {
 		.filter((code) => code !== '');
 }
 
-/** Every normalised specification-point code on the breakdown, in first-seen order. */
+/** Every normalised specification-point code on either tier, in first-seen order. */
 export function topicCodesOf(document: MarksheetDocument): string[] {
 	const seen = new Set<string>();
-	for (const entry of document.breakdown.entries) {
+	for (const entry of allEntries(document)) {
 		for (const code of specPointCodes(entry.specPoint)) seen.add(code);
 	}
 	return [...seen];
 }
 
-/** Drop topic names whose code appears on no entry, even inside a comma or slash list. */
+/** Drop topic names whose code appears on no entry on either tier, even inside a comma or slash list. */
 export function dropOrphanedTopicNames(
 	document: MarksheetDocument
 ): MarksheetDocument['topicNames'] {
@@ -588,15 +492,17 @@ export function dropOrphanedTopicNames(
 
 /**
  * Everything load and restore throw away: unreachable marks, reports for
- * removed students, and names for codes no entry carries. Reports for
- * ineligible students stay: fixing the student brings them back.
+ * removed students, names for codes no entry carries and pairs pointing at a
+ * question no longer on their tier. Reports for ineligible students stay:
+ * fixing the student brings them back.
  */
 export function dropUnreachable(document: MarksheetDocument): MarksheetDocument {
 	const dropped = dropUnreachableMarks(document);
 	return {
 		...dropped,
 		reports: dropUnreachableReports(dropped),
-		topicNames: dropOrphanedTopicNames(dropped)
+		topicNames: dropOrphanedTopicNames(dropped),
+		commonQuestions: dropUnreachableCommonQuestions(dropped)
 	};
 }
 
@@ -615,10 +521,90 @@ export function totalMarks(entries: readonly BreakdownEntry[]): number {
 	return entries.reduce((sum, entry) => sum + (entry.marks ?? 0), 0);
 }
 
-/** Marks one student gained across the breakdown: unmarked entries count 0. */
+/** One tier's entries in paper order: a tier the assessment does not have holds none. */
+export function tierEntries(document: MarksheetDocument, tier: TierIndex): BreakdownEntry[] {
+	const stored = document.tiers[tier];
+	return stored === undefined ? [] : stored.breakdown.entries;
+}
+
+/** Every tier's entries, tier 0 first, each tier in paper order. */
+export function allEntries(document: MarksheetDocument): BreakdownEntry[] {
+	return document.tiers.flatMap((stored) => stored.breakdown.entries);
+}
+
+/** The tier an entry is on, or null when no tier holds it. */
+export function entryTierOf(document: MarksheetDocument, entryId: string): TierIndex | null {
+	for (const [position, stored] of document.tiers.entries()) {
+		if (stored.breakdown.entries.some((entry) => entry.id === entryId)) {
+			return position === 0 ? 0 : 1;
+		}
+	}
+	return null;
+}
+
+/** The pair an entry belongs to, or null when it is not a common question. */
+export function pairOfEntry(
+	document: MarksheetDocument,
+	tier: TierIndex,
+	entryId: string
+): CommonQuestion | null {
+	const pair = document.commonQuestions.find((candidate) =>
+		tier === 0 ? candidate.tier1EntryId === entryId : candidate.tier2EntryId === entryId
+	);
+	return pair === undefined ? null : pair;
+}
+
+/** The other tier's entry id in an entry's pair, or null when it has no partner. */
+export function partnerIdOf(
+	document: MarksheetDocument,
+	tier: TierIndex,
+	entryId: string
+): string | null {
+	const pair = pairOfEntry(document, tier, entryId);
+	if (pair === null) return null;
+	return tier === 0 ? pair.tier2EntryId : pair.tier1EntryId;
+}
+
+/** The entries a student answers: their own tier's, and none without a tier. */
+export function entriesOfStudent(
+	document: MarksheetDocument,
+	student: StoredStudent
+): BreakdownEntry[] {
+	return student.tier === null ? [] : tierEntries(document, student.tier);
+}
+
+/**
+ * Whether a student's mark on an entry counts towards a figure for them: only
+ * on the tier they sit. A student with no tier has no paper to count against.
+ */
+export function isCountedMark(
+	document: MarksheetDocument,
+	student: StoredStudent,
+	entryId: string
+): boolean {
+	if (student.tier === null) return false;
+	return entryTierOf(document, entryId) === student.tier;
+}
+
+/** The tier name a student's report shows, or null when they have no tier or it has no name. */
+export function studentTierName(
+	document: MarksheetDocument,
+	student: StoredStudent
+): string | null {
+	if (student.tier === null) return null;
+	const name = document.tiers[student.tier].tierName?.trim() ?? '';
+	return name === '' ? null : name;
+}
+
+/** Marks one student gained across their own tier's entries: unmarked entries count 0. */
 export function studentTotal(document: MarksheetDocument, studentId: string): number {
+	const student = document.students.find((candidate) => candidate.id === studentId);
+	if (student === undefined || student.tier === null) return 0;
 	const marks = document.marks[studentId] ?? {};
-	return document.breakdown.entries.reduce((sum, entry) => sum + (marks[entry.id] ?? 0), 0);
+	return entriesOfStudent(document, student).reduce(
+		(sum, entry) => sum + (marks[entry.id] ?? 0),
+		0
+	);
 }
 
 /** Same wording, item for item, in both sections. */
@@ -629,12 +615,23 @@ export function sameProse(a: ReportProse, b: ReportProse): boolean {
 	);
 }
 
-/** How many marks the document holds: one per student per entry answered. */
+/**
+ * How many marks the document holds towards a figure: a student's marks on the
+ * tier they sit, and every mark of a student with no tier. Marks on the other
+ * tier are kept, but not counted.
+ */
 export function markCount(document: MarksheetDocument): number {
-	return Object.values(document.marks).reduce(
-		(sum, byEntry) => sum + Object.keys(byEntry).length,
-		0
-	);
+	let counted = 0;
+	for (const [studentId, byEntry] of Object.entries(document.marks)) {
+		const student = document.students.find((candidate) => candidate.id === studentId);
+		if (student === undefined) continue;
+		for (const entryId of Object.keys(byEntry)) {
+			const tier = entryTierOf(document, entryId);
+			if (tier === null) continue;
+			if (student.tier === null || student.tier === tier) counted += 1;
+		}
+	}
+	return counted;
 }
 
 /**
@@ -658,7 +655,7 @@ export function marksOnEntry(document: MarksheetDocument, entryId: string): numb
  * available marks has nothing for a mark to be above.
  */
 export function marksOverMax(document: MarksheetDocument, entryId: string): number {
-	const entry = document.breakdown.entries.find((candidate) => candidate.id === entryId);
+	const entry = allEntries(document).find((candidate) => candidate.id === entryId);
 	if (!entry) return 0;
 
 	let over = 0;

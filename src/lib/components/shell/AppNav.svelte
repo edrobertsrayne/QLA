@@ -15,8 +15,8 @@
 
 	const store = marksheetStore();
 
-	const label = $derived(store.document?.paper.label ?? null);
-	const className = $derived(store.document?.paper.className ?? null);
+	const label = $derived(store.label);
+	const className = $derived(store.className);
 	const parts = $derived([label, className].filter((part): part is string => part !== null));
 </script>
 

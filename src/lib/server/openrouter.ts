@@ -20,7 +20,7 @@ import {
 	OPENROUTER_URL,
 	usageFrom
 } from './parse/model';
-import { OPENROUTER_TIMEOUT_MS } from './parse/pdf';
+import { OPENROUTER_TIMEOUT_MS, toPdfDataUrl } from './parse/pdf';
 import type { RunStoppingCode } from '$lib/marksheet/report-errors';
 import type { ParseUsage } from './parse/schema';
 import { fenceDocuments } from './fence';
@@ -79,6 +79,8 @@ export interface StructuredModelInput {
 	maxTokens?: number;
 	/** Timeout override; defaults to `OPENROUTER_TIMEOUT_MS`. */
 	timeoutMs?: number;
+	/** PDFs to attach natively after the fenced user content, read by the pinned native file parser. */
+	files?: { filename: string; pdfBase64: string }[];
 }
 
 /** Structured result: the extracted JSON text (for the route to parse against its schema) plus usage. */
@@ -205,6 +207,10 @@ export async function liveStructuredTransport(
 
 	const dataJson = JSON.stringify(input.data);
 	const { open, close, directive } = fenceDocuments(dataJson);
+	const fileParts = (input.files ?? []).map((file) => ({
+		type: 'file',
+		file: { filename: file.filename, file_data: toPdfDataUrl(file.pdfBase64) }
+	}));
 	const payload = {
 		model: input.modelId,
 		max_tokens: input.maxTokens ?? STRUCTURED_DEFAULT_MAX_TOKENS,
@@ -214,9 +220,15 @@ export async function liveStructuredTransport(
 			json_schema: { name: input.schemaName, strict: true, schema: input.schema }
 		},
 		provider: { require_parameters: true },
+		...(fileParts.length > 0
+			? { plugins: [{ id: 'file-parser', pdf: { engine: 'native' } }] }
+			: {}),
 		messages: [
 			{ role: 'system', content: [input.systemPrompt, directive].join('\n\n') },
-			{ role: 'user', content: [{ type: 'text', text: [open, dataJson, close].join('\n') }] }
+			{
+				role: 'user',
+				content: [{ type: 'text', text: [open, dataJson, close].join('\n') }, ...fileParts]
+			}
 		]
 	};
 

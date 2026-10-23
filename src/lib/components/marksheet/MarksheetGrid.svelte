@@ -4,11 +4,14 @@
 	of the sheet — one column per breakdown entry, one row per student — with the
 	class itself as editable here as the breakdown was on the review page: names
 	pasted in a column, added one at a time, renamed in place, flagged absent or
-	removed, and the lot reordered by either name part.
+	removed, and the lot reordered by either name part. On a two-tier assessment
+	the grid shows the open tier's paper and that tier's students; the students
+	still to be placed get a list instead of columns.
 -->
 <script lang="ts">
 	import { flushSync } from 'svelte';
 	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
+	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button';
 	import * as Table from '$lib/components/ui/table';
 	import { caretAtEnd } from '$lib/attachments.js';
@@ -17,7 +20,8 @@
 		isOverMax,
 		readMarkText,
 		type BreakdownEntry,
-		type StoredStudent
+		type StoredStudent,
+		type TierIndex
 	} from '$lib/marksheet/document.js';
 	import { boundariesOf, studentGrade, toNextText } from '$lib/marksheet/grades.js';
 	import { resolveCell, step, type GridCell } from '$lib/marksheet/grid-cursor.js';
@@ -32,6 +36,7 @@
 	import GridNotices from './GridNotices.svelte';
 	import GridToolbar from './GridToolbar.svelte';
 	import NameCell from './NameCell.svelte';
+	import TierNotSet from './TierNotSet.svelte';
 	import {
 		CELL_EDITOR,
 		CELL_REVEAL,
@@ -41,17 +46,29 @@
 		PROGRESS_PIN,
 		selectedCell
 	} from './grid-layout.js';
+	import { tierLabel } from './tier-label.js';
 
-	let { onViewAnalysis }: { onViewAnalysis: (entryId: string | null) => void } = $props();
+	let {
+		tier,
+		onViewAnalysis
+	}: {
+		/** The open tier, or null while the teacher is placing students. */
+		tier: TierIndex | null;
+		onViewAnalysis: (entryId: string | null) => void;
+	} = $props();
 
 	const store = marksheetStore();
-	const entries = $derived(store.entries);
-	const students = $derived(store.students);
+	const document = $derived(store.document);
+	const tiered = $derived(store.tierCount === 2);
+	const entries = $derived(tier === null ? [] : store.entriesOf(tier));
+	const students = $derived(tier === null ? store.studentsWithoutTier() : store.studentsOf(tier));
+	const bands = $derived<QuestionBand[]>(tier === null ? [] : store.bandsOf(tier));
 	const marks = $derived(store.document?.marks ?? {});
 	/** Grade columns beside the marks: total always, grade and to-next only with boundaries. */
-	const hasGrades = $derived(store.document ? boundariesOf(store.document) !== null : false);
+	const hasGrades = $derived(
+		document !== null && tier !== null && boundariesOf(document, tier) !== null
+	);
 	const graded = $derived.by(() => {
-		const document = store.document;
 		if (!document) return new Map<string, ReturnType<typeof studentGrade>>();
 		return new Map(students.map((student) => [student.id, studentGrade(document, student)]));
 	});
@@ -70,7 +87,11 @@
 	let adding = $state(false);
 	let newName = $state('');
 	/** The grid's own element, so a cell is looked for only where it can be. */
-	let gridRoot = $state<HTMLDivElement>();
+	let gridRoot: HTMLDivElement | undefined;
+
+	function attachGridRoot(node: HTMLDivElement): void {
+		gridRoot = node;
+	}
 
 	const shape = $derived({
 		studentIds: students.map((student) => student.id),
@@ -266,7 +287,7 @@
 	 */
 	function onPaste(event: ClipboardEvent): void {
 		const anchor = activeCell;
-		if (!anchor) return;
+		if (!anchor || tier === null) return;
 
 		// A name field has its own paste: that text is a name, not a grid.
 		const target = event.target instanceof Element ? event.target : null;
@@ -291,7 +312,8 @@
 			rows,
 			anchor.entryId === null
 				? { kind: 'names', studentId: anchor.studentId }
-				: { kind: 'marks', studentId: anchor.studentId, entryId: anchor.entryId }
+				: { kind: 'marks', studentId: anchor.studentId, entryId: anchor.entryId },
+			tier
 		);
 	}
 
@@ -321,7 +343,10 @@
 			discardNewStudent();
 			return;
 		}
-		store.addStudent(name);
+		// On one tier there is nowhere else to put them; on two, a name typed on a
+		// tier tab joins that tier, so the row they typed stays where they are.
+		if (tier === null || store.tierCount === 1) store.addStudent(name);
+		else store.pasteNames(newName, tier);
 		newName = '';
 	}
 
@@ -329,197 +354,240 @@
 		newName = '';
 		adding = false;
 	}
+
+	/** Move a student to the other tier: the marks they leave behind are kept, uncounted. */
+	function moveStudent(student: StoredStudent): void {
+		const from = student.tier;
+		if (from === null) return;
+		const to: TierIndex = from === 0 ? 1 : 0;
+		store.setStudentTier(student.id, to);
+		toast(`${studentName(student)} moved to ${tierLabel(document, to)}`, {
+			description: 'Their marks on the tier they left are kept, not counted.'
+		});
+	}
 </script>
+
+{#snippet addStudentControl()}
+	{#if adding}
+		<input
+			data-testid="new-student-name"
+			{@attach caretAtEnd}
+			aria-label="New student name"
+			class={cn(CELL_EDITOR, 'w-full')}
+			placeholder="First name Surname"
+			value={newName}
+			oninput={(event) => (newName = event.currentTarget.value)}
+			onkeydown={onAddKeydown}
+			onblur={() => {
+				if (newName.trim() === '') adding = false;
+			}}
+		/>
+	{:else}
+		<Button variant="ghost" size="xs" onclick={startAdding}>
+			<UserPlusIcon class="size-3.5" /> Add student
+		</Button>
+	{/if}
+{/snippet}
 
 <GridNotices {refusal} />
 
-<GridToolbar {onViewAnalysis} />
+<GridToolbar {tier} {onViewAnalysis} />
 
-{#if students.length === 0}
-	<EmptyClassPanel onAddOne={startAdding} />
-{/if}
-
-<div class="relative overflow-hidden rounded-xl border" onpaste={onPaste} bind:this={gridRoot}>
-	<Table.Root class="table-fixed w-fit" role="grid" aria-label="Marksheet grid">
-		<!-- The widths every cell obeys: narrow entry columns, a frozen name and
-		     progress column, so a paper scrolls sideways only when it must. -->
-		<colgroup>
-			<col style="width: {COLUMN.name}" />
-			<col style="width: {COLUMN.progress}" />
-			{#each entries as entry (entry.id)}
-				<col style="width: {COLUMN.entry}" />
-			{/each}
-			<col style="width: 3rem" />
-			{#if hasGrades}
-				<col style="width: 3rem" />
-				<col style="width: 5rem" />
-			{/if}
-		</colgroup>
-		<Table.Header>
-			{#if store.questionBands.length > 0}
-				<BandHeaderRow
-					cursorEntryId={cursor?.entryId ?? null}
-					onJump={jumpToBand}
-					endColumns={hasGrades ? 3 : 1}
-				/>
-			{/if}
-			<Table.Row role="row" class="hover:bg-transparent">
-				<Table.Head class={cn(NAME_COLUMN, 'px-1.5 text-left text-xs')}>Student</Table.Head>
-				<Table.Head class={cn(FROZEN_PROGRESS, 'px-1 text-xs')} style={PROGRESS_PIN}
-					>Progress</Table.Head
-				>
+{#if tier === null && store.students.length === 0}
+	<EmptyClassPanel {tier} onAddOne={startAdding} />
+	{#if adding}
+		<div class="max-w-xl">{@render addStudentControl()}</div>
+	{/if}
+{:else if tier === null}
+	<TierNotSet />
+	<div class="w-fit">{@render addStudentControl()}</div>
+{:else}
+	{#if store.students.length === 0}
+		<EmptyClassPanel {tier} onAddOne={startAdding} />
+	{/if}
+	<div
+		class="relative overflow-hidden rounded-xl border"
+		onpaste={onPaste}
+		{@attach attachGridRoot}
+	>
+		<Table.Root class="table-fixed w-fit" role="grid" aria-label="Marksheet grid">
+			<!-- The widths every cell obeys: narrow entry columns, a frozen name and
+			     progress column, so a paper scrolls sideways only when it must. -->
+			<colgroup>
+				<col style="width: {COLUMN.name}" />
+				<col style="width: {COLUMN.progress}" />
 				{#each entries as entry (entry.id)}
-					<EntryColumnHead {entry} active={cursor?.entryId === entry.id} />
+					<col style="width: {COLUMN.entry}" />
 				{/each}
-				<Table.Head class="border-l-2 px-1 text-center text-xs">Total</Table.Head>
+				<col style="width: 3rem" />
 				{#if hasGrades}
-					<Table.Head class="px-1 text-center text-xs">Grade</Table.Head>
-					<Table.Head class="px-1 text-center text-xs">To next</Table.Head>
+					<col style="width: 3rem" />
+					<col style="width: 5rem" />
 				{/if}
-			</Table.Row>
-		</Table.Header>
-		<Table.Body>
-			{#each students as student (student.id)}
-				{@const name = studentName(student)}
-				{@const progress = progressOf(marks[student.id], entries)}
-				<Table.Row
-					role="row"
-					data-testid="student-row"
-					data-student-id={student.id}
-					class={cn(
-						'group',
-						cursor?.studentId === student.id && 'bg-muted/50 hover:bg-muted/50',
-						student.absent && 'text-muted-foreground'
-					)}
-				>
-					<NameCell
-						{student}
-						active={isActiveCell(student.id, null)}
-						onSelect={() => selectCell(student.id, null)}
-						onMove={(move) => moveTo(activeCell && step(activeCell, shape, move))}
+			</colgroup>
+			<Table.Header>
+				{#if bands.length > 0}
+					<BandHeaderRow
+						{bands}
+						cursorEntryId={cursor?.entryId ?? null}
+						onJump={jumpToBand}
+						endColumns={hasGrades ? 3 : 1}
 					/>
-					<Table.Cell
-						data-testid="progress-cell"
-						class={cn(
-							FROZEN_PROGRESS,
-							'px-1 text-center text-xs text-muted-foreground tabular-nums'
-						)}
-						style={PROGRESS_PIN}
+				{/if}
+				<Table.Row role="row" class="hover:bg-transparent">
+					<Table.Head class={cn(NAME_COLUMN, 'px-1.5 text-left text-xs')}>Student</Table.Head>
+					<Table.Head class={cn(FROZEN_PROGRESS, 'px-1 text-xs')} style={PROGRESS_PIN}
+						>Progress</Table.Head
 					>
-						{student.absent ? 'absent' : `${progress.marked}/${progress.total}`}
-					</Table.Cell>
 					{#each entries as entry (entry.id)}
-						{@const mark = markOf(student, entry)}
-						{@const overMax = mark !== undefined && isOverMax(mark, entry)}
-						<Table.Cell
-							role="gridcell"
-							data-testid="mark-cell"
-							data-student-id={student.id}
-							data-entry-id={entry.id}
-							tabindex={isActiveCell(student.id, entry.id) ? 0 : -1}
-							aria-invalid={overMax ? 'true' : undefined}
-							style={CELL_REVEAL}
-							class={cn(
-								'border-l px-0.5 py-1 text-center tabular-nums',
-								// A mark above what the entry offers is kept and shown as the
-								// typo it is, never clamped into a mark nobody gave.
-								overMax && 'font-semibold text-destructive',
-								isActiveCell(student.id, entry.id) && selectedCell,
-								student.absent && 'bg-muted/40'
-							)}
-							onclick={() => selectCell(student.id, entry.id)}
-							ondblclick={(event) => {
-								// A double-click in an open editor selects what is in it.
-								if ((event.target as Element).closest('input')) return;
-								editMark(student, entry);
-							}}
-							onkeydown={(event) => onMarkKeydown(student, entry, event)}
-						>
-							{#if editing?.studentId === student.id && editing.entryId === entry.id}
-								<input
-									data-testid="mark-editor"
-									{@attach caretAtEnd}
-									aria-label={`Mark for ${name} on ${entryName(entry)}`}
-									inputmode="numeric"
-									class="m-0 block w-full min-w-0 appearance-none rounded-none border-0 bg-transparent p-0 text-center tabular-nums shadow-none outline-none ring-0"
-									value={editing.value}
-									oninput={(event) => {
-										if (editing) editing.value = event.currentTarget.value;
-									}}
-									onfocusout={onEditorFocusOut}
-								/>
-							{:else}
-								{mark ?? ''}
-							{/if}
-						</Table.Cell>
+						<EntryColumnHead {entry} active={cursor?.entryId === entry.id} />
 					{/each}
-					{@const grade = graded.get(student.id)}
-					<Table.Cell
-						data-testid="total-cell"
+					<Table.Head class="border-l-2 px-1 text-center text-xs">Total</Table.Head>
+					{#if hasGrades}
+						<Table.Head class="px-1 text-center text-xs">Grade</Table.Head>
+						<Table.Head class="px-1 text-center text-xs">To next</Table.Head>
+					{/if}
+				</Table.Row>
+			</Table.Header>
+			<Table.Body>
+				{#each students as student (student.id)}
+					{@const name = studentName(student)}
+					{@const progress = progressOf(marks[student.id], entries)}
+					<Table.Row
+						role="row"
+						data-testid="student-row"
 						data-student-id={student.id}
 						class={cn(
-							'border-l-2 px-1 text-center tabular-nums',
-							grade?.kind === 'partial' && 'text-muted-foreground italic'
+							'group',
+							cursor?.studentId === student.id && 'bg-muted/50 hover:bg-muted/50',
+							student.absent && 'text-muted-foreground'
 						)}
 					>
-						{#if grade?.kind === 'complete' || grade?.kind === 'partial'}{grade.total}{/if}
-					</Table.Cell>
-					{#if hasGrades}
+						<NameCell
+							{student}
+							active={isActiveCell(student.id, null)}
+							onSelect={() => selectCell(student.id, null)}
+							onMove={(move) => moveTo(activeCell && step(activeCell, shape, move))}
+							onMoveTier={tiered ? () => moveStudent(student) : undefined}
+							moveLabel={tiered ? tierLabel(document, tier === 0 ? 1 : 0) : undefined}
+						/>
 						<Table.Cell
-							data-testid="grade-cell"
-							data-student-id={student.id}
+							data-testid="progress-cell"
 							class={cn(
-								'px-1 text-center font-semibold',
-								grade?.kind === 'partial' && 'font-normal text-muted-foreground italic'
+								FROZEN_PROGRESS,
+								'px-1 text-center text-xs text-muted-foreground tabular-nums'
 							)}
-							title={grade?.kind === 'partial' ? 'Provisional: not every mark is in' : undefined}
+							style={PROGRESS_PIN}
 						>
-							{#if (grade?.kind === 'complete' || grade?.kind === 'partial') && grade.grade}{grade
-									.grade.label}{grade.kind === 'partial'
-									? '*'
-									: ''}{:else if grade?.kind === 'over-max'}<span class="text-destructive">!</span
-								>{/if}
+							{student.absent ? 'absent' : `${progress.marked}/${progress.total}`}
 						</Table.Cell>
+						{#each entries as entry (entry.id)}
+							{@const mark = markOf(student, entry)}
+							{@const overMax = mark !== undefined && isOverMax(mark, entry)}
+							<Table.Cell
+								role="gridcell"
+								data-testid="mark-cell"
+								data-student-id={student.id}
+								data-entry-id={entry.id}
+								tabindex={isActiveCell(student.id, entry.id) ? 0 : -1}
+								aria-invalid={overMax ? 'true' : undefined}
+								style={CELL_REVEAL}
+								class={cn(
+									'border-l px-0.5 py-1 text-center tabular-nums',
+									// A mark above what the entry offers is kept and shown as the
+									// typo it is, never clamped into a mark nobody gave.
+									overMax && 'font-semibold text-destructive',
+									isActiveCell(student.id, entry.id) && selectedCell,
+									student.absent && 'bg-muted/40'
+								)}
+								onclick={() => selectCell(student.id, entry.id)}
+								ondblclick={(event) => {
+									// A double-click in an open editor selects what is in it.
+									if ((event.target as Element).closest('input')) return;
+									editMark(student, entry);
+								}}
+								onkeydown={(event) => onMarkKeydown(student, entry, event)}
+							>
+								{#if editing?.studentId === student.id && editing.entryId === entry.id}
+									<input
+										data-testid="mark-editor"
+										{@attach caretAtEnd}
+										aria-label={`Mark for ${name} on ${entryName(entry)}`}
+										inputmode="numeric"
+										class="m-0 block w-full min-w-0 appearance-none rounded-none border-0 bg-transparent p-0 text-center tabular-nums shadow-none outline-none ring-0"
+										value={editing.value}
+										oninput={(event) => {
+											if (editing) editing.value = event.currentTarget.value;
+										}}
+										onfocusout={onEditorFocusOut}
+									/>
+								{:else}
+									{mark ?? ''}
+								{/if}
+							</Table.Cell>
+						{/each}
+						{@const grade = graded.get(student.id)}
 						<Table.Cell
-							data-testid="to-next-cell"
+							data-testid="total-cell"
 							data-student-id={student.id}
 							class={cn(
-								'px-1 text-center text-xs tabular-nums',
+								'border-l-2 px-1 text-center tabular-nums',
 								grade?.kind === 'partial' && 'text-muted-foreground italic'
 							)}
 						>
-							{#if grade?.kind === 'partial' && grade.grade}so far{:else if (grade?.kind === 'complete' || grade?.kind === 'partial') && grade.grade}{toNextText(
-									grade.grade
-								)}{/if}
+							{#if grade?.kind === 'complete' || grade?.kind === 'partial'}{grade.total}{/if}
 						</Table.Cell>
+						{#if hasGrades}
+							<Table.Cell
+								data-testid="grade-cell"
+								data-student-id={student.id}
+								class={cn(
+									'px-1 text-center font-semibold',
+									grade?.kind === 'partial' && 'font-normal text-muted-foreground italic'
+								)}
+								title={grade?.kind === 'partial' ? 'Provisional: not every mark is in' : undefined}
+							>
+								{#if (grade?.kind === 'complete' || grade?.kind === 'partial') && grade.grade}{grade
+										.grade.label}{grade.kind === 'partial'
+										? '*'
+										: ''}{:else if grade?.kind === 'over-max'}<span class="text-destructive">!</span
+									>{/if}
+							</Table.Cell>
+							<Table.Cell
+								data-testid="to-next-cell"
+								data-student-id={student.id}
+								class={cn(
+									'px-1 text-center text-xs tabular-nums',
+									grade?.kind === 'partial' && 'text-muted-foreground italic'
+								)}
+							>
+								{#if grade?.kind === 'partial' && grade.grade}so far{:else if (grade?.kind === 'complete' || grade?.kind === 'partial') && grade.grade}{toNextText(
+										grade.grade
+									)}{/if}
+							</Table.Cell>
+						{/if}
+					</Table.Row>
+				{:else}
+					{#if tiered && store.students.length > 0}
+						<Table.Row role="row" class="hover:bg-transparent">
+							<Table.Cell
+								role="gridcell"
+								colspan={entries.length + (hasGrades ? 5 : 3)}
+								class="px-3 py-6 text-sm text-muted-foreground"
+							>
+								No students on {tierLabel(document, tier)} yet. Set tiers on the Tier not set tab.
+							</Table.Cell>
+						</Table.Row>
 					{/if}
+				{/each}
+				<Table.Row role="row" class="hover:bg-transparent">
+					<Table.Cell role="gridcell" class={cn(NAME_COLUMN, 'p-1')}>
+						{@render addStudentControl()}
+					</Table.Cell>
+					<Table.Cell colspan={entries.length + (hasGrades ? 3 : 1)} role="gridcell" />
 				</Table.Row>
-			{/each}
-			<Table.Row role="row" class="hover:bg-transparent">
-				<Table.Cell role="gridcell" class={cn(NAME_COLUMN, 'p-1')}>
-					{#if adding}
-						<input
-							data-testid="new-student-name"
-							{@attach caretAtEnd}
-							aria-label="New student name"
-							class={cn(CELL_EDITOR, 'w-full')}
-							placeholder="First name Surname"
-							value={newName}
-							oninput={(event) => (newName = event.currentTarget.value)}
-							onkeydown={onAddKeydown}
-							onblur={() => {
-								if (newName.trim() === '') adding = false;
-							}}
-						/>
-					{:else}
-						<Button variant="ghost" size="xs" onclick={startAdding}>
-							<UserPlusIcon class="size-3.5" /> Add student
-						</Button>
-					{/if}
-				</Table.Cell>
-				<Table.Cell colspan={entries.length + (hasGrades ? 3 : 1)} role="gridcell" />
-			</Table.Row>
-		</Table.Body>
-		<FacilityFooter {onViewAnalysis} />
-	</Table.Root>
-</div>
+			</Table.Body>
+			<FacilityFooter {tier} {onViewAnalysis} />
+		</Table.Root>
+	</div>
+{/if}

@@ -5,7 +5,7 @@ import '../../app.css';
 import { expect, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import { confirmed, entry, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { confirmed, entry, student, tier } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { generationInputFor } from '$lib/marksheet/report-input.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { render } from 'vitest-browser-svelte';
@@ -49,11 +49,94 @@ export function plain(over: Partial<MarksheetDocument> = {}): MarksheetDocument 
 	marks['di'] = { 'entry-1': 1 };
 	marks['ed'] = { 'entry-1': 9, 'entry-2': 1 };
 	return confirmed({
-		breakdown: { entries, warnings: [], aoDescriptions: {} },
+		tiers: [tier({ breakdown: { entries, warnings: [] } })],
 		students: names.map(([id, first, last, absent]) => student(id, first, last, absent)),
 		marks,
 		...over
 	});
+}
+/**
+ * Two named tiers with one student each and one student with no tier. Each
+ * tier has its own entries, marks and boundaries, and both students carry
+ * complete off-tier marks, so a move between tiers leaves them eligible.
+ */
+export function twoTiers(): MarksheetDocument {
+	const higher = [
+		entry('h1', 'H1', '1', {
+			marks: 4,
+			summary: 'Higher question one',
+			specPoint: '5.1.1',
+			commandWord: null,
+			ao: 'AO1'
+		}),
+		entry('h2', 'H2', '2', {
+			marks: 6,
+			summary: 'Higher question two',
+			specPoint: '5.1.2',
+			commandWord: null,
+			ao: 'AO2'
+		})
+	];
+	const foundation = [
+		entry('f1', 'F1', '1', {
+			marks: 3,
+			summary: 'Foundation question one',
+			specPoint: '5.1.2',
+			commandWord: null,
+			ao: 'AO1'
+		}),
+		entry('f2', 'F2', '2', {
+			marks: 5,
+			summary: 'Foundation question two',
+			specPoint: '5.2.1',
+			commandWord: null,
+			ao: 'AO2'
+		})
+	];
+	return confirmed({
+		label: '10X Ph1',
+		tiers: [
+			tier({
+				tierName: 'Higher',
+				breakdown: { entries: higher, warnings: [] },
+				boundaries: [
+					{ label: 'A', minimum: 8 },
+					{ label: 'B', minimum: 5 },
+					{ label: 'C', minimum: 2 }
+				]
+			}),
+			tier({
+				tierName: 'Foundation',
+				sourceFilenames: ['10X Ph1 F.pdf'],
+				breakdown: { entries: foundation, warnings: [] },
+				boundaries: [
+					{ label: 'F-A', minimum: 6 },
+					{ label: 'F-B', minimum: 3 }
+				]
+			})
+		],
+		students: [
+			student('ada', 'Ada', 'Lovelace', false, 0),
+			student('bo', 'Bo', 'Brown', false, 1),
+			student('nora', 'Nora', 'Nought', false, null)
+		],
+		marks: {
+			// Ada's own tier is Higher: her Foundation marks are kept but uncounted.
+			ada: { h1: 3, h2: 5, f1: 1, f2: 1 },
+			// Bo's own tier is Foundation: her Higher marks are likewise kept.
+			bo: { f1: 2, f2: 1, h1: 1, h2: 1 }
+		}
+	});
+}
+/** `twoTiers()` with every topic code named, so no topic-name gap redirects a later step. */
+export function namedTwoTiers(): MarksheetDocument {
+	const doc = twoTiers();
+	doc.topicNames = {
+		'5.1.1': 'Kinetic theory',
+		'5.1.2': 'Gas pressure',
+		'5.2.1': 'Internal energy'
+	};
+	return doc;
 }
 /**
  * Synthetic H556 variant of the 13OA class: the same marks with hand-assigned
@@ -62,7 +145,7 @@ export function plain(over: Partial<MarksheetDocument> = {}): MarksheetDocument 
  */
 export function h556(): MarksheetDocument {
 	const doc = plain();
-	doc.breakdown.entries = [
+	doc.tiers[0].breakdown.entries = [
 		entry('entry-1', '1', '1', {
 			marks: 4,
 			summary: 'Define the kinetic model',

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { toast } from 'svelte-sonner';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import { confirmed, entry, parseRun, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { confirmed, parseRun, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { openShell, waitForToast } from './spec-helpers.js';
@@ -10,12 +10,7 @@ import { openShell, waitForToast } from './spec-helpers.js';
 /** A confirmed document with a class, a student and a mark: the state a marksheet exists in. */
 function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({
-		paper: { ...confirmed().paper, className: '10C1' },
-		breakdown: {
-			entries: [entry('entry-1', '2bii', '2')],
-			warnings: [],
-			aoDescriptions: {}
-		},
+		className: '10C1',
 		students: [student('student-1', 'Ada', 'Lovelace')],
 		marks: { 'student-1': { 'entry-1': 3 } },
 		...overrides
@@ -120,7 +115,7 @@ describe('status bar', () => {
 		// What the browser refused to keep is still reachable, change and all.
 		expect(file.filename()).toMatch(/^qla-backup-10x-ph1-nov-mock-\d{4}-\d{2}-\d{2}\.json$/);
 		const handed = JSON.parse(await file.text()) as MarksheetDocument;
-		expect(handed.paper.label).toBe('10X Ph1 — Nov mock');
+		expect(handed.label).toBe('10X Ph1 — Nov mock');
 	});
 
 	it('stands amber from boot when the browser will keep nothing, and offers the work out', async () => {
@@ -144,7 +139,7 @@ describe('status bar', () => {
 
 		// A parse is worth keeping whatever the browser will do with it, so it
 		// lands in the tab and can be handed out from there.
-		store.createFromParse(parseRun());
+		store.createFromAssessment(parseRun());
 
 		await expect
 			.element(page.getByRole('button', { name: 'Download backup now' }))

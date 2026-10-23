@@ -9,6 +9,7 @@ import {
 	HOSTILE,
 	plain,
 	solo,
+	namedTwoTiers,
 	stubFetch,
 	reportCalls,
 	ok,
@@ -182,6 +183,7 @@ describe('out-of-date reports', () => {
 		// figures that never reach the generation input. If this regressed,
 		// both reports would gain a marker.
 		marksheetStore().saveBoundaries(
+			0,
 			[
 				{ label: 'C', minimum: 5 },
 				{ label: 'D', minimum: 2 }
@@ -535,5 +537,92 @@ describe('review fixes', () => {
 		const sheet = document.querySelector('main [data-report-id="ada"]');
 		expect(sheet?.querySelectorAll('ul > li > textarea')).toHaveLength(2);
 		expect(sheet?.querySelectorAll('ol > li > textarea')).toHaveLength(1);
+	});
+});
+
+describe('tier name in the report header', () => {
+	/** The label line itself: the header's first paragraph, name line excluded. */
+	function labelLine(id: string): Element | null | undefined {
+		return document.querySelector(`main [data-report-id="${id}"] header p`);
+	}
+
+	it("appends the student's own tier name, verbatim, in semibold black", async () => {
+		const doc = namedTwoTiers();
+		writeFor(doc, ['ada', 'bo']);
+		seed(doc);
+		stubFetch();
+		await openReports('/reports/review');
+
+		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
+		expect(labelLine('ada')?.textContent?.trim()).toBe('10X Ph1 · Higher');
+		expect(labelLine('bo')?.textContent?.trim()).toBe('10X Ph1 · Foundation');
+
+		const tier = document.querySelector('main [data-report-id="ada"] [data-testid="report-tier"]');
+		expect(tier?.textContent).toBe(' · Higher');
+		const name = tier?.querySelector('span');
+		expect(name?.className).toContain('font-semibold');
+		expect(name?.className).toContain('text-black');
+	});
+
+	it('gives today’s header when the tier name is blank', async () => {
+		const doc = namedTwoTiers();
+		doc.tiers[0].tierName = null;
+		writeFor(doc, ['ada']);
+		seed(doc);
+		stubFetch();
+		await openReports('/reports/review');
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		expect(labelLine('ada')?.textContent?.trim()).toBe('10X Ph1');
+		expect(
+			document.querySelector('main [data-report-id="ada"] [data-testid="report-tier"]')
+		).toBeNull();
+	});
+
+	it('stands the tier name alone when the paper label is blank', async () => {
+		const doc = namedTwoTiers();
+		doc.label = null;
+		writeFor(doc, ['ada']);
+		seed(doc);
+		stubFetch();
+		await openReports('/reports/review');
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		expect(labelLine('ada')?.textContent?.trim()).toBe('Higher');
+		expect(labelLine('ada')?.textContent).not.toContain('·');
+	});
+
+	it('puts a report out of date when the student moves tier, but not when the tier is renamed', async () => {
+		const doc = namedTwoTiers();
+		writeFor(doc, ['ada', 'bo']);
+		seed(doc);
+		stubFetch();
+		await openReports('/reports/review');
+
+		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
+		expect(page.getByText('Out of date').query()).toBeNull();
+
+		// The name is display data: it changes the header and nothing else.
+		marksheetStore().setTierName(0, 'Higher Tier');
+		await vi.waitFor(() =>
+			expect(labelLine('ada')?.textContent?.trim()).toBe('10X Ph1 · Higher Tier')
+		);
+		expect(document.querySelector('[data-page-for="ada"]')?.textContent).not.toContain(
+			'Out of date'
+		);
+
+		// Ada carries complete Foundation marks, so the move keeps her eligible
+		// and changes what the model would be sent: that is out of date.
+		marksheetStore().setStudentTier('ada', 1);
+		await vi.waitFor(() =>
+			expect(document.querySelector('[data-page-for="ada"]')?.textContent).toContain('Out of date')
+		);
+		const sheet = document.querySelector('main [data-report-id="ada"]');
+		expect(sheet?.textContent).toContain('F1');
+		expect(sheet?.textContent).not.toContain('H1');
+		expect(labelLine('ada')?.textContent?.trim()).toBe('10X Ph1 · Foundation');
+		expect(document.querySelector('[data-page-for="bo"]')?.textContent).not.toContain(
+			'Out of date'
+		);
 	});
 });

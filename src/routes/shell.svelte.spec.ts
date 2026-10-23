@@ -5,11 +5,12 @@ import { goto } from '$app/navigation';
 import { STORAGE_KEY } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import {
-	NOW,
 	entry,
 	parseRun,
 	parsed as sharedParsed,
-	seed
+	seed,
+	tier,
+	tierParse
 } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import BreakdownPage from './breakdown/+page.svelte';
@@ -18,11 +19,14 @@ import { openShell } from './spec-helpers.js';
 /** A parse nobody has confirmed: no class yet. */
 function parsed(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return sharedParsed({
-		breakdown: {
-			entries: [entry('entry-1', '1a', '1', { specPoint: null, commandWord: null, ao: null })],
-			warnings: [],
-			aoDescriptions: {}
-		},
+		tiers: [
+			tier({
+				breakdown: {
+					entries: [entry('entry-1', '1a', '1', { specPoint: null, commandWord: null, ao: null })],
+					warnings: []
+				}
+			})
+		],
 		...overrides
 	});
 }
@@ -62,28 +66,21 @@ describe('the breadcrumb', () => {
 	});
 
 	it('leaves out the paper when it has no label', async () => {
-		seed(
-			parsed({
-				paper: {
-					label: null,
-					className: '10C1',
-					sourceFilenames: [],
-					parsedAt: NOW,
-					boundaries: null,
-					belowLowestLabel: 'U'
-				}
-			})
-		);
+		seed(parsed({ label: null, className: '10C1' }));
 		openShell();
 
 		await expect.element(breadcrumb()).toHaveTextContent(/^QLA\s*\/\s*10C1$/);
 	});
 
 	it('shows the label seeded from the uploaded filename', async () => {
-		marksheetStore().createFromParse(
+		marksheetStore().createFromAssessment(
 			parseRun({
-				breakdown: { questions: [], aoDescriptions: [] },
-				filenames: ['Year 10 Chemistry.pdf']
+				tiers: [
+					tierParse({
+						breakdown: { tierName: null, questions: [], aoDescriptions: [] },
+						filenames: ['Year 10 Chemistry.pdf']
+					})
+				]
 			})
 		);
 		openShell();

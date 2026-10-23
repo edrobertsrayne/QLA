@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	assessmentBlockers,
 	bandName,
 	confirmationBlockers,
 	entryEdits,
@@ -9,11 +10,11 @@ import {
 	needsAttention,
 	questionBands,
 	questionCount,
-	reconcilePaperTotal,
 	runWarnings,
 	warningsForEntry
 } from './breakdown.js';
-import type { BreakdownEntry, EntryValues, StoredWarning } from './document.js';
+import type { BreakdownEntry, EntryValues, MarksheetDocument, StoredWarning } from './document.js';
+import { confirmed, tier } from './fixtures.spec-helpers.js';
 
 function entry(
 	id: string,
@@ -187,6 +188,148 @@ describe('confirmationBlockers', () => {
 	});
 });
 
+describe('assessmentBlockers', () => {
+	/** Two tiers named apart, each with one entry, and the pair that joins them. */
+	function twoTier(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
+		return confirmed({
+			tiers: [
+				tier({ tierName: 'Higher' }),
+				tier({
+					tierName: 'Foundation',
+					breakdown: { entries: [entry('entry-2', '2bii', '2')], warnings: [] }
+				})
+			],
+			commonQuestions: [{ tier1EntryId: 'entry-1', tier2EntryId: 'entry-2' }],
+			...overrides
+		});
+	}
+
+	it('reports each tier’s own blockers and blocks the assessment when one has any', () => {
+		const document = twoTier({
+			tiers: [
+				tier({ tierName: 'Higher' }),
+				tier({
+					tierName: 'Foundation',
+					breakdown: {
+						entries: [entry('entry-2', '2bii', '2', { marks: null })],
+						warnings: []
+					}
+				})
+			]
+		});
+
+		const blockers = assessmentBlockers(document);
+
+		expect(blockers.tiers.map((one) => one.blocked)).toEqual([false, true]);
+		expect(blockers.tiers[1].noAvailableMarks.map((one) => one.id)).toEqual(['entry-2']);
+		expect(blockers.blocked).toBe(true);
+	});
+
+	it('does not ask a single-tier assessment for a tier name', () => {
+		const blockers = assessmentBlockers(confirmed());
+
+		expect(blockers).toEqual({
+			blocked: false,
+			tiers: [confirmationBlockers([entry('entry-1', '2bii', '2')])],
+			blankTierNames: [],
+			sameTierNames: false,
+			unequalPairs: []
+		});
+	});
+
+	it('names the tier with no printed name, and blocks', () => {
+		const document = twoTier({
+			tiers: [
+				tier({ tierName: 'Higher' }),
+				tier({
+					tierName: null,
+					breakdown: { entries: [entry('entry-2', '2bii', '2')], warnings: [] }
+				})
+			]
+		});
+
+		const blockers = assessmentBlockers(document);
+
+		expect(blockers.blankTierNames).toEqual([1]);
+		expect(blockers.sameTierNames).toBe(false);
+		expect(blockers.blocked).toBe(true);
+	});
+
+	it('treats a blank name as no name', () => {
+		const document = twoTier({
+			tiers: [
+				tier({ tierName: '   ' }),
+				tier({
+					tierName: 'Foundation',
+					breakdown: { entries: [entry('entry-2', '2bii', '2')], warnings: [] }
+				})
+			]
+		});
+
+		expect(assessmentBlockers(document).blankTierNames).toEqual([0]);
+	});
+
+	it('blocks two tiers whose names are the same, ignoring case and surrounding spaces', () => {
+		const document = twoTier({
+			tiers: [
+				tier({ tierName: ' Higher Tier ' }),
+				tier({
+					tierName: 'higher tier',
+					breakdown: { entries: [entry('entry-2', '2bii', '2')], warnings: [] }
+				})
+			]
+		});
+
+		const blockers = assessmentBlockers(document);
+
+		expect(blockers.sameTierNames).toBe(true);
+		expect(blockers.blankTierNames).toEqual([]);
+		expect(blockers.blocked).toBe(true);
+	});
+
+	it('accepts a pair whose marks match', () => {
+		expect(assessmentBlockers(twoTier()).unequalPairs).toEqual([]);
+		expect(assessmentBlockers(twoTier()).blocked).toBe(false);
+	});
+
+	it('names a pair whose available marks were edited apart, and blocks', () => {
+		const document = twoTier({
+			tiers: [
+				tier({ tierName: 'Higher' }),
+				tier({
+					tierName: 'Foundation',
+					breakdown: {
+						entries: [entry('entry-2', '2bii', '2', { marks: 5 })],
+						warnings: []
+					}
+				})
+			]
+		});
+
+		const blockers = assessmentBlockers(document);
+
+		expect(blockers.unequalPairs).toEqual([{ tier1EntryId: 'entry-1', tier2EntryId: 'entry-2' }]);
+		expect(blockers.blocked).toBe(true);
+	});
+
+	it('names a pair whose available marks are not known yet', () => {
+		const document = twoTier({
+			tiers: [
+				tier({ tierName: 'Higher' }),
+				tier({
+					tierName: 'Foundation',
+					breakdown: {
+						entries: [entry('entry-2', '2bii', '2', { marks: null })],
+						warnings: []
+					}
+				})
+			]
+		});
+
+		expect(assessmentBlockers(document).unequalPairs).toHaveLength(1);
+	});
+});
+
 describe('needsAttention', () => {
 	it('lists entries with unknown marks, a parse warning or a label problem, in document order', () => {
 		const warnings: StoredWarning[] = [
@@ -201,8 +344,7 @@ describe('needsAttention', () => {
 				entry('c', '2a', '2'),
 				entry('d', '2a', '2')
 			],
-			warnings,
-			aoDescriptions: {}
+			warnings
 		});
 
 		expect(items.map((item) => item.entry.id)).toEqual(['a', 'b', 'c', 'd']);
@@ -213,9 +355,7 @@ describe('needsAttention', () => {
 	});
 
 	it('leaves out an entry the parse was happy with', () => {
-		expect(
-			needsAttention({ entries: [entry('a', '1a', '1')], warnings: [], aoDescriptions: {} })
-		).toEqual([]);
+		expect(needsAttention({ entries: [entry('a', '1a', '1')], warnings: [] })).toEqual([]);
 	});
 });
 
@@ -299,59 +439,6 @@ describe('entryEdits', () => {
 			added: true,
 			fields: []
 		});
-	});
-});
-
-describe('reconcilePaperTotal', () => {
-	it('adds up when the entries account for the total printed on the paper', () => {
-		const check = reconcilePaperTotal(
-			[entry('a', '1a', '1', { marks: 4 }), entry('b', '2a', '2', { marks: 6 })],
-			10
-		);
-
-		expect(check).toEqual({
-			paperTotal: 10,
-			accounted: 10,
-			unaccounted: 0,
-			status: 'adds-up',
-			noAvailableMarks: []
-		});
-	});
-
-	it('counts the shortfall, naming the entries with no available marks yet', () => {
-		const withoutMarks = entry('b', '2a', '2', { marks: null });
-
-		const check = reconcilePaperTotal([entry('a', '1a', '1', { marks: 4 }), withoutMarks], 14);
-
-		expect(check.accounted).toBe(4);
-		expect(check.unaccounted).toBe(10);
-		expect(check.status).toBe('unaccounted');
-		expect(check.noAvailableMarks).toEqual([withoutMarks]);
-	});
-
-	it('blames no entry when every entry has its marks', () => {
-		const check = reconcilePaperTotal([entry('a', '1a', '1', { marks: 4 })], 6);
-
-		expect(check.unaccounted).toBe(2);
-		expect(check.status).toBe('unaccounted');
-		expect(check.noAvailableMarks).toEqual([]);
-	});
-
-	it('counts a total the entries exceed as too many', () => {
-		const check = reconcilePaperTotal([entry('a', '1a', '1', { marks: 4 })], 3);
-
-		expect(check.unaccounted).toBe(-1);
-		expect(check.status).toBe('over');
-	});
-
-	it('adds up while entries are still to be marked', () => {
-		const check = reconcilePaperTotal(
-			[entry('a', '1a', '1', { marks: 4 }), entry('b', '2a', '2', { marks: null })],
-			4
-		);
-
-		expect(check.status).toBe('adds-up');
-		expect(check.noAvailableMarks).toHaveLength(1);
 	});
 });
 

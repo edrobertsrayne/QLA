@@ -59,7 +59,7 @@ describe('an unreadable stored document', () => {
 		render(UploadPage);
 		await expect.element(page.getByTestId('corrupt-alert')).toBeInTheDocument();
 
-		marksheetStore().createFromParse(parseRun());
+		marksheetStore().createFromAssessment(parseRun());
 
 		await expect.element(page.getByTestId('corrupt-alert')).not.toBeInTheDocument();
 	});

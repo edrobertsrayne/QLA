@@ -13,7 +13,13 @@
 		EMPTY_STRENGTHS_LINE,
 		reportFiguresFor
 	} from '$lib/marksheet/report-figures.js';
-	import type { MarksheetDocument, ReportProse, StoredReport } from '$lib/marksheet/document.js';
+	import {
+		entriesOfStudent,
+		studentTierName,
+		type MarksheetDocument,
+		type ReportProse,
+		type StoredReport
+	} from '$lib/marksheet/document.js';
 	import { studentName } from '$lib/marksheet/students.js';
 	import { feedbackFontSize, reportFit, settleFit } from './report-fit.svelte.js';
 	import BandMark from './BandMark.svelte';
@@ -46,9 +52,16 @@
 	const settled = $derived(fit.fitOf(studentId));
 	const student = $derived(document.students.find((candidate) => candidate.id === studentId));
 	const figures = $derived(reportFiguresFor(document, studentId));
+	/** The paper this student sat: their own tier's entries, never the other tier's. */
+	const entries = $derived(student ? entriesOfStudent(document, student) : []);
+	/** Display only: the tier name is copied as stored and never reaches the model. */
+	const tierName = $derived(student ? studentTierName(document, student) : null);
 	/** The grade is live from the document, never stored or sent: moving a
-	 * boundary re-renders every page without marking anything out of date. */
-	const grade = $derived(paperGrade(document, figures.total));
+	 * boundary re-renders every page without marking anything out of date.
+	 * A student with no tier has no paper, so no grade from anyone else's boundaries. */
+	const grade = $derived(
+		student?.tier != null ? paperGrade(document, student.tier, figures.total) : null
+	);
 	const prose = $derived(report.edit ?? report);
 	const displayName = $derived(student ? studentName(student) : '');
 
@@ -102,7 +115,7 @@
 	const figureOf = $derived(new Map(figures.entries.map((row) => [row.entryId, row])));
 
 	const bands = $derived(
-		questionBands(document.breakdown.entries).map((band) => ({
+		questionBands(entries).map((band) => ({
 			questionNumber: band.questionNumber,
 			rows: band.entries.flatMap((entry) => {
 				const row = figureOf.get(entry.id);
@@ -171,8 +184,13 @@
 		<header class="flex items-center justify-between gap-4">
 			<div class="min-w-0">
 				<h2 class="text-[18pt] leading-tight font-bold">{displayName}</h2>
-				{#if document.paper.className}<p class="text-[10pt]">{document.paper.className}</p>{/if}
-				<p class="text-[9pt] text-neutral-700">{document.paper.label ?? ''}</p>
+				{#if document.className}<p class="text-[10pt]">{document.className}</p>{/if}
+				<p class="text-[9pt] text-neutral-700">
+					{document.label ?? ''}{#if tierName}<span data-testid="report-tier"
+							>{document.label ? ' · ' : ''}<span class="font-semibold text-black">{tierName}</span
+							></span
+						>{/if}
+				</p>
 			</div>
 			<div class="flex items-stretch border-2 border-black text-center">
 				<div class="px-3 py-1.5">

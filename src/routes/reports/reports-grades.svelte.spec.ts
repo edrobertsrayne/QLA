@@ -11,9 +11,11 @@ import {
 	plain,
 	h556,
 	solo,
+	namedTwoTiers,
 	stubFetch,
 	topicNames,
 	skipGrades,
+	writeFor,
 	openReports
 } from './reports.spec-helpers.js';
 
@@ -26,7 +28,7 @@ describe('grades on reports', () => {
 	/** Two eligible students: Ada clears the top grade, Bo sits one below it. */
 	function gradedPair(): MarksheetDocument {
 		const doc = plain();
-		doc.paper.boundaries = [
+		doc.tiers[0].boundaries = [
 			{ label: 'A', minimum: 8 },
 			{ label: 'B', minimum: 5 },
 			{ label: 'C', minimum: 2 }
@@ -97,7 +99,7 @@ describe('grades on reports', () => {
 
 	it('sends no grade fields in the report request', async () => {
 		const doc = solo();
-		doc.paper.boundaries = [
+		doc.tiers[0].boundaries = [
 			{ label: 'B', minimum: 5 },
 			{ label: 'C', minimum: 2 }
 		];
@@ -147,7 +149,7 @@ describe('grades on reports', () => {
 		await expect
 			.element(page.getByRole('heading', { name: '7 students get a report' }))
 			.toBeInTheDocument();
-		expect(marksheetStore().document?.paper.boundaries).toBeNull();
+		expect(marksheetStore().document?.tiers[0].boundaries).toBeNull();
 	});
 
 	it('saving in the Grades step updates the marksheet columns', async () => {
@@ -163,7 +165,10 @@ describe('grades on reports', () => {
 		// Paper total is 12: the 9-boundary at 10 keeps every minimum under it.
 		await userEvent.fill(page.getByLabelText('Lowest mark for 9'), '10');
 		await page.getByRole('button', { name: 'Save boundaries' }).click();
-		expect(marksheetStore().document?.paper.boundaries?.[0]).toEqual({ label: '9', minimum: 10 });
+		expect(marksheetStore().document?.tiers[0].boundaries?.[0]).toEqual({
+			label: '9',
+			minimum: 10
+		});
 
 		await expect
 			.element(page.getByRole('heading', { name: '7 students get a report' }))
@@ -191,7 +196,7 @@ describe('grades on reports', () => {
 
 	it('skipping with saved grades keeps them and says so', async () => {
 		const doc = h556();
-		doc.paper.boundaries = [{ label: 'B', minimum: 5 }];
+		doc.tiers[0].boundaries = [{ label: 'B', minimum: 5 }];
 		seed(doc);
 		stubFetch(() => topicNames());
 		await openReports();
@@ -204,6 +209,95 @@ describe('grades on reports', () => {
 		await expect
 			.element(page.getByRole('heading', { name: '7 students get a report' }))
 			.toBeInTheDocument();
-		expect(marksheetStore().document?.paper.boundaries).toEqual([{ label: 'B', minimum: 5 }]);
+		expect(marksheetStore().document?.tiers[0].boundaries).toEqual([{ label: 'B', minimum: 5 }]);
+	});
+});
+
+describe('tiered report figures', () => {
+	it("shows each student's own tier's questions, total and grade", async () => {
+		const doc = namedTwoTiers();
+		writeFor(doc, ['ada', 'bo']);
+		seed(doc);
+		stubFetch();
+		await openReports('/reports/review');
+
+		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
+		const ada = document.querySelector('main [data-report-id="ada"]');
+		expect(ada?.textContent).toContain('H1');
+		expect(ada?.textContent).toContain('H2');
+		expect(ada?.textContent).not.toContain('F1');
+		expect(ada?.textContent).toContain('8/10');
+		// Higher boundaries: 8 is the top grade.
+		expect(ada?.querySelector('[data-testid="report-grade"]')?.textContent).toMatch(/Grade\s+A/);
+		expect(ada?.querySelector('[data-testid="report-to-next"]')?.textContent?.trim()).toBe(
+			'Top grade'
+		);
+
+		const bo = document.querySelector('main [data-report-id="bo"]');
+		expect(bo?.textContent).toContain('F1');
+		expect(bo?.textContent).toContain('F2');
+		expect(bo?.textContent).not.toContain('H1');
+		expect(bo?.textContent).toContain('3/8');
+		// Foundation boundaries, not Higher's: 3 is F-B, three short of F-A.
+		expect(bo?.querySelector('[data-testid="report-grade"]')?.textContent).toMatch(/Grade\s+F-B/);
+		expect(bo?.querySelector('[data-testid="report-to-next"]')?.textContent?.trim()).toBe(
+			'3 more marks for grade F-A'
+		);
+	});
+
+	it('never sends the tier name or the other tier to the report model', () => {
+		const doc = namedTwoTiers();
+		doc.tiers[0].tierName = 'Higher Tier';
+		const input = generationInputFor(doc, 'ada');
+		expect(input?.entries.map((entry) => entry.label)).toEqual(['H1', 'H2']);
+		expect(input?.paperLabel).toBe('10X Ph1');
+		expect(input).not.toHaveProperty('tier');
+		expect(input).not.toHaveProperty('tierName');
+		expect(JSON.stringify(input)).not.toContain('Higher Tier');
+		expect(JSON.stringify(input)).not.toContain('Foundation');
+	});
+
+	it('offers a tier toggle on two tiers and saves against the chosen tier', async () => {
+		seed(namedTwoTiers());
+		stubFetch();
+		const { router } = await openReports('/reports/grades');
+		expect(router.path).toBe('/reports/grades');
+
+		const first = page.getByRole('button', { name: 'Tier 1 · Higher' });
+		const second = page.getByRole('button', { name: 'Tier 2 · Foundation' });
+		await expect.element(first).toHaveAttribute('aria-pressed', 'true');
+		await expect.element(page.getByText('Raw marks out of 10.')).toBeInTheDocument();
+
+		await second.click();
+		await expect.element(second).toHaveAttribute('aria-pressed', 'true');
+		await expect.element(page.getByText('Raw marks out of 8.')).toBeInTheDocument();
+
+		// Save Tier 2's scale: its 9-boundary is 6 of 8, and Tier 1 keeps its own.
+		await page.getByRole('radio', { name: 'GCSE 9–1' }).click();
+		await userEvent.fill(page.getByLabelText('Lowest mark for 9'), '6');
+		await page.getByRole('button', { name: 'Save boundaries' }).click();
+		await expect
+			.element(page.getByRole('heading', { name: '2 students get a report' }))
+			.toBeInTheDocument();
+
+		expect(marksheetStore().document?.tiers[1].boundaries?.[0]).toEqual({
+			label: '9',
+			minimum: 6
+		});
+		expect(marksheetStore().document?.tiers[0].boundaries).toEqual([
+			{ label: 'A', minimum: 8 },
+			{ label: 'B', minimum: 5 },
+			{ label: 'C', minimum: 2 }
+		]);
+	});
+
+	it('keeps today’s single form and no toggle on one tier', async () => {
+		seed(plain());
+		stubFetch();
+		await openReports('/reports/grades');
+
+		await expect.element(page.getByRole('heading', { name: 'Grades' })).toBeInTheDocument();
+		expect(document.querySelector('[role="group"][aria-label="Tier"]')).toBeNull();
+		await expect.element(page.getByText('Raw marks out of 10.')).toBeInTheDocument();
 	});
 });

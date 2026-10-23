@@ -18,17 +18,18 @@
 	import { BAND_LABEL_PIN, FROZEN_PROGRESS, NAME_COLUMN, PROGRESS_PIN } from './grid-layout.js';
 
 	let {
+		bands,
 		cursorEntryId,
 		onJump,
 		endColumns = 1
 	}: {
+		bands: QuestionBand[];
 		cursorEntryId: string | null;
 		onJump: (band: QuestionBand) => void;
 		endColumns?: number;
 	} = $props();
 
 	const store = marksheetStore();
-	const bands = $derived(store.questionBands);
 	const warnings = $derived(store.warnings);
 	/** The band the cursor's column belongs to, which the band row highlights. */
 	const cursorBand = $derived(
