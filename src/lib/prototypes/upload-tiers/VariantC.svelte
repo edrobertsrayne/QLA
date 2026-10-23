@@ -60,10 +60,14 @@
 		void run.retryTier(index);
 	}
 
-	function closeDialog(open: boolean): void {
-		if (busy) return;
-		dialogOpen = open;
-		if (!open && failedIndex >= 0) tab = String(failedIndex);
+	/** The only ways out of the dialog besides Open breakdown: both need the page behind it. */
+	function replaceFile(index: number): void {
+		dialogOpen = false;
+		tab = String(index);
+	}
+
+	function backToUpload(): void {
+		dialogOpen = false;
 	}
 
 	type StepState = 'idle' | 'running' | 'done' | 'failed' | 'skipped';
@@ -194,8 +198,6 @@
 			>
 		{:else if run.phase === 'form'}
 			<Button size="lg" disabled={!run.canRun} onclick={start}>Run</Button>
-		{:else}
-			<Button size="lg" variant="outline" onclick={() => (dialogOpen = true)}>Show run</Button>
 		{/if}
 	</div>
 
@@ -204,11 +206,11 @@
 	{/if}
 </main>
 
-<Dialog.Root open={dialogOpen} onOpenChange={closeDialog}>
+<Dialog.Root open={dialogOpen}>
 	<Dialog.Content
-		showCloseButton={!busy}
-		interactOutsideBehavior={busy ? 'ignore' : 'close'}
-		escapeKeydownBehavior={busy ? 'ignore' : 'close'}
+		showCloseButton={false}
+		interactOutsideBehavior="ignore"
+		escapeKeydownBehavior="ignore"
 	>
 		<Dialog.Header>
 			<Dialog.Title>
@@ -231,9 +233,9 @@
 						<Button size="sm" variant="outline" onclick={() => run.retryTier(i)}>Retry</Button>
 					{/snippet}
 					{#snippet replaceAction()}
-						<p class="text-muted-foreground">
-							Close this, replace Tier {i + 1}'s file, then retry.
-						</p>
+						<Button size="sm" variant="outline" onclick={() => replaceFile(i)}
+							>Replace Tier {i + 1}'s file</Button
+						>
 					{/snippet}
 					{@render step(
 						run.twoTiers ? `Parse Tier ${i + 1}` : 'Parse',
@@ -274,6 +276,10 @@
 				<Button onclick={() => toast.info('Prototype: would open the breakdown review')}
 					>Open breakdown</Button
 				>
+			</Dialog.Footer>
+		{:else if run.fatal}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={backToUpload}>Back to upload</Button>
 			</Dialog.Footer>
 		{/if}
 	</Dialog.Content>
