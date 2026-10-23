@@ -5,6 +5,8 @@
 	1 "One column": the sidebar is one flow, heading → what it builds → button.
 	2 "Header bar": no sidebar; title, summary and button run across the top.
 	3 "Sidebar tabs": the sidebar lists the tiers and is how you switch between them.
+	PROTOTYPE (#118) — single: the winning layout 2 with one tier. No tabs (the summary
+	and Confirm stay on that row), no Common with column, no pair count, no matching notice.
 -->
 <script lang="ts">
 	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
@@ -25,6 +27,11 @@
 	const current = $derived<TierIndex>(tab === '1' ? 1 : 0);
 	const other = $derived<TierIndex>(current === 0 ? 1 : 0);
 	const blockers = $derived(review.blockers);
+	// PROTOTYPE (#118): one tier has no tabs, so these are the only tiers there are; the
+	// heading goes singular ("Check the breakdown") and the summary drops "across both tiers"
+	// and the pair count.
+	const single = $derived(review.single);
+	const tiers = $derived(review.tiers.map((_, i) => i as TierIndex));
 
 	function tierProblems(t: TierIndex): string[] {
 		return blockers.filter((b) => b.tier === t).map((b) => b.message);
@@ -57,10 +64,15 @@
 {/snippet}
 
 {#snippet intro()}
-	<p class="text-sm text-muted-foreground">
-		Fix anything the model got wrong on either tier, and pair the questions that appear on both in
-		the <strong>Common with</strong> column (only entries with the same available marks are offered).
-	</p>
+	{#if single}
+		<!-- PROTOTYPE (#118): one tier drops "either tier" and the pairing clause. -->
+		<p class="text-sm text-muted-foreground">Fix anything the model got wrong.</p>
+	{:else}
+		<p class="text-sm text-muted-foreground">
+			Fix anything the model got wrong on either tier, and pair the questions that appear on both in
+			the <strong>Common with</strong> column (only entries with the same available marks are offered).
+		</p>
+	{/if}
 {/snippet}
 
 {#snippet confirmButton(cls: string)}
@@ -80,16 +92,18 @@
 {/snippet}
 
 {#snippet tierTabs()}
-	<ToggleGroup.Root type="single" variant="outline" bind:value={tab}>
-		{#each [0, 1] as const as t (t)}
-			<ToggleGroup.Item value={String(t)} class="relative px-4">
-				{review.tierLabel(t)}
-				{#if tierProblems(t).length > 0}
-					<span class="absolute top-1 right-1 size-2 rounded-full bg-destructive"></span>
-				{/if}
-			</ToggleGroup.Item>
-		{/each}
-	</ToggleGroup.Root>
+	{#if !single}
+		<ToggleGroup.Root type="single" variant="outline" bind:value={tab}>
+			{#each [0, 1] as const as t (t)}
+				<ToggleGroup.Item value={String(t)} class="relative px-4">
+					{review.tierLabel(t)}
+					{#if tierProblems(t).length > 0}
+						<span class="absolute top-1 right-1 size-2 rounded-full bg-destructive"></span>
+					{/if}
+				</ToggleGroup.Item>
+			{/each}
+		</ToggleGroup.Root>
+	{/if}
 {/snippet}
 
 {#snippet tierPanel()}
@@ -113,7 +127,11 @@
 		</p>
 	</div>
 	{#key current}
-		<TierTable tier={current} pairHeading="Common with Tier {other + 1}" {pairCell} />
+		{#if single}
+			<TierTable tier={current} />
+		{:else}
+			<TierTable tier={current} pairHeading="Common with Tier {other + 1}" {pairCell} />
+		{/if}
 	{/key}
 {/snippet}
 
@@ -124,23 +142,31 @@
 	{#if layout === 1}
 		<div class="grid gap-6 lg:grid-cols-[280px_1fr]">
 			<aside class="space-y-4 lg:sticky lg:top-4 lg:self-start">
-				<h1 class="text-xl font-semibold">Check the breakdowns</h1>
+				<h1 class="text-xl font-semibold">
+					{single ? 'Check the breakdown' : 'Check the breakdowns'}
+				</h1>
 				{@render intro()}
 				<dl class="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-y py-3 text-sm">
-					{#each [0, 1] as const as t (t)}
+					{#each tiers as t (t)}
 						<dt>{review.tierLabel(t)}</dt>
 						<dd class="text-right text-muted-foreground tabular-nums">
 							{review.tiers[t].entries.length} columns · {review.tierMarks(t)} marks
 						</dd>
 					{/each}
-					<dt>Common questions</dt>
-					<dd class="text-right text-muted-foreground tabular-nums">
-						{review.orderedPairs.length} pairs · {review.pairedMarks} marks
-					</dd>
+					{#if !single}
+						<dt>Common questions</dt>
+						<dd class="text-right text-muted-foreground tabular-nums">
+							{review.orderedPairs.length} pairs · {review.pairedMarks} marks
+						</dd>
+					{/if}
 				</dl>
 				{@render blockerList()}
 				{@render confirmButton('w-full')}
-				<p class="text-xs text-muted-foreground">Both breakdowns and the pairs become read-only.</p>
+				<p class="text-xs text-muted-foreground">
+					{single
+						? 'The breakdown becomes read-only.'
+						: 'Both breakdowns and the pairs become read-only.'}
+				</p>
 			</aside>
 			<div class="min-w-0 space-y-3">
 				{@render tierTabs()}
@@ -150,14 +176,21 @@
 	{:else if layout === 2}
 		<header class="space-y-4">
 			<div class="max-w-3xl space-y-1">
-				<h1 class="text-xl font-semibold">Check the breakdowns</h1>
+				<h1 class="text-xl font-semibold">
+					{single ? 'Check the breakdown' : 'Check the breakdowns'}
+				</h1>
 				{@render intro()}
 			</div>
 			<div class="flex flex-wrap items-center gap-4">
 				{@render tierTabs()}
 				<p class="ml-auto text-right text-xs text-muted-foreground">
-					{review.tiers[0].entries.length + review.tiers[1].entries.length} columns across both tiers
-					· {review.orderedPairs.length} common questions ({review.pairedMarks} marks)
+					{#if single}
+						<!-- PROTOTYPE (#118): one tier drops "across both tiers" and the pair clause. -->
+						{review.tiers[0].entries.length} columns
+					{:else}
+						{review.tiers[0].entries.length + review.tiers[1].entries.length} columns across both tiers
+						· {review.orderedPairs.length} common questions ({review.pairedMarks} marks)
+					{/if}
 				</p>
 				{@render confirmButton('')}
 			</div>
@@ -169,10 +202,12 @@
 	{:else}
 		<div class="grid gap-6 lg:grid-cols-[260px_1fr]">
 			<aside class="space-y-4 lg:sticky lg:top-4 lg:self-start">
-				<h1 class="text-xl font-semibold">Check the breakdowns</h1>
+				<h1 class="text-xl font-semibold">
+					{single ? 'Check the breakdown' : 'Check the breakdowns'}
+				</h1>
 				{@render intro()}
 				<nav class="space-y-1">
-					{#each [0, 1] as const as t (t)}
+					{#each tiers as t (t)}
 						{@const problems = tierProblems(t)}
 						<button
 							type="button"
@@ -199,26 +234,30 @@
 							</span>
 						</button>
 					{/each}
-					<div class="flex items-start gap-2 px-3 py-2 text-sm">
-						{#if pairProblems.length > 0}
-							<CircleAlertIcon class="mt-0.5 size-4 shrink-0 text-destructive" />
-						{:else}
-							<CircleCheckIcon class="mt-0.5 size-4 shrink-0 text-emerald-600" />
-						{/if}
-						<span class="space-y-0.5">
-							<span class="block font-medium">Common questions</span>
-							<span class="block text-xs text-muted-foreground">
-								{review.orderedPairs.length} pairs · {review.pairedMarks} marks
+					{#if !single}
+						<div class="flex items-start gap-2 px-3 py-2 text-sm">
+							{#if pairProblems.length > 0}
+								<CircleAlertIcon class="mt-0.5 size-4 shrink-0 text-destructive" />
+							{:else}
+								<CircleCheckIcon class="mt-0.5 size-4 shrink-0 text-emerald-600" />
+							{/if}
+							<span class="space-y-0.5">
+								<span class="block font-medium">Common questions</span>
+								<span class="block text-xs text-muted-foreground">
+									{review.orderedPairs.length} pairs · {review.pairedMarks} marks
+								</span>
+								{#each pairProblems as p (p)}
+									<span class="block text-xs text-destructive">{p}</span>
+								{/each}
 							</span>
-							{#each pairProblems as p (p)}
-								<span class="block text-xs text-destructive">{p}</span>
-							{/each}
-						</span>
-					</div>
+						</div>
+					{/if}
 				</nav>
 				{@render confirmButton('w-full')}
 				<p class="text-xs text-muted-foreground">
-					Builds your marksheet. Both breakdowns and the pairs become read-only.
+					Builds your marksheet. {single
+						? 'The breakdown becomes read-only.'
+						: 'Both breakdowns and the pairs become read-only.'}
 				</p>
 			</aside>
 			<div class="min-w-0 space-y-3">

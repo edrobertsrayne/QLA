@@ -2,6 +2,8 @@
 	PROTOTYPE (#113) — stands in for the marksheet once the two-tier breakdown is
 	confirmed, so the way back (unlocking) can be seen. Shared by every variant:
 	unlocking always lands on whichever review variant is showing.
+	PROTOTYPE (#118) — a single tier has no partner tier and no pairs, so the dialog
+	and the card drop the sentences about them.
 -->
 <script lang="ts">
 	import PencilIcon from '@lucide/svelte/icons/pencil';
@@ -36,17 +38,25 @@
 							<Dialog.Title>Edit the breakdown?</Dialog.Title>
 							<Dialog.Description class="space-y-2">
 								<span class="block">
-									This unlocks both tiers' breakdowns and the common questions together.
+									{#if review.single}
+										This unlocks the breakdown.
+									{:else}
+										This unlocks both tiers' breakdowns and the common questions together.
+									{/if}
 								</span>
 								<span class="block">
-									The marks are keyed against the breakdowns' entries, so changing one can affect
-									marks already entered: deleting an entry removes the marks on it, and lowering its
-									available marks leaves marks above them. Nothing is clamped.
+									The marks are keyed against {review.single
+										? "the breakdown's"
+										: "the breakdowns'"} entries, so changing one can affect marks already entered: deleting
+									an entry removes the marks on it, and lowering its available marks leaves marks above
+									them. Nothing is clamped.
 								</span>
-								<span class="block">
-									Changing which questions are common changes only the common-questions analysis. No
-									marks are touched.
-								</span>
+								{#if !review.single}
+									<span class="block">
+										Changing which questions are common changes only the common-questions analysis.
+										No marks are touched.
+									</span>
+								{/if}
 							</Dialog.Description>
 						</Dialog.Header>
 						<Dialog.Footer>
@@ -70,9 +80,12 @@
 					)} marks
 				</p>
 			{/each}
-			<p>
-				<strong>Common questions</strong>: {review.orderedPairs.length} pairs, {review.pairedMarks} marks
-			</p>
+			{#if !review.single}
+				<p>
+					<strong>Common questions</strong>: {review.orderedPairs.length} pairs, {review.pairedMarks}
+					marks
+				</p>
+			{/if}
 			<p class="text-muted-foreground">{review.studentsWithMarks} students have marks entered.</p>
 		</Card.Content>
 	</Card.Root>

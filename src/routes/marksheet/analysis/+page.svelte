@@ -3,8 +3,11 @@
 	entry when the teacher asked from that entry's figure (`?entry=`).
 -->
 <script lang="ts">
-	// PROTOTYPE (#115): ?variant=A|B|C renders a stubbed two-tier analysis with common
-	// questions instead of today's page (in-memory, AQA 8463 P1 H/F). No variant = today's page.
+	// PROTOTYPE (#115, #118): ?variant= renders a stubbed analysis instead of today's
+	// page. D is the settled two-tier design; S1 and S2 ask whether a single-tier
+	// assessment keeps today's page (S1) or uses that design with one tier (S2).
+	// A/B/C stay reachable by URL as rejected alternatives. The store is an in-memory
+	// single-tier 8463 1H document whenever the URL carries ?variant=.
 	import { page } from '$app/state';
 	import PrototypeSwitcher from '$lib/components/prototype/PrototypeSwitcher.svelte';
 	import StubPanel from '$lib/prototypes/common-questions/StubPanel.svelte';
@@ -24,10 +27,9 @@
 
 	const variant = $derived(page.url.searchParams.get('variant'));
 	const VARIANTS = [
-		{ key: 'A', label: 'Third tab' },
-		{ key: 'B', label: 'Inline in each tier' },
-		{ key: 'C', label: 'Comparison page' },
-		{ key: 'D', label: 'Tabs + comparison tracks' }
+		{ key: 'D', label: 'Two tiers (settled)' },
+		{ key: 'S1', label: "One tier · today's page" },
+		{ key: 'S2', label: 'One tier · two-tier design' }
 	];
 </script>
 
@@ -35,20 +37,27 @@
 	<title>{title}</title>
 </svelte:head>
 
-{#if variant !== null}
+{#if variant === null || variant === 'S1'}
+	<main class="mx-auto max-w-6xl space-y-4 p-6">
+		<AnalysisView highlight={data.entry} onBack={() => void goto(resolve('/marksheet'))} />
+	</main>
+	{#if variant === 'S1'}
+		<PrototypeSwitcher variants={VARIANTS} current={variant} />
+	{/if}
+{:else}
 	{#if variant === 'B'}
 		<VariantB />
 	{:else if variant === 'C'}
 		<VariantC />
 	{:else if variant === 'D'}
 		<VariantD />
+	{:else if variant === 'S2'}
+		<VariantD single />
 	{:else}
 		<VariantA />
 	{/if}
-	<StubPanel />
+	{#if variant !== 'S2'}
+		<StubPanel />
+	{/if}
 	<PrototypeSwitcher variants={VARIANTS} current={variant} />
-{:else}
-	<main class="mx-auto max-w-6xl space-y-4 p-6">
-		<AnalysisView highlight={data.entry} onBack={() => void goto(resolve('/marksheet'))} />
-	</main>
 {/if}

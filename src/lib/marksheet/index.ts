@@ -6,6 +6,7 @@ import { resolve } from '$app/paths';
 import { analysisCsvFile, marksCsvFile, saveFile } from './download.js';
 import type { DocumentStorage } from './persistence.svelte.js';
 import { MarksheetStore } from './store.svelte.js';
+import { prototypeStorage } from '$lib/prototypes/single-tier/seed.js';
 
 /** Reaching for `localStorage` itself throws in some sandboxed and private contexts. */
 function browserStorage(): DocumentStorage {
@@ -29,7 +30,12 @@ let instance: MarksheetStore | null = null;
 export function marksheetStore(): MarksheetStore {
 	if (instance) return instance;
 
-	const store = new MarksheetStore({ storage: browserStorage(), now: () => new Date() });
+	// PROTOTYPE (#118): any ?variant= URL renders an in-memory single-tier 8463 1H document.
+	const prototype = new URLSearchParams(window.location.search).has('variant');
+	const store = new MarksheetStore({
+		storage: prototype ? prototypeStorage(window.location.pathname) : browserStorage(),
+		now: () => new Date()
+	});
 	// A debounced write loses the last keystrokes when the tab is hidden or closed.
 	document.addEventListener('visibilitychange', () => {
 		if (document.visibilityState === 'hidden') store.flush();

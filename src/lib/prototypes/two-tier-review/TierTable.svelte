@@ -2,6 +2,7 @@
 	PROTOTYPE (#113) — one tier's breakdown as a flat editable table, a cut-down
 	BreakdownTable (label, marks, summary editable; the rest read-only). Variants
 	put their own pair cell in the last column.
+	PROTOTYPE (#118) — a single tier has no partner, so the pair column is omitted.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -13,9 +14,9 @@
 
 	let {
 		tier,
-		pairHeading,
+		pairHeading = '',
 		pairCell
-	}: { tier: TierIndex; pairHeading: string; pairCell: Snippet<[Entry]> } = $props();
+	}: { tier: TierIndex; pairHeading?: string; pairCell?: Snippet<[Entry]> } = $props();
 
 	const review = twoTierReview();
 	const cell =
@@ -32,13 +33,15 @@
 				<Table.Head class="px-2">Summary</Table.Head>
 				<Table.Head class="w-24 px-2">Spec point</Table.Head>
 				<Table.Head class="w-14 px-2">AO</Table.Head>
-				<Table.Head class="w-44 px-2">{pairHeading}</Table.Head>
+				{#if pairCell}
+					<Table.Head class="w-44 px-2">{pairHeading}</Table.Head>
+				{/if}
 				<Table.Head class="w-10"></Table.Head>
 			</Table.Row>
 		</Table.Header>
 		<Table.Body>
 			{#each review.tiers[tier].entries as entry (entry.id)}
-				{@const paired = review.pairOf(tier, entry.id) !== undefined}
+				{@const paired = pairCell !== undefined && review.pairOf(tier, entry.id) !== undefined}
 				<Table.Row class={cn('group', paired && 'bg-violet-500/5')}>
 					<Table.Cell class="px-1">
 						<input
@@ -75,7 +78,9 @@
 						{/each}
 					</Table.Cell>
 					<Table.Cell class="px-2 text-xs text-muted-foreground">{entry.ao ?? '—'}</Table.Cell>
-					<Table.Cell class="px-1">{@render pairCell(entry)}</Table.Cell>
+					{#if pairCell}
+						<Table.Cell class="px-1">{@render pairCell(entry)}</Table.Cell>
+					{/if}
 					<Table.Cell class="pr-2">
 						<Button
 							variant="ghost"

@@ -5,6 +5,8 @@
 	own Total | Grade | To next, facility footer, Hardest strip, boundaries and marks
 	export. Not-set students live on their own tab with no mark columns, where tiers
 	are set one by one or in bulk. A row control moves a student to the other tier.
+	PROTOTYPE (#118) — `single` collapses A to one tier: no tab row, no Tier not set,
+	no ⇄ or off-tier badge, every student on tier 0.
 -->
 <script lang="ts">
 	import ArrowLeftRightIcon from '@lucide/svelte/icons/arrow-left-right';
@@ -22,16 +24,30 @@
 	import TierGrid from './TierGrid.svelte';
 	import { tieredSheet, type Student, type TierIndex } from './sheet.svelte.js';
 
+	let { single = false }: { single?: boolean } = $props();
+
 	const sheet = tieredSheet();
+
+	// PROTOTYPE (#118): S2 forces the one-tier stub; coming back to A restores a two-tier one.
+	// A variant is mounted per switcher branch, so its `single` prop is fixed for its lifetime.
+	// svelte-ignore state_referenced_locally
+	if (single) sheet.load('single');
+	else if (sheet.scenario === 'single') sheet.load('midway');
 
 	/** '0' | '1' | 'none'. Opens on Tier not set while nobody has a tier. */
 	let tab = $state(sheet.students.every((s) => s.tier === null) ? 'none' : '0');
-	const tier = $derived<TierIndex | null>(tab === 'none' ? null : (Number(tab) as TierIndex));
+	// PROTOTYPE (#118): one tier has no other tab to pick, so tier 0 is the only destination.
+	const tier = $derived<TierIndex | null>(
+		single ? 0 : tab === 'none' ? null : (Number(tab) as TierIndex)
+	);
 	let selected = $state<string[]>([]);
 	let boundariesOpen = $state(false);
 
+	// PROTOTYPE (#118): the header summarises tier 1 alone, keeping the design's per-tier wording.
 	const summary = $derived(
-		`${sheet.students.length} students · ${sheet.tierLabel(0)} ${sheet.tiers[0].entries.length} entries, ${sheet.tierMarks(0)} marks · ${sheet.tierLabel(1)} ${sheet.tiers[1].entries.length} entries, ${sheet.tierMarks(1)} marks`
+		single
+			? `${sheet.students.length} students · ${sheet.tierLabel(0)} ${sheet.tiers[0].entries.length} entries, ${sheet.tierMarks(0)} marks`
+			: `${sheet.students.length} students · ${sheet.tierLabel(0)} ${sheet.tiers[0].entries.length} entries, ${sheet.tierMarks(0)} marks · ${sheet.tierLabel(1)} ${sheet.tiers[1].entries.length} entries, ${sheet.tierMarks(1)} marks`
 	);
 
 	function other(t: TierIndex): TierIndex {
@@ -75,7 +91,7 @@
 	<div class="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
 		<p>
 			{sheet.reportable} of {sheet.students.length} students are fully marked and can have a report
-			{#if sheet.notSet.length > 0}
+			{#if !single && sheet.notSet.length > 0}
 				<span class="text-muted-foreground">· {sheet.notSet.length} have no tier yet</span>
 			{/if}
 		</p>
@@ -94,21 +110,24 @@
 		</div>
 	</div>
 
-	<ToggleGroup.Root type="single" variant="outline" bind:value={tab} class="w-fit">
-		{#each [0, 1] as const as t (t)}
-			<ToggleGroup.Item value={String(t)} class="px-4">
-				{sheet.tierLabel(t)}
-				<span class="text-muted-foreground tabular-nums">({sheet.studentsOn(t).length})</span>
+	<!-- PROTOTYPE (#118): one tier has no tab row — there is no other tier or not-set bucket to switch to. -->
+	{#if !single}
+		<ToggleGroup.Root type="single" variant="outline" bind:value={tab} class="w-fit">
+			{#each [0, 1] as const as t (t)}
+				<ToggleGroup.Item value={String(t)} class="px-4">
+					{sheet.tierLabel(t)}
+					<span class="text-muted-foreground tabular-nums">({sheet.studentsOn(t).length})</span>
+				</ToggleGroup.Item>
+			{/each}
+			<ToggleGroup.Item value="none" class="relative px-4">
+				Tier not set
+				<span class="text-muted-foreground tabular-nums">({sheet.notSet.length})</span>
+				{#if sheet.notSet.length > 0}
+					<span class="absolute top-1 right-1 size-2 rounded-full bg-amber-500"></span>
+				{/if}
 			</ToggleGroup.Item>
-		{/each}
-		<ToggleGroup.Item value="none" class="relative px-4">
-			Tier not set
-			<span class="text-muted-foreground tabular-nums">({sheet.notSet.length})</span>
-			{#if sheet.notSet.length > 0}
-				<span class="absolute top-1 right-1 size-2 rounded-full bg-amber-500"></span>
-			{/if}
-		</ToggleGroup.Item>
-	</ToggleGroup.Root>
+		</ToggleGroup.Root>
+	{/if}
 
 	{#if tier !== null}
 		<div class="flex flex-wrap items-center gap-2">
@@ -127,7 +146,8 @@
 				<Button
 					variant="outline"
 					size="xs"
-					onclick={() => toast('Would open Edit breakdown (both tiers)')}
+					onclick={() =>
+						toast(single ? 'Would open Edit breakdown' : 'Would open Edit breakdown (both tiers)')}
 				>
 					Edit breakdown
 				</Button>
@@ -142,11 +162,14 @@
 			</div>
 		</div>
 		{#key tier}
+			<!-- PROTOTYPE (#118): one tier has no other tier to move to, so no ⇄ or off-tier badge; the empty text drops the Tier not set tab. -->
 			<TierGrid
 				{tier}
 				students={sheet.studentsOn(tier)}
-				nameExtra={moveControl}
-				emptyText={`No students on ${sheet.tiers[tier].name} yet. Set tiers on the Tier not set tab.`}
+				nameExtra={single ? undefined : moveControl}
+				emptyText={single
+					? 'No students yet.'
+					: `No students on ${sheet.tiers[tier].name} yet. Set tiers on the Tier not set tab.`}
 			/>
 		{/key}
 	{:else}

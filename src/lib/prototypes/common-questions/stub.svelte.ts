@@ -4,6 +4,7 @@
 // the 13 pairs are the true common questions (H 01–03 = F 08–10, 31 marks). Marks are fake.
 import higher from './8463-1H.json';
 import foundation from './8463-1F.json';
+import { singleTierDocument } from '../single-tier/seed.js';
 
 export type TierIndex = 0 | 1;
 export type Rag = 'red' | 'amber' | 'green';
@@ -182,6 +183,7 @@ function fakeMarks(entries: Entry[], ability: number, seed: number, upToQ = Infi
 }
 
 class TieredAnalysis {
+	readonly single: boolean;
 	scenario = $state<ScenarioKey>('done');
 	className = '11X/Ph1';
 	paperLabel = 'AQA 8463 Paper 1 (Nov mock)';
@@ -190,12 +192,39 @@ class TieredAnalysis {
 	marks = $state<Record<string, Record<string, number>>>({});
 	pairs = $state<Pair[]>([]);
 
-	constructor() {
-		this.load('done');
+	constructor(single = false) {
+		this.single = single;
+		if (single) {
+			this.loadSingle();
+		} else {
+			this.load('done');
+		}
+	}
+
+	/**
+	 * PROTOTYPE (#118): one tier. The same document today's page renders on the
+	 * single-tier prototypes, so the two designs show identical figures.
+	 */
+	loadSingle() {
+		const document = singleTierDocument('/marksheet/analysis');
+		this.tiers = [TIERS[0]];
+		this.pairs = [];
+		this.className = document.paper.className ?? '';
+		this.paperLabel = document.paper.label ?? '';
+		this.students = document.students.map((student): Student => ({
+			id: student.id,
+			name: `${student.firstName} ${student.surname}`,
+			tier: 0,
+			absent: student.absent
+		}));
+		this.marks = document.marks;
 	}
 
 	load(key: ScenarioKey) {
 		this.scenario = key;
+		this.tiers = TIERS;
+		this.className = '11X/Ph1';
+		this.paperLabel = 'AQA 8463 Paper 1 (Nov mock)';
 		this.pairs = key === 'nopairs' ? [] : TRUE_PAIRS;
 		this.students = NAMES.map((name, i) => ({
 			id: `s${i}`,
@@ -372,7 +401,10 @@ class TieredAnalysis {
 	}
 
 	filename(what: string, ext: string): string {
-		return `aqa-8463-paper-1-nov-mock-11x-ph1-${what}.${ext}`;
+		const base = this.single
+			? '8463-paper-1-june-2024-11x-ph1'
+			: 'aqa-8463-paper-1-nov-mock-11x-ph1';
+		return `${base}-${what}.${ext}`;
 	}
 }
 
@@ -380,6 +412,13 @@ let instance: TieredAnalysis | undefined;
 export function tieredAnalysis(): TieredAnalysis {
 	instance ??= new TieredAnalysis();
 	return instance;
+}
+
+let singleInstance: TieredAnalysis | undefined;
+/** PROTOTYPE (#118): the same design over a single tier, sharing today's seed document. */
+export function singleTierAnalysis(): TieredAnalysis {
+	singleInstance ??= new TieredAnalysis(true);
+	return singleInstance;
 }
 
 /** Worst first by a figure; not-scored last in the order given. */

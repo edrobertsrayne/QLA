@@ -1,6 +1,8 @@
 <!--
 	PROTOTYPE (#113) — scenario picker and state readout for the two-tier review.
 	Not part of any variant. Bottom-left, amber like the switcher so it reads as scaffolding.
+	PROTOTYPE (#118) — in single mode the labels name the one-tier state, and every
+	scenario keeps the stub at one tier with no pairs.
 -->
 <script lang="ts">
 	import { dev } from '$app/environment';
@@ -31,7 +33,7 @@
 								checked={review.scenario === s.key}
 								onchange={() => review.load(s.key)}
 							/>
-							{s.label}
+							{review.single ? s.singleLabel : s.label}
 						</label>
 					{/each}
 				</fieldset>
@@ -49,7 +51,11 @@
 							1
 						)}</pre>
 				{/if}
-				<p class="text-amber-200/80">AQA 8463 P1 H/F real parses. Nothing is stored.</p>
+				<p class="text-amber-200/80">
+					{review.single
+						? 'AQA 8463 P1 Higher parse, one tier. Nothing is stored.'
+						: 'AQA 8463 P1 H/F real parses. Nothing is stored.'}
+				</p>
 			</div>
 		{/if}
 	</div>

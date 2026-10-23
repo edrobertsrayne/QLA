@@ -4,8 +4,10 @@
 	the editable half of this surface.
 -->
 <script lang="ts">
-	// PROTOTYPE (#114): ?variant=A|B|C renders a stubbed two-tier marksheet instead of
-	// today's page (in-memory, AQA 8463 P1 H/F). No variant = today's page, untouched.
+	// PROTOTYPE (#114): ?variant=A renders the settled two-tier tier-tab design on stub
+	// data (in-memory, AQA 8463 P1 H/F). B and C are the rejected alternatives, off the bar.
+	// PROTOTYPE (#118): S1 is today's page over a single-tier 8463 1H document; S2 is A's
+	// design collapsed to one tier. No variant = today's page, untouched.
 	import { page } from '$app/state';
 	import PrototypeSwitcher from '$lib/components/prototype/PrototypeSwitcher.svelte';
 	import StubPanel from '$lib/prototypes/marksheet-tiers/StubPanel.svelte';
@@ -49,9 +51,9 @@
 
 	const variant = $derived(page.url.searchParams.get('variant'));
 	const VARIANTS = [
-		{ key: 'A', label: 'Tier tabs' },
-		{ key: 'B', label: 'One roster' },
-		{ key: 'C', label: 'Stacked tiers' }
+		{ key: 'A', label: 'Two tiers (settled)' },
+		{ key: 'S1', label: "One tier · today's page" },
+		{ key: 'S2', label: 'One tier · two-tier design' }
 	];
 </script>
 
@@ -59,17 +61,7 @@
 	<title>{title}</title>
 </svelte:head>
 
-{#if variant !== null}
-	{#if variant === 'B'}
-		<VariantB />
-	{:else if variant === 'C'}
-		<VariantC />
-	{:else}
-		<VariantA />
-	{/if}
-	<StubPanel />
-	<PrototypeSwitcher variants={VARIANTS} current={variant} />
-{:else}
+{#if variant === null || variant === 'S1'}
 	<main class="mx-auto max-w-6xl space-y-4 p-6">
 		<header class="space-y-3">
 			<div class="space-y-1">
@@ -92,4 +84,21 @@
 
 		<MarksheetGrid onViewAnalysis={openAnalysis} />
 	</main>
+	{#if variant !== null}
+		<PrototypeSwitcher variants={VARIANTS} current={variant} />
+	{/if}
+{:else if variant === 'S2'}
+	<VariantA single />
+	<!-- PROTOTYPE (#118): S2's one-tier stub is fixed, so the two-tier scenario picker is not shown. -->
+	<PrototypeSwitcher variants={VARIANTS} current={variant} />
+{:else}
+	{#if variant === 'B'}
+		<VariantB />
+	{:else if variant === 'C'}
+		<VariantC />
+	{:else}
+		<VariantA />
+	{/if}
+	<StubPanel />
+	<PrototypeSwitcher variants={VARIANTS} current={variant} />
 {/if}

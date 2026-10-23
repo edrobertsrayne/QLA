@@ -23,8 +23,10 @@
 	import { isWholeNumber, totalMarks } from '$lib/marksheet/document.js';
 	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 	import { agree, count } from '$lib/prose.js';
-	// PROTOTYPE (#113): ?variant=A1|A2|A3 (layouts of the winning variant A) or B|C (earlier
-	// losers, off the bar) swaps in a two-tier review on stub data.
+	// PROTOTYPE (#113): ?variant=A2 (the settled two-tier review; A1, A3, B and C stay as rejected
+	// alternatives, off the bar) swaps in a two-tier review on stub data.
+	// PROTOTYPE (#118): S1 (today's page) and S2 (the two-tier design with one tier) compare
+	// single-tier review.
 	import { page } from '$app/state';
 	import PrototypeSwitcher from '$lib/components/prototype/PrototypeSwitcher.svelte';
 	import LockedView from '$lib/prototypes/two-tier-review/LockedView.svelte';
@@ -34,12 +36,15 @@
 	import VariantC from '$lib/prototypes/two-tier-review/VariantC.svelte';
 	import { twoTierReview } from '$lib/prototypes/two-tier-review/review.svelte.js';
 	const VARIANTS = [
-		{ key: 'A1', label: 'One column' },
-		{ key: 'A2', label: 'Header bar' },
-		{ key: 'A3', label: 'Sidebar tabs' }
+		{ key: 'A2', label: 'Two tiers (settled)' },
+		{ key: 'S1', label: 'One tier · today’s page' },
+		{ key: 'S2', label: 'One tier · two-tier design' }
 	];
 	const variant = $derived(page.url.searchParams.get('variant'));
 	const review = twoTierReview();
+	const single = $derived(variant === 'S2');
+	// PROTOTYPE (#118): S2 forces the shared stub into one-tier mode.
+	$effect.pre(() => review.setSingle(single));
 
 	// The route's load guard has read storage by the time this renders.
 	const store = marksheetStore();
@@ -138,19 +143,7 @@
 	<title>{title}</title>
 </svelte:head>
 
-{#if variant !== null}
-	{#if review.locked}
-		<LockedView />
-	{:else if variant === 'B'}
-		<VariantB />
-	{:else if variant === 'C'}
-		<VariantC />
-	{:else}
-		<VariantA layout={variant === 'A2' ? 2 : variant === 'A3' ? 3 : 1} />
-	{/if}
-	<StubPanel />
-	<PrototypeSwitcher variants={VARIANTS} current={variant} />
-{:else}
+{#if variant === null || variant === 'S1'}
 	<main class="mx-auto max-w-6xl space-y-6 p-6">
 		<header class="space-y-3">
 			<div class="flex items-start justify-between gap-4">
@@ -299,4 +292,19 @@
 			</div>
 		</div>
 	</main>
+	{#if variant !== null}
+		<PrototypeSwitcher variants={VARIANTS} current={variant} />
+	{/if}
+{:else}
+	{#if review.locked}
+		<LockedView />
+	{:else if variant === 'B'}
+		<VariantB />
+	{:else if variant === 'C'}
+		<VariantC />
+	{:else}
+		<VariantA layout={variant === 'A2' || variant === 'S2' ? 2 : variant === 'A3' ? 3 : 1} />
+	{/if}
+	<StubPanel />
+	<PrototypeSwitcher variants={VARIANTS} current={variant} />
 {/if}

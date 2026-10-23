@@ -53,7 +53,9 @@ export const SCENARIOS = [
 	{ key: 'midway', label: 'Marking under way: 12 H · 11 F · 3 not set, one moved H→F' },
 	{ key: 'done', label: 'All marked: 15 H · 11 F, boundaries on both' }
 ] as const;
-export type ScenarioKey = (typeof SCENARIOS)[number]['key'];
+// PROTOTYPE (#118): `single` is forced by the one-tier comparison, not listed in the panel:
+// one tier only (Higher), every student on tier 0, fully marked, 8463 1H boundaries.
+export type ScenarioKey = (typeof SCENARIOS)[number]['key'] | 'single';
 
 const NAMES = [
 	'Ava Patel',
@@ -161,27 +163,30 @@ class Sheet {
 	load(key: ScenarioKey) {
 		this.scenario = key;
 		this.lastChange = null;
+		const single = key === 'single';
 		const t1 = toEntries(higher as RawEntry[], 't1');
-		const t2 = toEntries(foundation as RawEntry[], 't2');
 		this.tiers = [
 			{
 				name: 'Higher',
 				entries: t1,
 				boundaries: key === 'fresh' ? null : HIGHER_BOUNDARIES,
 				belowLowestLabel: 'U'
-			},
-			{
-				name: 'Foundation',
-				entries: t2,
-				boundaries: key === 'done' ? FOUNDATION_BOUNDARIES : null,
-				belowLowestLabel: 'U'
 			}
 		];
+		if (!single) {
+			this.tiers.push({
+				name: 'Foundation',
+				entries: toEntries(foundation as RawEntry[], 't2'),
+				boundaries: key === 'done' ? FOUNDATION_BOUNDARIES : null,
+				belowLowestLabel: 'U'
+			});
+		}
 		this.students = NAMES.map((n, i) => {
 			const [firstName, surname] = n.split(' ');
 			let tier: TierIndex | null = null;
-			if (key === 'done') tier = DONE_TIERS[i];
-			if (key === 'midway') tier = i >= 23 ? null : i === 0 ? 1 : DONE_TIERS[i];
+			if (single) tier = 0;
+			else if (key === 'done') tier = DONE_TIERS[i];
+			else if (key === 'midway') tier = i >= 23 ? null : i === 0 ? 1 : DONE_TIERS[i];
 			return { id: `s${i}`, firstName, surname, absent: key !== 'fresh' && i === 9, tier };
 		});
 		const marks: Record<string, Record<string, number>> = {};
@@ -243,6 +248,8 @@ class Sheet {
 
 	/** Marks a student holds on a tier they are not on: kept, never counted. */
 	offTierMarkCount(s: Student): { tier: TierIndex; count: number } | null {
+		// One tier has no other tier's marks to hold.
+		if (this.tiers.length === 1) return null;
 		const row = this.marks[s.id];
 		if (!row) return null;
 		for (const t of [0, 1] as const) {
