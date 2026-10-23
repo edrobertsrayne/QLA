@@ -25,7 +25,9 @@
 		report,
 		editable = false,
 		measure = true,
-		onedit
+		onedit,
+		tierName = null,
+		tierVariant = 'A'
 	}: {
 		document: MarksheetDocument;
 		studentId: string;
@@ -40,6 +42,10 @@
 		measure?: boolean;
 		/** The teacher's wording, saved when a feedback field loses focus. */
 		onedit?: (prose: ReportProse) => void;
+		/** PROTOTYPE (#116): the tier name shown in the header, display only. */
+		tierName?: string | null;
+		/** PROTOTYPE (#116): which header placement to draw. */
+		tierVariant?: string;
 	} = $props();
 
 	const fit = reportFit();
@@ -168,13 +174,45 @@
 	{@attach measureFit}
 >
 	<div class="flex min-h-full flex-col p-[10mm]">
+		{#if tierName && tierVariant === 'D'}
+			<div
+				class="-mx-[10mm] -mt-[10mm] mb-3 bg-black px-[10mm] py-1 text-[10pt] font-bold tracking-wide text-white uppercase"
+				data-testid="report-tier"
+			>
+				{tierName}
+			</div>
+		{/if}
 		<header class="flex items-center justify-between gap-4">
 			<div class="min-w-0">
-				<h2 class="text-[18pt] leading-tight font-bold">{displayName}</h2>
+				<div class="flex items-center gap-2">
+					<h2 class="text-[18pt] leading-tight font-bold">{displayName}</h2>
+					{#if tierName && tierVariant === 'C'}
+						<span
+							class="shrink-0 rounded-full border-[1.5px] border-black px-2 py-px text-[9pt] font-semibold whitespace-nowrap"
+							data-testid="report-tier">{tierName}</span
+						>
+					{/if}
+				</div>
 				{#if document.paper.className}<p class="text-[10pt]">{document.paper.className}</p>{/if}
-				<p class="text-[9pt] text-neutral-700">{document.paper.label ?? ''}</p>
+				<p class="text-[9pt] text-neutral-700">
+					{document.paper.label ?? ''}{#if tierName && tierVariant === 'A'}<span
+							data-testid="report-tier"
+							>{document.paper.label ? ' · ' : ''}<span class="font-semibold text-black"
+								>{tierName}</span
+							></span
+						>{/if}
+				</p>
 			</div>
 			<div class="flex items-stretch border-2 border-black text-center">
+				{#if tierName && tierVariant === 'B'}
+					<div
+						class="flex max-w-[30mm] flex-col justify-center border-r-2 border-black px-3 py-1.5 text-left leading-tight"
+						data-testid="report-tier"
+					>
+						<div class="text-[8pt] text-neutral-700">Tier</div>
+						<div class="text-[11pt] font-bold">{tierName}</div>
+					</div>
+				{/if}
 				<div class="px-3 py-1.5">
 					<div class="text-[20pt] leading-tight font-bold tabular-nums">
 						{figures.total}/{figures.available}

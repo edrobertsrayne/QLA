@@ -20,6 +20,8 @@ function onMarksheetSurface(pathname: string): boolean {
 export function load({ url }: { url: URL }): void {
 	const store = marksheetStore();
 	store.load();
+	// PROTOTYPE (#116): /reports/review?variant=… renders stubbed report pages whatever is stored.
+	if (url.pathname === '/reports/review' && url.searchParams.has('variant')) return;
 	const route = store.route();
 	if (url.pathname === route) return;
 	// The analysis and the report flow are part of the marksheet surface: a
