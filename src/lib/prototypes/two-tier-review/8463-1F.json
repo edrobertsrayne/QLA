@@ -1,0 +1,479 @@
+[
+	{
+		"id": "01.1",
+		"questionNumber": "1",
+		"marks": 1,
+		"summary": "Identify circuit component P",
+		"specPoint": "4.2.1.1; RPA4",
+		"commandWord": null,
+		"ao": "AO1"
+	},
+	{
+		"id": "01.2",
+		"questionNumber": "1",
+		"marks": 2,
+		"summary": "Complete ammeter and voltmeter sentences",
+		"specPoint": "4.2.1.4; RPA4",
+		"commandWord": "Complete",
+		"ao": "AO1"
+	},
+	{
+		"id": "01.3",
+		"questionNumber": "1",
+		"marks": 3,
+		"summary": "Predict effects of increased variable resistance",
+		"specPoint": "4.2.2; 4.2.1.3; RPA4",
+		"commandWord": "Tick",
+		"ao": "AO1"
+	},
+	{
+		"id": "01.4",
+		"questionNumber": "1",
+		"marks": 2,
+		"summary": "Calculate current from charge and time",
+		"specPoint": "4.2.1.2",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "01.5",
+		"questionNumber": "1",
+		"marks": 2,
+		"summary": "Calculate filament lamp resistance",
+		"specPoint": "4.2.1.3",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "01.6",
+		"questionNumber": "1",
+		"marks": 2,
+		"summary": "Match components to current-voltage graphs",
+		"specPoint": "4.2.1.4; RPA4",
+		"commandWord": "Draw",
+		"ao": "AO1"
+	},
+	{
+		"id": "01.7",
+		"questionNumber": "1",
+		"marks": 1,
+		"summary": "Identify the ammeter’s displayed error",
+		"specPoint": "4.2.1.4; RPA4",
+		"commandWord": "Tick",
+		"ao": "AO3"
+	},
+	{
+		"id": "02.1",
+		"questionNumber": "2",
+		"marks": 1,
+		"summary": "Identify the first discovered atomic particle",
+		"specPoint": "4.4.1.3",
+		"commandWord": "Tick",
+		"ao": "AO1"
+	},
+	{
+		"id": "02.2",
+		"questionNumber": "2",
+		"marks": 2,
+		"summary": "Calculate gold nucleus radius",
+		"specPoint": "4.4.1.3",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "02.3",
+		"questionNumber": "2",
+		"marks": 1,
+		"summary": "Identify alpha particle and nucleus charges",
+		"specPoint": "4.4.1.1; 4.4.2.1",
+		"commandWord": "Tick",
+		"ao": "AO1"
+	},
+	{
+		"id": "02.4",
+		"questionNumber": "2",
+		"marks": 1,
+		"summary": "Identify the force between charged nuclei",
+		"specPoint": "4.2.5.1; 4.2.5.2",
+		"commandWord": "Tick",
+		"ao": "AO1"
+	},
+	{
+		"id": "02.5",
+		"questionNumber": "2",
+		"marks": 1,
+		"summary": "Identify alpha particle experiencing greatest force",
+		"specPoint": "4.2.5.2",
+		"commandWord": "Tick",
+		"ao": "AO3"
+	},
+	{
+		"id": "02.6",
+		"questionNumber": "2",
+		"marks": 1,
+		"summary": "Identify the earliest atomic model",
+		"specPoint": "4.4.1.3",
+		"commandWord": null,
+		"ao": "AO1"
+	},
+	{
+		"id": "02.7",
+		"questionNumber": "2",
+		"marks": 1,
+		"summary": "Identify the latest atomic model",
+		"specPoint": "4.4.1.3",
+		"commandWord": null,
+		"ao": "AO1"
+	},
+	{
+		"id": "03.1",
+		"questionNumber": "3",
+		"marks": 2,
+		"summary": "Complete isotope particle number sentences",
+		"specPoint": "4.4.1.2",
+		"commandWord": "Complete",
+		"ao": "AO1"
+	},
+	{
+		"id": "03.2",
+		"questionNumber": "3",
+		"marks": 1,
+		"summary": "Identify the meaning of half-life",
+		"specPoint": "4.4.2.3",
+		"commandWord": "Tick",
+		"ao": "AO1"
+	},
+	{
+		"id": "03.3",
+		"questionNumber": "3",
+		"marks": 1,
+		"summary": "Identify the least stable carbon isotope",
+		"specPoint": "4.4.2.3",
+		"commandWord": "Tick",
+		"ao": "AO3"
+	},
+	{
+		"id": "03.4",
+		"questionNumber": "3",
+		"marks": 2,
+		"summary": "Match irradiation and contamination examples",
+		"specPoint": "4.4.2.4",
+		"commandWord": "Draw",
+		"ao": "AO1"
+	},
+	{
+		"id": "03.5",
+		"questionNumber": "3",
+		"marks": 1,
+		"summary": "Explain the sticky floor’s purpose",
+		"specPoint": "4.4.2.4",
+		"commandWord": "Tick",
+		"ao": "AO3"
+	},
+	{
+		"id": "03.6",
+		"questionNumber": "3",
+		"marks": 2,
+		"summary": "Calculate equivalent radiation exposure days",
+		"specPoint": "4.4.3.1",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "03.7",
+		"questionNumber": "3",
+		"marks": 2,
+		"summary": "Match nuclear processes to their fuels",
+		"specPoint": "4.4.4.1; 4.4.4.2",
+		"commandWord": "Draw",
+		"ao": "AO1"
+	},
+	{
+		"id": "04.1",
+		"questionNumber": "4",
+		"marks": 2,
+		"summary": "Calculate hydroelectric electricity percentage",
+		"specPoint": "4.1.3",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "04.2",
+		"questionNumber": "4",
+		"marks": 2,
+		"summary": "Calculate water’s gravitational potential energy decrease",
+		"specPoint": "4.1.1.2",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "04.3",
+		"questionNumber": "4",
+		"marks": 1,
+		"summary": "Write the energy power time equation",
+		"specPoint": "4.2.4.2; 4.1.1.4",
+		"commandWord": "Write down",
+		"ao": "AO1"
+	},
+	{
+		"id": "04.4",
+		"questionNumber": "4",
+		"marks": 3,
+		"summary": "Calculate energy transferred by generator",
+		"specPoint": "4.2.4.2; 4.1.1.4",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "04.5",
+		"questionNumber": "4",
+		"marks": 2,
+		"summary": "Explain seasonal variation in generator power",
+		"specPoint": "4.1.3",
+		"commandWord": "Explain",
+		"ao": "AO3"
+	},
+	{
+		"id": "05.1",
+		"questionNumber": "5",
+		"marks": 1,
+		"summary": "Identify why a funnel was used",
+		"specPoint": "4.1.2.1; RPA2",
+		"commandWord": "Tick",
+		"ao": "AO3"
+	},
+	{
+		"id": "05.2",
+		"questionNumber": "5",
+		"marks": 1,
+		"summary": "Identify why bottle A lacked insulation",
+		"specPoint": "4.1.2.1; RPA2",
+		"commandWord": "Tick",
+		"ao": "AO3"
+	},
+	{
+		"id": "05.3",
+		"questionNumber": "5",
+		"marks": 1,
+		"summary": "Name equipment for measuring time",
+		"specPoint": "4.1.2.1; RPA2",
+		"commandWord": null,
+		"ao": "AO3"
+	},
+	{
+		"id": "05.4",
+		"questionNumber": "5",
+		"marks": 4,
+		"summary": "Suggest improvements for a valid insulation investigation",
+		"specPoint": "4.1.2.1; RPA2",
+		"commandWord": "Explain",
+		"ao": "AO3"
+	},
+	{
+		"id": "05.5",
+		"questionNumber": "5",
+		"marks": 2,
+		"summary": "Choose graph type and explain why",
+		"specPoint": "4.1.2.1; RPA2",
+		"commandWord": "Give",
+		"ao": "AO2"
+	},
+	{
+		"id": "06.1",
+		"questionNumber": "6",
+		"marks": 3,
+		"summary": "Compare energy stores during bungee jump",
+		"specPoint": "4.1.1.1",
+		"commandWord": "Tick",
+		"ao": "AO1"
+	},
+	{
+		"id": "06.2",
+		"questionNumber": "6",
+		"marks": 2,
+		"summary": "Calculate elastic energy stored in cord",
+		"specPoint": "4.1.1.2",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "06.3",
+		"questionNumber": "6",
+		"marks": 1,
+		"summary": "Explain cord C’s smaller extension",
+		"specPoint": "4.1.1.2",
+		"commandWord": "Give",
+		"ao": "AO3"
+	},
+	{
+		"id": "06.4",
+		"questionNumber": "6",
+		"marks": 2,
+		"summary": "Choose safest cord for heavier jumper",
+		"specPoint": "4.1.1.2",
+		"commandWord": "Give",
+		"ao": "AO3"
+	},
+	{
+		"id": "07.1",
+		"questionNumber": "7",
+		"marks": 1,
+		"summary": "Complete gas particle direction sentence",
+		"specPoint": "4.3.3.1",
+		"commandWord": "Complete",
+		"ao": "AO1"
+	},
+	{
+		"id": "07.2",
+		"questionNumber": "7",
+		"marks": 1,
+		"summary": "Complete gas particle speed sentence",
+		"specPoint": "4.3.3.1",
+		"commandWord": "Complete",
+		"ao": "AO1"
+	},
+	{
+		"id": "07.3",
+		"questionNumber": "7",
+		"marks": 3,
+		"summary": "Plot pressure-volume points and best-fit line",
+		"specPoint": "4.3.3.2",
+		"commandWord": "Complete",
+		"ao": "AO2"
+	},
+	{
+		"id": "07.4",
+		"questionNumber": "7",
+		"marks": 2,
+		"summary": "Calculate pressure-volume constant",
+		"specPoint": "4.3.3.2",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "07.5",
+		"questionNumber": "7",
+		"marks": 3,
+		"summary": "Predict effects of increasing gas volume",
+		"specPoint": "4.3.3.2",
+		"commandWord": "Tick",
+		"ao": "AO1"
+	},
+	{
+		"id": "08.1",
+		"questionNumber": "8",
+		"marks": 2,
+		"summary": "Complete transformer effect sentences",
+		"specPoint": "4.2.4.3",
+		"commandWord": "Complete",
+		"ao": "AO1"
+	},
+	{
+		"id": "08.2",
+		"questionNumber": "8",
+		"marks": 1,
+		"summary": "Identify the current power resistance equation",
+		"specPoint": "4.2.4.1",
+		"commandWord": "Tick",
+		"ao": "AO1"
+	},
+	{
+		"id": "08.3",
+		"questionNumber": "8",
+		"marks": 3,
+		"summary": "Calculate transmission cable resistance",
+		"specPoint": "4.2.4.1",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "08.4",
+		"questionNumber": "8",
+		"marks": 1,
+		"summary": "Write the efficiency energy equation",
+		"specPoint": "4.1.2.2",
+		"commandWord": "Write down",
+		"ao": "AO1"
+	},
+	{
+		"id": "08.5",
+		"questionNumber": "8",
+		"marks": 3,
+		"summary": "Calculate useful energy output to consumers",
+		"specPoint": "4.1.2.2",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "09.1",
+		"questionNumber": "9",
+		"marks": 1,
+		"summary": "Explain waiting before recording temperature",
+		"specPoint": "4.1.1.3; RPA1",
+		"commandWord": "Suggest",
+		"ao": "AO3"
+	},
+	{
+		"id": "09.2",
+		"questionNumber": "9",
+		"marks": 4,
+		"summary": "Calculate iron’s specific heat capacity",
+		"specPoint": "4.1.1.3; RPA1",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "09.3",
+		"questionNumber": "9",
+		"marks": 2,
+		"summary": "Identify effects of insulating iron block",
+		"specPoint": "4.1.1.3; RPA1",
+		"commandWord": "Tick",
+		"ao": "AO3"
+	},
+	{
+		"id": "10.1",
+		"questionNumber": "10",
+		"marks": 1,
+		"summary": "Define direct potential difference",
+		"specPoint": "4.2.3.1",
+		"commandWord": null,
+		"ao": "AO1"
+	},
+	{
+		"id": "10.2",
+		"questionNumber": "10",
+		"marks": 1,
+		"summary": "Identify the charge energy potential difference equation",
+		"specPoint": "4.2.4.2",
+		"commandWord": "Tick",
+		"ao": "AO1"
+	},
+	{
+		"id": "10.3",
+		"questionNumber": "10",
+		"marks": 3,
+		"summary": "Calculate charge flow through battery",
+		"specPoint": "4.2.4.2",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "10.4",
+		"questionNumber": "10",
+		"marks": 3,
+		"summary": "Calculate water’s specific latent heat of fusion",
+		"specPoint": "4.3.2.3",
+		"commandWord": "Calculate",
+		"ao": "AO2"
+	},
+	{
+		"id": "10.5",
+		"questionNumber": "10",
+		"marks": 6,
+		"summary": "Explain particle changes as ice melts and warms",
+		"specPoint": "4.3.1.1; 4.3.2.1",
+		"commandWord": "Explain",
+		"ao": "AO1"
+	}
+]

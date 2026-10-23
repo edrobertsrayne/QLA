@@ -22,6 +22,8 @@ export function load({ url }: { url: URL }): void {
 	store.load();
 	const route = store.route();
 	if (url.pathname === route) return;
+	// PROTOTYPE (#113): /breakdown?variant=… renders the stubbed two-tier review whatever is stored.
+	if (url.pathname === '/breakdown' && url.searchParams.has('variant')) return;
 	// The analysis and the report flow are part of the marksheet surface: a
 	// confirmed breakdown may analyse, write and review reports without losing
 	// the marksheet underneath.

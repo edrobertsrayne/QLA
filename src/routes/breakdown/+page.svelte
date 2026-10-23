@@ -23,6 +23,22 @@
 	import { isWholeNumber, totalMarks } from '$lib/marksheet/document.js';
 	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 	import { agree, count } from '$lib/prose.js';
+	// PROTOTYPE (#113): ?variant=A|B|C swaps in a two-tier review variant on stub data.
+	import { page } from '$app/state';
+	import PrototypeSwitcher from '$lib/components/prototype/PrototypeSwitcher.svelte';
+	import LockedView from '$lib/prototypes/two-tier-review/LockedView.svelte';
+	import StubPanel from '$lib/prototypes/two-tier-review/StubPanel.svelte';
+	import VariantA from '$lib/prototypes/two-tier-review/VariantA.svelte';
+	import VariantB from '$lib/prototypes/two-tier-review/VariantB.svelte';
+	import VariantC from '$lib/prototypes/two-tier-review/VariantC.svelte';
+	import { twoTierReview } from '$lib/prototypes/two-tier-review/review.svelte.js';
+	const VARIANTS = [
+		{ key: 'A', label: 'Pair column' },
+		{ key: 'B', label: 'Pairs tab' },
+		{ key: 'C', label: 'Side by side' }
+	];
+	const variant = $derived(page.url.searchParams.get('variant'));
+	const review = twoTierReview();
 
 	// The route's load guard has read storage by the time this renders.
 	const store = marksheetStore();
@@ -121,150 +137,165 @@
 	<title>{title}</title>
 </svelte:head>
 
-<main class="mx-auto max-w-6xl space-y-6 p-6">
-	<header class="space-y-3">
-		<div class="flex items-start justify-between gap-4">
-			<div class="space-y-2">
-				<PaperLabelInput />
-				<p class="px-1 text-sm text-muted-foreground">
-					{entries.length} entries · {marks} marks{#if usage}
-						· this run: {usage.totalTokens} tokens · ${usage.estCost.toFixed(4)}{/if}
-				</p>
+{#if variant !== null}
+	{#if review.locked}
+		<LockedView />
+	{:else if variant === 'B'}
+		<VariantB />
+	{:else if variant === 'C'}
+		<VariantC />
+	{:else}
+		<VariantA />
+	{/if}
+	<StubPanel />
+	<PrototypeSwitcher variants={VARIANTS} current={variant} />
+{:else}
+	<main class="mx-auto max-w-6xl space-y-6 p-6">
+		<header class="space-y-3">
+			<div class="flex items-start justify-between gap-4">
+				<div class="space-y-2">
+					<PaperLabelInput />
+					<p class="px-1 text-sm text-muted-foreground">
+						{entries.length} entries · {marks} marks{#if usage}
+							· this run: {usage.totalTokens} tokens · ${usage.estCost.toFixed(4)}{/if}
+					</p>
+				</div>
 			</div>
-		</div>
-		<BackupCard />
-	</header>
+			<BackupCard />
+		</header>
 
-	<div class="grid gap-6 lg:grid-cols-[320px_1fr]">
-		<aside class="space-y-4 lg:sticky lg:top-4 lg:self-start">
-			<div>
-				<h1 class="text-xl font-semibold">Check the breakdown</h1>
-				<p class="text-sm text-muted-foreground">
-					Fix anything the model got wrong. Once confirmed, this is what your marksheet columns are
-					built from.
-				</p>
-			</div>
-
-			{#if runLevelWarnings.length > 0}
-				<section class="space-y-1 rounded-lg border p-3" data-testid="run-warnings">
-					<h2 class="text-sm font-semibold">From the parse</h2>
-					{#each runLevelWarnings as warning (warning.code + warning.message)}
-						<p class="text-xs text-amber-800 dark:text-amber-300">
-							<TriangleAlertIcon class="mr-1 inline size-3.5" /><strong>{warning.code}</strong>: {warning.message}
-						</p>
-					{/each}
-				</section>
-			{/if}
-
-			<section class="space-y-2 rounded-lg border p-3" data-testid="paper-total">
-				<h2 class="text-sm font-semibold">Does it add up?</h2>
-				<Label class="text-xs text-muted-foreground" for="paper-total">
-					Total marks printed on the paper
-				</Label>
-				<Input
-					id="paper-total"
-					class="w-24"
-					type="number"
-					min="0"
-					step="1"
-					inputmode="numeric"
-					placeholder="—"
-					value={paperTotal ?? ''}
-					oninput={onPaperTotalInput}
-				/>
-				{#if check === null}
-					<p class="text-xs text-muted-foreground">
-						This breakdown accounts for <strong>{marks}</strong>
-						{agree(marks, 'mark', 'marks')}.
+		<div class="grid gap-6 lg:grid-cols-[320px_1fr]">
+			<aside class="space-y-4 lg:sticky lg:top-4 lg:self-start">
+				<div>
+					<h1 class="text-xl font-semibold">Check the breakdown</h1>
+					<p class="text-sm text-muted-foreground">
+						Fix anything the model got wrong. Once confirmed, this is what your marksheet columns
+						are built from.
 					</p>
-				{:else if check.status === 'adds-up'}
-					<p class="text-xs text-emerald-700 dark:text-emerald-400">
-						{check.accounted} of {check.paperTotal} — adds up{#if check.noAvailableMarks.length > 0},
-							but {count(check.noAvailableMarks.length, 'entry', 'entries')}
-							{agree(check.noAvailableMarks.length, 'has', 'have')} no available marks yet{/if}.
-					</p>
-				{:else if check.status === 'unaccounted'}
-					<p class="text-xs text-destructive">
-						{check.accounted} of {check.paperTotal} — {check.unaccounted}
-						{agree(check.unaccounted, 'mark', 'marks')} unaccounted —
-						{#if check.noAvailableMarks.length > 0}
-							{count(check.noAvailableMarks.length, 'entry', 'entries')}
-							{agree(check.noAvailableMarks.length, 'has', 'have')} no available marks yet.
-						{:else}
-							an entry may be missing.
-						{/if}
-					</p>
-				{:else}
-					<p class="text-xs text-destructive">
-						{check.accounted} of {check.paperTotal} — {-check.unaccounted}
-						{agree(-check.unaccounted, 'mark', 'marks')} too many — an entry may be duplicated or over-marked.
-					</p>
-				{/if}
-			</section>
+				</div>
 
-			<AoDescriptionsCard />
-
-			<section class="space-y-1 rounded-lg border p-3">
-				<h2 class="text-sm font-semibold">Needs attention ({attention.length})</h2>
-				<ul class="space-y-0.5">
-					{#each attention as item (item.entry.id)}
-						{@const reasons = attentionReasons(item)}
-						{@const codes = item.warnings.map((warning) => warning.code).join(', ')}
-						<li>
-							<button
-								type="button"
-								aria-label={attentionLabel(item)}
-								class="w-full rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
-								onclick={() => goToEntry(item)}
-							>
-								<strong class="mr-1">{entryName(item.entry)}</strong>
-								{#if reasons !== ''}
-									<span class="text-destructive">{reasons}</span>
-								{/if}
-								{#if codes !== ''}
-									<span class="text-amber-700 dark:text-amber-400">{codes}</span>
-								{/if}
-							</button>
-						</li>
-					{:else}
-						<li class="text-xs text-muted-foreground">Nothing flagged.</li>
-					{/each}
-				</ul>
-			</section>
-
-			<section class="space-y-2 rounded-lg border-2 border-primary p-3">
-				<h2 class="text-sm font-semibold">Confirm breakdown</h2>
-				<p class="text-xs text-muted-foreground">
-					Builds your marksheet: <strong>{entries.length}</strong>
-					{agree(entries.length, 'column', 'columns')} across <strong>{questions}</strong>
-					{agree(questions, 'question', 'questions')}, <strong>{marks}</strong> marks. The breakdown becomes
-					read-only.
-				</p>
-				{#if blockerMessages.length > 0}
-					<div class="space-y-1 text-xs text-destructive">
-						{#each blockerMessages as message (message)}
-							<p>{message}</p>
+				{#if runLevelWarnings.length > 0}
+					<section class="space-y-1 rounded-lg border p-3" data-testid="run-warnings">
+						<h2 class="text-sm font-semibold">From the parse</h2>
+						{#each runLevelWarnings as warning (warning.code + warning.message)}
+							<p class="text-xs text-amber-800 dark:text-amber-300">
+								<TriangleAlertIcon class="mr-1 inline size-3.5" /><strong>{warning.code}</strong>: {warning.message}
+							</p>
 						{/each}
-					</div>
+					</section>
 				{/if}
-				<Button class="w-full" disabled={blockers.blocked} onclick={confirmBreakdown}>
-					Confirm and build marksheet
-				</Button>
-			</section>
 
-			<Label class="gap-1.5 text-xs font-normal text-muted-foreground">
-				<Checkbox bind:checked={banded} /> Band by question
-			</Label>
-		</aside>
+				<section class="space-y-2 rounded-lg border p-3" data-testid="paper-total">
+					<h2 class="text-sm font-semibold">Does it add up?</h2>
+					<Label class="text-xs text-muted-foreground" for="paper-total">
+						Total marks printed on the paper
+					</Label>
+					<Input
+						id="paper-total"
+						class="w-24"
+						type="number"
+						min="0"
+						step="1"
+						inputmode="numeric"
+						placeholder="—"
+						value={paperTotal ?? ''}
+						oninput={onPaperTotalInput}
+					/>
+					{#if check === null}
+						<p class="text-xs text-muted-foreground">
+							This breakdown accounts for <strong>{marks}</strong>
+							{agree(marks, 'mark', 'marks')}.
+						</p>
+					{:else if check.status === 'adds-up'}
+						<p class="text-xs text-emerald-700 dark:text-emerald-400">
+							{check.accounted} of {check.paperTotal} — adds up{#if check.noAvailableMarks.length > 0},
+								but {count(check.noAvailableMarks.length, 'entry', 'entries')}
+								{agree(check.noAvailableMarks.length, 'has', 'have')} no available marks yet{/if}.
+						</p>
+					{:else if check.status === 'unaccounted'}
+						<p class="text-xs text-destructive">
+							{check.accounted} of {check.paperTotal} — {check.unaccounted}
+							{agree(check.unaccounted, 'mark', 'marks')} unaccounted —
+							{#if check.noAvailableMarks.length > 0}
+								{count(check.noAvailableMarks.length, 'entry', 'entries')}
+								{agree(check.noAvailableMarks.length, 'has', 'have')} no available marks yet.
+							{:else}
+								an entry may be missing.
+							{/if}
+						</p>
+					{:else}
+						<p class="text-xs text-destructive">
+							{check.accounted} of {check.paperTotal} — {-check.unaccounted}
+							{agree(-check.unaccounted, 'mark', 'marks')} too many — an entry may be duplicated or over-marked.
+						</p>
+					{/if}
+				</section>
 
-		<div class="min-w-0 space-y-3">
-			<BreakdownTable bind:this={table} {banded} />
+				<AoDescriptionsCard />
 
-			{#if entries.length === 0}
-				<p class="text-sm text-muted-foreground">
-					The parse returned no entries. Add one below, or start a new upload to try another paper.
-				</p>
-			{/if}
+				<section class="space-y-1 rounded-lg border p-3">
+					<h2 class="text-sm font-semibold">Needs attention ({attention.length})</h2>
+					<ul class="space-y-0.5">
+						{#each attention as item (item.entry.id)}
+							{@const reasons = attentionReasons(item)}
+							{@const codes = item.warnings.map((warning) => warning.code).join(', ')}
+							<li>
+								<button
+									type="button"
+									aria-label={attentionLabel(item)}
+									class="w-full rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
+									onclick={() => goToEntry(item)}
+								>
+									<strong class="mr-1">{entryName(item.entry)}</strong>
+									{#if reasons !== ''}
+										<span class="text-destructive">{reasons}</span>
+									{/if}
+									{#if codes !== ''}
+										<span class="text-amber-700 dark:text-amber-400">{codes}</span>
+									{/if}
+								</button>
+							</li>
+						{:else}
+							<li class="text-xs text-muted-foreground">Nothing flagged.</li>
+						{/each}
+					</ul>
+				</section>
+
+				<section class="space-y-2 rounded-lg border-2 border-primary p-3">
+					<h2 class="text-sm font-semibold">Confirm breakdown</h2>
+					<p class="text-xs text-muted-foreground">
+						Builds your marksheet: <strong>{entries.length}</strong>
+						{agree(entries.length, 'column', 'columns')} across <strong>{questions}</strong>
+						{agree(questions, 'question', 'questions')}, <strong>{marks}</strong> marks. The breakdown
+						becomes read-only.
+					</p>
+					{#if blockerMessages.length > 0}
+						<div class="space-y-1 text-xs text-destructive">
+							{#each blockerMessages as message (message)}
+								<p>{message}</p>
+							{/each}
+						</div>
+					{/if}
+					<Button class="w-full" disabled={blockers.blocked} onclick={confirmBreakdown}>
+						Confirm and build marksheet
+					</Button>
+				</section>
+
+				<Label class="gap-1.5 text-xs font-normal text-muted-foreground">
+					<Checkbox bind:checked={banded} /> Band by question
+				</Label>
+			</aside>
+
+			<div class="min-w-0 space-y-3">
+				<BreakdownTable bind:this={table} {banded} />
+
+				{#if entries.length === 0}
+					<p class="text-sm text-muted-foreground">
+						The parse returned no entries. Add one below, or start a new upload to try another
+						paper.
+					</p>
+				{/if}
+			</div>
 		</div>
-	</div>
-</main>
+	</main>
+{/if}
