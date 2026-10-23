@@ -35,14 +35,23 @@
 	import VariantB from '$lib/prototypes/two-tier-review/VariantB.svelte';
 	import VariantC from '$lib/prototypes/two-tier-review/VariantC.svelte';
 	import { twoTierReview } from '$lib/prototypes/two-tier-review/review.svelte.js';
+	// PROTOTYPE (#118, round 2): one tier takes the header-bar design (S2 won). R/P/F try
+	// where today's sidebar cards go — Row of cards, collapsible Panel, Folded into the
+	// header — on one tier (S2*) and on two (A2*).
 	const VARIANTS = [
-		{ key: 'A2', label: 'Two tiers (settled)' },
-		{ key: 'S1', label: 'One tier · today’s page' },
-		{ key: 'S2', label: 'One tier · two-tier design' }
+		{ key: 'S2R', label: 'One tier · cards row' },
+		{ key: 'S2P', label: 'One tier · collapsible panel' },
+		{ key: 'S2F', label: 'One tier · folded into header' },
+		{ key: 'A2R', label: 'Two tiers · cards row' },
+		{ key: 'A2P', label: 'Two tiers · collapsible panel' },
+		{ key: 'A2F', label: 'Two tiers · folded into header' }
 	];
 	const variant = $derived(page.url.searchParams.get('variant'));
 	const review = twoTierReview();
-	const single = $derived(variant === 'S2');
+	const single = $derived(variant?.startsWith('S2') ?? false);
+	const checks = $derived(
+		({ R: 'row', P: 'panel', F: 'fold' } as const)[variant?.slice(2, 3) as 'R' | 'P' | 'F']
+	);
 	// PROTOTYPE (#118): S2 forces the shared stub into one-tier mode.
 	$effect.pre(() => review.setSingle(single));
 
@@ -303,7 +312,10 @@
 	{:else if variant === 'C'}
 		<VariantC />
 	{:else}
-		<VariantA layout={variant === 'A2' || variant === 'S2' ? 2 : variant === 'A3' ? 3 : 1} />
+		<VariantA
+			layout={variant.startsWith('A2') || variant.startsWith('S2') ? 2 : variant === 'A3' ? 3 : 1}
+			{checks}
+		/>
 	{/if}
 	<StubPanel />
 	<PrototypeSwitcher variants={VARIANTS} current={variant} />

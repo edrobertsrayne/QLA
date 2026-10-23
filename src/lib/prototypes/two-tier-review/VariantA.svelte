@@ -17,10 +17,12 @@
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import { cn } from '$lib/utils.js';
 	import Notices from './Notices.svelte';
+	import PaperChecks from './PaperChecks.svelte';
 	import TierTable from './TierTable.svelte';
 	import { twoTierReview, type Entry, type TierIndex } from './review.svelte.js';
 
-	let { layout }: { layout: 1 | 2 | 3 } = $props();
+	// PROTOTYPE (#118): `checks` places today's sidebar cards on the header-bar layout.
+	let { layout, checks }: { layout: 1 | 2 | 3; checks?: 'row' | 'panel' | 'fold' } = $props();
 
 	const review = twoTierReview();
 	let tab = $state('0');
@@ -108,18 +110,21 @@
 
 {#snippet tierPanel()}
 	<div class="flex items-end gap-4">
-		<div class="space-y-1">
-			<Label for="a-tier-name" class="text-xs text-muted-foreground"
-				>Tier name, as printed on the paper</Label
-			>
-			<Input
-				id="a-tier-name"
-				class="w-56"
-				placeholder="e.g. Higher"
-				value={review.tiers[current].tierName ?? ''}
-				oninput={(e) => review.setTierName(current, e.currentTarget.value)}
-			/>
-		</div>
+		{#if !single}
+			<!-- PROTOTYPE (#118): one tier hides the tier name field; the parsed name is still kept. -->
+			<div class="space-y-1">
+				<Label for="a-tier-name" class="text-xs text-muted-foreground"
+					>Tier name, as printed on the paper</Label
+				>
+				<Input
+					id="a-tier-name"
+					class="w-56"
+					placeholder="e.g. Higher"
+					value={review.tiers[current].tierName ?? ''}
+					oninput={(e) => review.setTierName(current, e.currentTarget.value)}
+				/>
+			</div>
+		{/if}
 		<p class="pb-2 text-xs text-muted-foreground">
 			{review.tiers[current].filename} · {review.tiers[current].entries.length} entries · {review.tierMarks(
 				current
@@ -195,7 +200,13 @@
 				{@render confirmButton('')}
 			</div>
 			<div class="flex justify-end">{@render blockerList()}</div>
+			{#if checks === 'fold'}
+				<PaperChecks mode="fold" {current} {single} />
+			{/if}
 		</header>
+		{#if checks === 'row' || checks === 'panel'}
+			<PaperChecks mode={checks} {current} {single} />
+		{/if}
 		<div class="space-y-3">
 			{@render tierPanel()}
 		</div>
