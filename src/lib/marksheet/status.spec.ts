@@ -13,6 +13,7 @@ function marksheet(lastExportedAt: string | null): MarksheetDocument {
 		updatedAt: NOW.toISOString(),
 		breakdownConfirmedAt: NOW.toISOString(),
 		lastExportedAt,
+		firstUnbackedChangeAt: null,
 		paper: {
 			label: 'Ph1',
 			className: null,

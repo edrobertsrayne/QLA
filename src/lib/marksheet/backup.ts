@@ -1,27 +1,17 @@
-// When a backup becomes a risk worth naming, and what a backup file holds.
+// What the app knows about backups: when one was taken, when the oldest change
+// it does not hold was made, and what a backup file contains.
 //
-// A browser may clear a site's script-writable storage once it has gone a week
-// without being used, so a copy on the teacher's disk is the only thing that
-// survives it. This module keeps the rule and the reading of a backup file away
-// from the components and free of I/O, so both are testable at their edges —
-// including the day the window closes.
+// Kept away from the components and free of I/O, so every age boundary is
+// testable without a browser — including the day the only copy left matters.
 
 import { markCount, parseStoredDocument, type MarksheetDocument } from './document.js';
 
-/**
- * How long a backup stands before the teacher is nudged: the window WebKit
- * gives script-writable storage without a visit.
- */
-export const BACKUP_STALE_AFTER_DAYS = 7;
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** Why the teacher is being nudged, or nothing when there is nothing to say. */
-export type BackupReminder =
-	/** Marks are entered and no backup has been taken. */
-	| { kind: 'never' }
-	/** The last backup is past the eviction window, `days` ago. */
-	| { kind: 'stale'; days: number };
+/** A stored moment as a date, or null when it holds none that can be read. */
+function readMoment(recorded: string | null): Date | null {
+	if (recorded === null) return null;
+	const at = new Date(recorded);
+	return Number.isNaN(at.getTime()) ? null : at;
+}
 
 /** What a backup file holds, in the terms the confirm names it back to the teacher. */
 export interface BackupSummary {
@@ -34,41 +24,35 @@ export interface BackupSummary {
 }
 
 /**
+ * Where the document stands against its last backup: never backed up (no
+ * moment, or one that cannot be read), backed up with nothing unbacked since,
+ * or backed up with the oldest unbacked change named.
+ */
+export type BackupState =
+	| { kind: 'never'; changedAt: Date | null }
+	| { kind: 'clean'; takenAt: Date }
+	| { kind: 'unbacked'; takenAt: Date; changedAt: Date };
+
+/**
+ * The document's backup state, the one definition every surface reads: the
+ * control's button, caption and title, and the nudge toast. A document that
+ * has never been backed up counts as changed from the moment it was created.
+ */
+export function backupState(document: MarksheetDocument): BackupState {
+	const takenAt = readMoment(document.lastExportedAt);
+	if (takenAt === null) return { kind: 'never', changedAt: readMoment(document.createdAt) };
+	const changedAt = readMoment(document.firstUnbackedChangeAt);
+	return changedAt === null ? { kind: 'clean', takenAt } : { kind: 'unbacked', takenAt, changedAt };
+}
+
+/**
  * When the document says its backup was taken, or null when there is none to
- * trust: a document with marks and an unreadable moment is treated as never
- * backed up, which nudges rather than reassures.
+ * trust: a document with an unreadable moment is treated as never backed up,
+ * which nudges rather than reassures.
  */
 export function backupTakenAt(document: MarksheetDocument): Date | null {
-	const recorded = document.lastExportedAt;
-	if (recorded === null) return null;
-	const at = new Date(recorded);
-	return Number.isNaN(at.getTime()) ? null : at;
-}
-
-/**
- * Whether the document holds a mark at all: the work a wipe or an eviction would take.
- */
-function hasMarks(document: MarksheetDocument): boolean {
-	return markCount(document) > 0;
-}
-
-/**
- * Whether the teacher should be reminded to back up: marks with no backup at
- * all, or a backup the eviction window has passed. Exactly the window is not
- * yet past it — the rule is "more than 7 days old".
- */
-export function backupReminder(
-	document: MarksheetDocument | null,
-	now: Date
-): BackupReminder | null {
-	if (!document) return null;
-
-	const takenAt = backupTakenAt(document);
-	if (takenAt === null) return hasMarks(document) ? { kind: 'never' } : null;
-
-	const ageMs = now.getTime() - takenAt.getTime();
-	if (ageMs <= BACKUP_STALE_AFTER_DAYS * DAY_MS) return null;
-	return { kind: 'stale', days: Math.floor(ageMs / DAY_MS) };
+	const state = backupState(document);
+	return state.kind === 'never' ? null : state.takenAt;
 }
 
 /**

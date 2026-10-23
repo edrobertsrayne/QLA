@@ -11,6 +11,7 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import EditBreakdownDialog from '$lib/components/marksheet/EditBreakdownDialog.svelte';
 	import UploadStudentsDialog from '$lib/components/marksheet/UploadStudentsDialog.svelte';
+	import BackupControl from '$lib/components/marksheet/BackupControl.svelte';
 	import { facilityDescription, facilityPercent } from '$lib/marksheet/analysis.js';
 	import {
 		entryName,
@@ -30,7 +31,7 @@
 	const hardest = $derived(store.analysis.hardest);
 </script>
 
-<div class="flex flex-wrap items-center gap-2">
+<div class="flex flex-wrap items-center gap-2" data-testid="grid-toolbar">
 	<Button variant="outline" size="xs" onclick={() => onViewAnalysis(null)}>
 		<ChartColumnIcon class="size-3.5" /> View analysis
 	</Button>
@@ -113,10 +114,11 @@
 			</Popover.Content>
 		</Popover.Root>
 	{/if}
-	<!-- The way back to the entries the marks are keyed against, and at the far
-	     end from View analysis beside the marks export: a data tool, never
-	     mistaken for the page's own backup. -->
+	<!-- The document's own backup first, then the data tools at the far end from
+	     View analysis: the way back to the entries the marks are keyed against,
+	     and the marks export that is never mistaken for a backup. -->
 	<div class="ml-auto flex items-center gap-2">
+		<BackupControl />
 		<EditBreakdownDialog />
 		<Button variant="outline" size="xs" onclick={exportMarksNow}>
 			<FileSpreadsheetIcon class="size-3.5" /> Export marks to spreadsheet (.csv)

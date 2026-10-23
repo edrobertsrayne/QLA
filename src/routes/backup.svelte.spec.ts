@@ -1,18 +1,22 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { goto } from '$app/navigation';
+import { toast } from 'svelte-sonner';
 import { STORAGE_KEY } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import { confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { confirmed, entry, parsed, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
+import BreakdownPage from './breakdown/+page.svelte';
 import MarksheetPage from './marksheet/+page.svelte';
-import { openPage } from './spec-helpers.js';
+import { openPage, toastOnScreen, waitForToast } from './spec-helpers.js';
 import UploadPage from './+page.svelte';
+import BackupNudgeHarness from './BackupNudgeHarness.test.svelte';
 
 /**
  * A moment the teacher read off a clock, as the document records it. Aged
- * against the real clock a test runs on, since that is the one the card reads.
+ * against the real clock a test runs on, since that is the one the control
+ * reads.
  */
 function ago(ms: number): string {
 	return new Date(Date.now() - ms).toISOString();
@@ -48,68 +52,76 @@ function backupFile(
 	return new File([JSON.stringify(stored)], filename, { type: 'application/json' });
 }
 
-describe('the backup card', () => {
-	it('reads how old the last backup is, and stays quiet about it', async () => {
+/** The toast's "Back up now" action, once sonner has rendered it. */
+function toastAction(element: HTMLElement): HTMLButtonElement | undefined {
+	return [...element.querySelectorAll<HTMLButtonElement>('button')].find(
+		(button) => button.textContent?.trim() === 'Back up now'
+	);
+}
+
+/** Give sonner a turn to render, so a missing toast is a real absence. */
+async function settle(): Promise<void> {
+	const { promise, resolve } = Promise.withResolvers<void>();
+	setTimeout(resolve, 100);
+	await promise;
+}
+
+afterEach(() => {
+	vi.useRealTimers();
+	toast.dismiss();
+});
+
+describe('the backup control', () => {
+	it('sits in the grid toolbar with the age of the last backup, disabled when nothing has changed', async () => {
 		seed(marksheet({ lastExportedAt: hoursAgo(1) }));
 
 		openPage(MarksheetPage);
 
-		await expect.element(page.getByTestId('backup-card')).toHaveTextContent('Last backup: 1 h ago');
-		expect(page.getByTestId('backup-banner').query()).toBeNull();
+		await expect.element(page.getByTestId('grid-toolbar')).toHaveTextContent('Backup 1 h ago');
+		const button = page.getByRole('button', { name: 'Back up now' });
+		await expect.element(button).toBeDisabled();
+		await expect.element(button).toHaveAttribute('title', 'Nothing new since the last backup');
 	});
 
-	it('says none yet for a document that has never been backed up', async () => {
+	it('sits before Edit breakdown and the marks export', async () => {
+		seed(marksheet({ lastExportedAt: hoursAgo(1) }));
+
+		openPage(MarksheetPage);
+
+		const control = page.getByTestId('backup-control').element();
+		const edit = page.getByRole('button', { name: 'Edit breakdown' }).element();
+		const exportMarks = page
+			.getByRole('button', { name: 'Export marks to spreadsheet (.csv)' })
+			.element();
+		expect(control.nextElementSibling).toBe(edit);
+		expect(edit.nextElementSibling).toBe(exportMarks);
+	});
+
+	it('is enabled after a change, and stays enabled after the change is undone', async () => {
+		seed(marksheet({ lastExportedAt: hoursAgo(1) }));
+		openPage(MarksheetPage);
+		const button = page.getByRole('button', { name: 'Back up now' });
+		await expect.element(button).toBeDisabled();
+
+		marksheetStore().removeStudent('student-1');
+		await expect.element(button).toBeEnabled();
+
+		marksheetStore().undo();
+		await expect.element(button).toBeEnabled();
+	});
+
+	it('is enabled on a document that has never been backed up, even with no marks', async () => {
 		seed(marksheet({ lastExportedAt: null, students: [], marks: {} }));
 
 		openPage(MarksheetPage);
 
-		await expect
-			.element(page.getByTestId('backup-card'))
-			.toHaveTextContent('Last backup: None yet');
-		// Nothing is entered yet, so there is nothing a browser could clear — the
-		// card waits rather than warns.
-		expect(page.getByTestId('backup-banner').query()).toBeNull();
+		await expect.element(page.getByTestId('backup-control')).toHaveTextContent('No backup yet');
+		const button = page.getByRole('button', { name: 'Back up now' });
+		await expect.element(button).toBeEnabled();
+		await expect.element(button).toHaveAttribute('title', 'Never backed up');
 	});
 
-	it('stands amber once marks are entered with no backup at all', async () => {
-		seed(marksheet({ lastExportedAt: null }));
-		openPage(MarksheetPage);
-
-		await expect
-			.element(page.getByTestId('backup-banner'))
-			.toHaveTextContent('You have entered marks and never backed them up.');
-		// The way out of the risk, and the way to stop being told about it.
-		await expect.element(page.getByRole('button', { name: 'Back up now' })).toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: 'Remind me later' })).toBeInTheDocument();
-	});
-
-	it('stands amber once the last backup is past the eviction window', async () => {
-		seed(marksheet({ lastExportedAt: daysAgo(8) }));
-
-		openPage(MarksheetPage);
-
-		await expect
-			.element(page.getByTestId('backup-banner'))
-			.toHaveTextContent('Your last backup was 8 days ago.');
-		await expect
-			.element(page.getByTestId('backup-banner'))
-			.toHaveTextContent("can clear this site's storage");
-	});
-
-	it('stands the banner down for the session, leaving the card amber instead', async () => {
-		seed(marksheet({ lastExportedAt: null }));
-		openPage(MarksheetPage);
-		await expect.element(page.getByTestId('backup-banner')).toBeInTheDocument();
-
-		await page.getByRole('button', { name: 'Remind me later' }).click();
-
-		await expect.element(page.getByTestId('backup-banner')).not.toBeInTheDocument();
-		await expect
-			.element(page.getByTestId('backup-card'))
-			.toHaveTextContent('Last backup: None yet');
-	});
-
-	it('backs the marksheet up from the banner and records the moment', async () => {
+	it('takes a backup from the toolbar and records the moment', async () => {
 		seed(marksheet({ lastExportedAt: null }));
 		openPage(MarksheetPage);
 		const file = captureDownload();
@@ -119,12 +131,91 @@ describe('the backup card', () => {
 		expect(file.filename()).toMatch(/^qla-backup-10x-ph1-\d{4}-\d{2}-\d{2}\.json$/);
 		const handed = JSON.parse(await file.text()) as MarksheetDocument;
 		expect(handed.lastExportedAt).not.toBeNull();
+		expect(handed.firstUnbackedChangeAt).toBeNull();
 		expect(handed.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
-		// There is a copy out of this browser now, so the warning stands down.
-		await expect.element(page.getByTestId('backup-banner')).not.toBeInTheDocument();
 		await expect
-			.element(page.getByTestId('backup-card'))
-			.toHaveTextContent(/Last backup: (just now|\d+s ago)/);
+			.element(page.getByTestId('backup-control'))
+			.toHaveTextContent(/Backup (just now|\d+s ago)/);
+		await expect.element(page.getByRole('button', { name: 'Back up now' })).toBeDisabled();
+	});
+
+	it('stands at the right end of the breakdown header', async () => {
+		seed(parsed({ students: [], marks: {} }));
+
+		const screen = openPage(BreakdownPage);
+
+		await expect.element(page.getByTestId('backup-control')).toHaveTextContent('No backup yet');
+		const control = screen.container.querySelector('header [data-testid="backup-control"]');
+		expect(control).not.toBeNull();
+		expect(control?.parentElement?.lastElementChild).toBe(control);
+	});
+});
+
+describe('the backup nudge toast', () => {
+	it('names the oldest unbacked change and offers a backup', async () => {
+		seed(marksheet({ lastExportedAt: daysAgo(5), firstUnbackedChangeAt: daysAgo(3) }));
+
+		openPage(BackupNudgeHarness);
+
+		const element = await waitForToast();
+		expect(element.textContent).toContain("Changes from 3 days ago aren't backed up");
+		expect(element.textContent).toContain(
+			'A backup file is the only copy that survives the browser clearing its storage.'
+		);
+		expect(toastAction(element)).toBeDefined();
+	});
+
+	it('stays silent while the oldest unbacked change is two days old or younger', async () => {
+		seed(marksheet({ lastExportedAt: daysAgo(5), firstUnbackedChangeAt: hoursAgo(47) }));
+
+		openPage(BackupNudgeHarness);
+
+		await settle();
+		expect(toastOnScreen()).toBeNull();
+	});
+
+	it('nudges when the oldest unbacked change passes two days while the page stays open', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date('2026-01-15T10:00:00.000Z'));
+		seed(marksheet({ lastExportedAt: daysAgo(5), firstUnbackedChangeAt: hoursAgo(47) }));
+
+		openPage(BackupNudgeHarness);
+
+		// An hour brings the change to exactly two days: still fresh. The next
+		// hour passes the line, and the open page says so.
+		await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+		expect(toastOnScreen()).toBeNull();
+
+		await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+		const element = toastOnScreen();
+		expect(element?.textContent).toContain("Changes from 2 days ago aren't backed up");
+	});
+
+	it('shows the toast only once in the session', async () => {
+		seed(marksheet({ lastExportedAt: daysAgo(5), firstUnbackedChangeAt: daysAgo(3) }));
+		openPage(BackupNudgeHarness);
+		await waitForToast();
+		toast.dismiss();
+
+		await page.getByRole('button', { name: 'Switch surface' }).click();
+
+		await settle();
+		expect(toastOnScreen()).toBeNull();
+	});
+
+	it('backs the document up from the toast action', async () => {
+		seed(marksheet({ lastExportedAt: daysAgo(5), firstUnbackedChangeAt: daysAgo(3) }));
+		openPage(BackupNudgeHarness);
+		const element = await waitForToast();
+		const file = captureDownload();
+
+		toastAction(element)?.click();
+
+		const handed = JSON.parse(await file.text()) as MarksheetDocument;
+		expect(handed.firstUnbackedChangeAt).toBeNull();
+		await expect
+			.element(page.getByTestId('backup-control'))
+			.toHaveTextContent(/Backup (just now|\d+s ago)/);
 	});
 });
 
@@ -156,6 +247,7 @@ describe('restoring a backup on the upload surface', () => {
 		const restored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '') as MarksheetDocument;
 		expect(restored.paper.label).toBe('10X Ph1');
 		expect(restored.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+		expect(restored.firstUnbackedChangeAt).toBeNull();
 		expect(marksheetStore().route()).toBe('/marksheet');
 	});
 

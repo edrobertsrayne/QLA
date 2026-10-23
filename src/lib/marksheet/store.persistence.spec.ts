@@ -6,7 +6,7 @@ import {
 	parseStoredDocument
 } from './document.js';
 import type { MarksheetDocument } from './document.js';
-import { parseRun, parsed, question, student } from './fixtures.spec-helpers.js';
+import { parseRun, parsed, question, student, writtenAsV2 } from './fixtures.spec-helpers.js';
 import { AUTOSAVE_DEBOUNCE_MS, type Unreadable } from './persistence.svelte.js';
 import {
 	NOW,
@@ -71,22 +71,28 @@ describe('boot gate', () => {
 			model: 'openai/gpt-6-luna',
 			generatedAt: NOW.toISOString()
 		};
-		const document = parsed({
-			breakdownConfirmedAt: NOW.toISOString(),
-			paper: {
-				...parsed().paper,
-				boundaries: [{ label: 'A', minimum: 52 }],
-				belowLowestLabel: 'U'
-			},
-			students: [student('student-1', 'Ada', 'Lovelace')],
-			topicNames: { '3.2.1.4': 'Rates of reaction' },
-			reports: { 'student-1': report }
-		});
-		const store = storeWith(fakeStorage({ [STORAGE_KEY]: JSON.stringify(document) }));
+		const written = writtenAsV2(
+			parsed({
+				breakdownConfirmedAt: NOW.toISOString(),
+				paper: {
+					...parsed().paper,
+					boundaries: [{ label: 'A', minimum: 52 }],
+					belowLowestLabel: 'U'
+				},
+				students: [student('student-1', 'Ada', 'Lovelace')],
+				topicNames: { '3.2.1.4': 'Rates of reaction' },
+				reports: { 'student-1': report }
+			})
+		);
+		const store = storeWith(fakeStorage({ [STORAGE_KEY]: JSON.stringify(written) }));
 
 		store.load();
 
-		expect(store.document).toEqual(document);
+		expect(store.document).toEqual({
+			...written,
+			schemaVersion: DOCUMENT_SCHEMA_VERSION,
+			firstUnbackedChangeAt: null
+		});
 		expect(store.route()).toBe('/marksheet');
 	});
 
@@ -396,6 +402,7 @@ describe('createFromParse', () => {
 		expect(written.schemaVersion).toBe(DOCUMENT_SCHEMA_VERSION);
 		expect(written.breakdownConfirmedAt).toBeNull();
 		expect(written.lastExportedAt).toBeNull();
+		expect(written.firstUnbackedChangeAt).toBeNull();
 		expect(written.createdAt).toBe(NOW.toISOString());
 		expect(written.updatedAt).toBe(NOW.toISOString());
 		expect(written.paper).toEqual({
@@ -1000,35 +1007,139 @@ describe('restoring a backup', () => {
 		expect(stored(storage).paper.label).toBe('10X Ph1');
 	});
 
-	it('stands the reminder up again for a document restored after a dismissal', () => {
+	it('clears the unbacked-change marker of the file it restores', () => {
 		const store = storeWith(fakeStorage());
-		store.dismissBackupReminder();
-
-		store.restoreBackup(readable(parsed({ lastExportedAt: null })));
-
-		expect(store.backupReminderDismissed).toBe(false);
-	});
-
-	it('stands the reminder up again for a document parsed after a dismissal', () => {
-		const store = storeWith(fakeStorage());
-		store.dismissBackupReminder();
-
-		store.createFromParse(
-			parseRun({ breakdown: { questions: [], aoDescriptions: [] }, filenames: ['paper.pdf'] })
+		const file = readable(
+			parsed({
+				lastExportedAt: NOW.toISOString(),
+				firstUnbackedChangeAt: new Date(NOW.getTime() + 60_000).toISOString()
+			})
 		);
 
-		expect(store.backupReminderDismissed).toBe(false);
+		expect(store.restoreBackup(file)).toBe(true);
+
+		expect(store.document?.firstUnbackedChangeAt).toBeNull();
 	});
 });
 
-describe('the backup reminder', () => {
-	it('stands down for the session when the teacher says later', () => {
+describe('changes since the last backup', () => {
+	/** A document with an undoable change in it, backed up, and a clock under the test's hand. */
+	function backedUpStore() {
+		let nowMs = NOW.getTime();
+		const storage = fakeStorage({
+			[STORAGE_KEY]: JSON.stringify(
+				parsed({
+					breakdownConfirmedAt: NOW.toISOString(),
+					students: [student('student-1', 'Ada', 'Lovelace')]
+				})
+			)
+		});
+		const store = storeWith(storage, () => new Date(nowMs));
+		store.load();
+		store.takeBackup();
+		return {
+			store,
+			storage,
+			/** Move the clock on, and let the debounced save catch up with it. */
+			at(ms: number) {
+				nowMs += ms;
+				vi.advanceTimersByTime(ms);
+			}
+		};
+	}
+
+	it('records the first change after a backup and leaves it alone for later changes', () => {
+		const { store, at } = backedUpStore();
+		expect(store.document?.firstUnbackedChangeAt).toBeNull();
+
+		at(60_000);
+		store.setMark('student-1', 'entry-1', 3);
+		const firstChange = new Date(NOW.getTime() + 60_000).toISOString();
+		expect(store.document?.firstUnbackedChangeAt).toBe(firstChange);
+
+		at(60_000);
+		store.setMark('student-1', 'entry-1', 2);
+		expect(store.document?.firstUnbackedChangeAt).toBe(firstChange);
+	});
+
+	it('writes the moment and reads it back after a reload', () => {
+		const { store, storage, at } = backedUpStore();
+		at(60_000);
+		store.setMark('student-1', 'entry-1', 3);
+		store.flush();
+
+		const reloaded = storeWith(storage, () => new Date(NOW.getTime() + 120_000));
+		reloaded.load();
+
+		expect(reloaded.document?.firstUnbackedChangeAt).toBe(
+			new Date(NOW.getTime() + 60_000).toISOString()
+		);
+	});
+
+	it('clears the moment when a backup is taken', () => {
+		const { store, at } = backedUpStore();
+		at(60_000);
+		store.setMark('student-1', 'entry-1', 3);
+
+		store.takeBackup();
+
+		expect(store.document?.firstUnbackedChangeAt).toBeNull();
+	});
+
+	it('leaves a document that has never been backed up unmarked', () => {
 		const store = storeWith(fakeStorage());
+		store.createFromParse(parseRun());
 
-		expect(store.backupReminderDismissed).toBe(false);
+		store.setPaperLabel('10X');
 
-		store.dismissBackupReminder();
+		expect(store.document?.firstUnbackedChangeAt).toBeNull();
+	});
 
-		expect(store.backupReminderDismissed).toBe(true);
+	it('starts the clock at the undo when nothing older is unbacked', () => {
+		const { store, at } = backedUpStore();
+		at(60_000);
+		store.removeStudent('student-1');
+		at(60_000);
+
+		expect(store.undo()).toBe(true);
+
+		expect(store.document?.firstUnbackedChangeAt).toBe(
+			new Date(NOW.getTime() + 120_000).toISOString()
+		);
+	});
+
+	it('keeps the older unbacked moment when an undo follows another change', () => {
+		const { store, at } = backedUpStore();
+		at(60_000);
+		store.setMark('student-1', 'entry-1', 3);
+		const firstChange = new Date(NOW.getTime() + 60_000).toISOString();
+		at(60_000);
+		store.removeStudent('student-1');
+
+		expect(store.undo()).toBe(true);
+
+		expect(store.document?.firstUnbackedChangeAt).toBe(firstChange);
+	});
+
+	it('compares the unbacked moment with the backup as dates, not text', () => {
+		// 10:00Z, though it sorts after the 10:30Z backup as text.
+		const marker = '2026-01-01T12:00:00+02:00';
+		const storage = fakeStorage({
+			[STORAGE_KEY]: JSON.stringify(
+				parsed({
+					breakdownConfirmedAt: NOW.toISOString(),
+					students: [student('student-1', 'Ada', 'Lovelace')],
+					lastExportedAt: '2026-01-01T10:30:00Z',
+					firstUnbackedChangeAt: marker
+				})
+			)
+		});
+		const store = storeWith(storage);
+		store.load();
+
+		store.removeStudent('student-1');
+		expect(store.undo()).toBe(true);
+
+		expect(store.document?.firstUnbackedChangeAt).toBe(NOW.toISOString());
 	});
 });

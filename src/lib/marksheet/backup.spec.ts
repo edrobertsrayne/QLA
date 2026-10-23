@@ -1,63 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { DOCUMENT_SCHEMA_VERSION } from './document.js';
 import type { MarksheetDocument } from './document.js';
-import { backupReminder, backupTakenAt, readBackup } from './backup.js';
-
-const NOW = new Date(2026, 0, 15, 10, 0);
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** A backup taken `days` ago, to the second, so the window's edge is testable. */
-function taken(days: number, seconds = 0): string {
-	return new Date(NOW.getTime() - days * DAY_MS - seconds * 1000).toISOString();
-}
+import { backupState, backupTakenAt, readBackup } from './backup.js';
+import { confirmed, entry, student, writtenAsV2, ago } from './fixtures.spec-helpers.js';
 
 function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return {
-		schemaVersion: DOCUMENT_SCHEMA_VERSION,
-		createdAt: NOW.toISOString(),
-		updatedAt: NOW.toISOString(),
-		breakdownConfirmedAt: NOW.toISOString(),
-		lastExportedAt: null,
-		paper: {
-			label: '10X Ph1',
-			className: '10C1',
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW.toISOString(),
-			boundaries: null,
-			belowLowestLabel: 'U'
-		},
+	return confirmed({
+		paper: { ...confirmed().paper, className: '10C1' },
 		breakdown: {
-			entries: [
-				{
-					id: 'entry-1',
-					label: '2bii',
-					questionNumber: '2',
-					marks: 4,
-					summary: 'Explain the process shown',
-					specPoint: '3.2.1.4',
-					commandWord: 'Explain',
-					ao: 'AO1',
-					original: null
-				}
-			],
+			entries: [entry('entry-1', '2bii', '2')],
 			warnings: [],
 			aoDescriptions: {}
 		},
-		students: [
-			{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false },
-			{ id: 'student-2', firstName: 'Grace', surname: 'Hopper', absent: false }
-		],
+		students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
 		marks: { 'student-1': { 'entry-1': 3 } },
-		topicNames: {},
-		reports: {},
 		...overrides
-	};
+	});
 }
 
 describe('backupTakenAt', () => {
 	it('reads the moment the document records, or nothing when it holds none', () => {
 		expect(backupTakenAt(marksheet())).toBeNull();
-		expect(backupTakenAt(marksheet({ lastExportedAt: taken(3) }))?.toISOString()).toBe(taken(3));
+		expect(backupTakenAt(marksheet({ lastExportedAt: ago(3) }))?.toISOString()).toBe(ago(3));
 	});
 
 	it('treats a moment it cannot read as no backup at all', () => {
@@ -65,53 +28,56 @@ describe('backupTakenAt', () => {
 	});
 });
 
-describe('backupReminder', () => {
-	it('says nothing while there is no marksheet to lose', () => {
-		expect(backupReminder(null, NOW)).toBeNull();
-	});
-
-	it('asks for a first backup once marks are entered', () => {
-		expect(backupReminder(marksheet(), NOW)).toEqual({ kind: 'never' });
-	});
-
-	it('says nothing about a document with no marks and no backup', () => {
-		expect(backupReminder(marksheet({ marks: {} }), NOW)).toBeNull();
-	});
-
-	it('says nothing while the last backup is inside the eviction window', () => {
-		expect(backupReminder(marksheet({ lastExportedAt: taken(6) }), NOW)).toBeNull();
-		// Exactly the window is not yet past it: the rule is "more than 7 days old".
-		expect(backupReminder(marksheet({ lastExportedAt: taken(7) }), NOW)).toBeNull();
-		expect(backupReminder(marksheet({ lastExportedAt: taken(7, 1) }), NOW)).toEqual({
-			kind: 'stale',
-			days: 7
+describe('backupState', () => {
+	it('counts a document that has never been backed up as changed from the moment it was created', () => {
+		expect(backupState(marksheet({ createdAt: ago(3) }))).toEqual({
+			kind: 'never',
+			changedAt: new Date(ago(3))
 		});
 	});
 
-	it('names how old a backup past the window is', () => {
-		expect(backupReminder(marksheet({ lastExportedAt: taken(30) }), NOW)).toEqual({
-			kind: 'stale',
-			days: 30
+	it('treats a backup moment it cannot read as never backed up', () => {
+		expect(backupState(marksheet({ lastExportedAt: 'not a date', createdAt: ago(3) }))).toEqual({
+			kind: 'never',
+			changedAt: new Date(ago(3))
 		});
 	});
 
-	it('asks for a first backup when the moment it records cannot be read', () => {
-		expect(backupReminder(marksheet({ lastExportedAt: 'not a date' }), NOW)).toEqual({
-			kind: 'never'
+	it('names the oldest change the last backup does not hold', () => {
+		expect(
+			backupState(marksheet({ lastExportedAt: ago(1), firstUnbackedChangeAt: ago(0.5) }))
+		).toEqual({
+			kind: 'unbacked',
+			takenAt: new Date(ago(1)),
+			changedAt: new Date(ago(0.5))
+		});
+	});
+
+	it('reads a backup that holds every change as clean', () => {
+		expect(backupState(marksheet({ lastExportedAt: ago(1) }))).toEqual({
+			kind: 'clean',
+			takenAt: new Date(ago(1))
+		});
+	});
+
+	it('treats an unreadable moment for the oldest change as nothing unbacked', () => {
+		expect(backupState(marksheet({ lastExportedAt: ago(1), firstUnbackedChangeAt: 'x' }))).toEqual({
+			kind: 'clean',
+			takenAt: new Date(ago(1))
 		});
 	});
 });
 
 describe('readBackup', () => {
 	it('reads what the restore confirm names: paper, class, students, marks and age', () => {
-		const document = marksheet({ lastExportedAt: taken(3) });
+		const document = marksheet({ lastExportedAt: ago(3) });
 
 		expect(readBackup(JSON.stringify(document))?.summary).toEqual({
 			paperLabel: '10X Ph1',
 			className: '10C1',
 			students: 2,
 			marks: 1,
-			takenAt: new Date(taken(3))
+			takenAt: new Date(ago(3))
 		});
 	});
 
@@ -129,6 +95,15 @@ describe('readBackup', () => {
 			marks: 0,
 			takenAt: null
 		});
+	});
+
+	it('reads a backup file written before changes were tracked', () => {
+		const written = writtenAsV2(marksheet({ lastExportedAt: ago(3), updatedAt: ago(2) }));
+
+		const read = readBackup(JSON.stringify(written));
+
+		expect(read?.summary.takenAt).toEqual(new Date(ago(3)));
+		expect(read?.document.firstUnbackedChangeAt).toBe(ago(2));
 	});
 
 	it('rejects anything that is not one of our documents', () => {

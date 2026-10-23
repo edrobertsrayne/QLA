@@ -7,7 +7,7 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import AoDescriptionsCard from '$lib/components/marksheet/AoDescriptionsCard.svelte';
 	import BreakdownTable from '$lib/components/marksheet/BreakdownTable.svelte';
-	import BackupCard from '$lib/components/shell/BackupCard.svelte';
+	import BackupControl from '$lib/components/marksheet/BackupControl.svelte';
 	import PaperLabelInput from '$lib/components/shell/PaperLabelInput.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -131,8 +131,8 @@
 						· this run: {usage.totalTokens} tokens · ${usage.estCost.toFixed(4)}{/if}
 				</p>
 			</div>
+			<BackupControl />
 		</div>
-		<BackupCard />
 	</header>
 
 	<div class="grid gap-6 lg:grid-cols-[320px_1fr]">

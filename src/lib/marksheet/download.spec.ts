@@ -21,6 +21,7 @@ function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocumen
 		updatedAt: NOW.toISOString(),
 		breakdownConfirmedAt: NOW.toISOString(),
 		lastExportedAt: null,
+		firstUnbackedChangeAt: null,
 		paper: {
 			label: '10X Ph1',
 			className: '10C1',
