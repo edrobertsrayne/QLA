@@ -123,7 +123,7 @@ describe('POST /api/feedback', () => {
 		expect((call?.init?.headers as Record<string, string>).Authorization).toBe('Bearer t');
 		const issue = JSON.parse(String(call?.init?.body));
 		expect(issue.title).toBe('Grid header overlaps the first row');
-		expect(issue.labels).toEqual(['feedback', 'needs-triage']);
+		expect(issue.labels).toEqual(['needs-triage']);
 		expect(issue.body).toContain('Grid header overlaps\nmore detail');
 		expect(issue.body).toContain('Page: `/marksheet`');
 	});

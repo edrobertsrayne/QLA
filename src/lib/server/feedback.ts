@@ -9,7 +9,7 @@ import { FEEDBACK_MAX_CHARS, type FiledIssue } from '$lib/feedback';
 import { readRecord, readString, rejectUnknownKeys } from './request-fields';
 
 const FEEDBACK_REPO = 'edrobertsrayne/QLA';
-const FEEDBACK_LABELS = ['feedback', 'needs-triage'];
+const FEEDBACK_LABELS = ['needs-triage'];
 const PAGE_MAX_CHARS = 500;
 const TITLE_MAX_CHARS = 80;
 const FALLBACK_PREFIX = 'Feedback: ';
