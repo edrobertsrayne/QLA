@@ -148,22 +148,22 @@
 			</div>
 		</div>
 	{:else if layout === 2}
-		<header class="flex flex-wrap items-start gap-6 border-b pb-4">
-			<div class="max-w-2xl space-y-1">
+		<header class="space-y-4">
+			<div class="max-w-3xl space-y-1">
 				<h1 class="text-xl font-semibold">Check the breakdowns</h1>
 				{@render intro()}
 			</div>
-			<div class="ml-auto space-y-2 text-right">
-				{@render confirmButton('')}
-				<p class="text-xs text-muted-foreground">
+			<div class="flex flex-wrap items-center gap-4">
+				{@render tierTabs()}
+				<p class="ml-auto text-right text-xs text-muted-foreground">
 					{review.tiers[0].entries.length + review.tiers[1].entries.length} columns across both tiers
 					· {review.orderedPairs.length} common questions ({review.pairedMarks} marks)
 				</p>
-				{@render blockerList()}
+				{@render confirmButton('')}
 			</div>
+			<div class="flex justify-end">{@render blockerList()}</div>
 		</header>
 		<div class="space-y-3">
-			{@render tierTabs()}
 			{@render tierPanel()}
 		</div>
 	{:else}
