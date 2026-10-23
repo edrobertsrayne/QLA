@@ -49,9 +49,7 @@
 <main class="mx-auto max-w-7xl space-y-6 p-6">
 	<header class="space-y-1">
 		<p class="text-lg font-semibold">8463 Paper 1 June 2024</p>
-		<p class="text-sm text-muted-foreground">
-			Two tiers · {review.orderedPairs.length} common questions
-		</p>
+		<p class="text-sm text-muted-foreground">Two tiers</p>
 	</header>
 	<Notices />
 
@@ -60,20 +58,14 @@
 			<div>
 				<h1 class="text-xl font-semibold">Check the breakdowns</h1>
 				<p class="text-sm text-muted-foreground">
-					Fix anything the model got wrong on either tier, and check which questions are common to
-					both. Once confirmed, these build your marksheet.
+					Fix anything the model got wrong on either tier. Once confirmed, these build your
+					marksheet.
+				</p>
+				<p class="mt-2 text-sm text-muted-foreground">
+					The <strong>Common with</strong> column pairs questions that appear on both tiers. Only entries
+					with the same available marks are offered.
 				</p>
 			</div>
-			<section class="space-y-1 rounded-lg border p-3 text-xs">
-				<h2 class="text-sm font-semibold">Common questions</h2>
-				<p class="text-muted-foreground">
-					Pick each question's partner in the <strong>Common with</strong> column. Only entries with the
-					same available marks are offered.
-				</p>
-				<p>
-					{review.orderedPairs.length} pairs · {review.pairedMarks} marks
-				</p>
-			</section>
 			<ConfirmCard />
 		</aside>
 
