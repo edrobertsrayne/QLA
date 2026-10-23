@@ -16,6 +16,20 @@
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import { toast } from 'svelte-sonner';
+	// PROTOTYPE (#112): ?variant=A|B|C swaps in a tier-slot upload variant on a fake run.
+	import { page } from '$app/state';
+	import PrototypeSwitcher from '$lib/components/prototype/PrototypeSwitcher.svelte';
+	import VariantA from '$lib/prototypes/upload-tiers/VariantA.svelte';
+	import VariantB from '$lib/prototypes/upload-tiers/VariantB.svelte';
+	import VariantC from '$lib/prototypes/upload-tiers/VariantC.svelte';
+	import StubPanel from '$lib/prototypes/upload-tiers/StubPanel.svelte';
+	const VARIANTS = [
+		{ key: 'today', label: 'Today (no tiers)' },
+		{ key: 'A', label: 'Tier cards' },
+		{ key: 'B', label: 'Matrix' },
+		{ key: 'C', label: 'Tabs + run dialog' }
+	];
+	const variant = $derived(page.url.searchParams.get('variant') ?? 'today');
 
 	// Mirrors the server per-file cap (src/lib/server/parse/schema.ts).
 	const MAX_FILE_BYTES = 15 * 1024 * 1024;
@@ -176,103 +190,115 @@
 	<title>Upload · QLA</title>
 </svelte:head>
 
-<main class="mx-auto max-w-4xl space-y-6 p-6">
-	<CorruptDocumentAlert />
+{#if variant === 'A'}
+	<VariantA />
+{:else if variant === 'B'}
+	<VariantB />
+{:else if variant === 'C'}
+	<VariantC />
+{:else}
+	<main class="mx-auto max-w-4xl space-y-6 p-6">
+		<CorruptDocumentAlert />
 
-	<div class="space-y-2">
-		<h1 class="text-2xl font-bold tracking-tight">Parse assessment paper</h1>
-		<p class="text-sm text-muted-foreground">
-			Attach an assessment paper and/or its markscheme PDF, then Run. You get one JSON entry per
-			marked question with marks, a short summary, spec point (exact lift or null), command word and
-			assessment objective.
-		</p>
-	</div>
+		<div class="space-y-2">
+			<h1 class="text-2xl font-bold tracking-tight">Parse assessment paper</h1>
+			<p class="text-sm text-muted-foreground">
+				Attach an assessment paper and/or its markscheme PDF, then Run. You get one JSON entry per
+				marked question with marks, a short summary, spec point (exact lift or null), command word
+				and assessment objective.
+			</p>
+		</div>
 
-	<Separator />
+		<Separator />
 
-	{#if !store.document}
-		<RestoreCard />
-	{/if}
+		{#if !store.document}
+			<RestoreCard />
+		{/if}
 
-	<div class="grid gap-6 lg:grid-cols-2">
-		<SourceFilesCard
-			{paperFileName}
-			{markschemeFileName}
-			{paperError}
-			{markschemeError}
-			{onPaperChange}
-			{onMarkschemeChange}
-		/>
-		<Card.Root class="overflow-visible">
-			<Card.Header>
-				<Card.Title>Options</Card.Title>
-				<Card.Description
-					>Pick a curated model with native PDF parsing, or choose Custom for any OpenRouter model
-					id.</Card.Description
-				>
-			</Card.Header>
-			<Card.Content class="space-y-4">
-				<div class="space-y-2">
-					<Label>Model override (optional)</Label>
-					<ModelSelect
-						bind:value={modelOverride}
-						bind:custom={modelCustom}
-						models={models.options}
-						loading={models.loading}
-						loadError={models.error}
-						onretry={() => void loadModels()}
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="spec">Specification link (optional)</Label>
-					<Input
-						id="spec"
-						type="url"
-						inputmode="url"
-						placeholder="https://…/specification.pdf"
-						value={specUrl}
-						aria-invalid={specUrlError !== null}
-						oninput={onSpecUrlInput}
-					/>
-					{#if specUrlError}
-						<p class="text-sm text-destructive">{specUrlError}</p>
-					{:else}
-						<p class="text-sm text-muted-foreground">
-							Link to the exam board specification PDF. It is fetched for this run only and must be
-							a readable PDF.
-						</p>
-					{/if}
-				</div>
-			</Card.Content>
-		</Card.Root>
-	</div>
+		<div class="grid gap-6 lg:grid-cols-2">
+			<SourceFilesCard
+				{paperFileName}
+				{markschemeFileName}
+				{paperError}
+				{markschemeError}
+				{onPaperChange}
+				{onMarkschemeChange}
+			/>
+			<Card.Root class="overflow-visible">
+				<Card.Header>
+					<Card.Title>Options</Card.Title>
+					<Card.Description
+						>Pick a curated model with native PDF parsing, or choose Custom for any OpenRouter model
+						id.</Card.Description
+					>
+				</Card.Header>
+				<Card.Content class="space-y-4">
+					<div class="space-y-2">
+						<Label>Model override (optional)</Label>
+						<ModelSelect
+							bind:value={modelOverride}
+							bind:custom={modelCustom}
+							models={models.options}
+							loading={models.loading}
+							loadError={models.error}
+							onretry={() => void loadModels()}
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="spec">Specification link (optional)</Label>
+						<Input
+							id="spec"
+							type="url"
+							inputmode="url"
+							placeholder="https://…/specification.pdf"
+							value={specUrl}
+							aria-invalid={specUrlError !== null}
+							oninput={onSpecUrlInput}
+						/>
+						{#if specUrlError}
+							<p class="text-sm text-destructive">{specUrlError}</p>
+						{:else}
+							<p class="text-sm text-muted-foreground">
+								Link to the exam board specification PDF. It is fetched for this run only and must
+								be a readable PDF.
+							</p>
+						{/if}
+					</div>
+				</Card.Content>
+			</Card.Root>
+		</div>
 
-	<div>
-		<Button type="button" size="lg" disabled={!canRun} onclick={run}>
-			{#if running}
-				<Loader2Icon class="animate-spin" />Running…
-			{:else}
-				Run
-			{/if}
-		</Button>
-	</div>
+		<div>
+			<Button type="button" size="lg" disabled={!canRun} onclick={run}>
+				{#if running}
+					<Loader2Icon class="animate-spin" />Running…
+				{:else}
+					Run
+				{/if}
+			</Button>
+		</div>
 
-	{#if fatal}
-		<FatalAlert {fatal} retryable={fatalIsRetryable} />
-	{/if}
+		{#if fatal}
+			<FatalAlert {fatal} retryable={fatalIsRetryable} />
+		{/if}
 
-	{#if storedEntryCount !== null}
-		<Card.Root aria-live="polite">
-			<Card.Header>
-				<Card.Title>Breakdown stored</Card.Title>
-				<Card.Description>
-					{storedEntryCount} entries saved in this browser. Check them against the paper before you start
-					entering marks; another paper starts from New upload in the nav.
-				</Card.Description>
-			</Card.Header>
-			<Card.Content>
-				<Button href="/breakdown">Open breakdown</Button>
-			</Card.Content>
-		</Card.Root>
-	{/if}
-</main>
+		{#if storedEntryCount !== null}
+			<Card.Root aria-live="polite">
+				<Card.Header>
+					<Card.Title>Breakdown stored</Card.Title>
+					<Card.Description>
+						{storedEntryCount} entries saved in this browser. Check them against the paper before you
+						start entering marks; another paper starts from New upload in the nav.
+					</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					<Button href="/breakdown">Open breakdown</Button>
+				</Card.Content>
+			</Card.Root>
+		{/if}
+	</main>
+{/if}
+{#if variant !== 'today'}
+	<StubPanel />
+{/if}
+<PrototypeSwitcher variants={VARIANTS} current={variant} />
