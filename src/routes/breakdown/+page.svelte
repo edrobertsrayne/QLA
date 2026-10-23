@@ -23,7 +23,8 @@
 	import { isWholeNumber, totalMarks } from '$lib/marksheet/document.js';
 	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 	import { agree, count } from '$lib/prose.js';
-	// PROTOTYPE (#113): ?variant=A|B|C swaps in a two-tier review variant on stub data.
+	// PROTOTYPE (#113): ?variant=A1|A2|A3 (layouts of the winning variant A) or B|C (earlier
+	// losers, off the bar) swaps in a two-tier review on stub data.
 	import { page } from '$app/state';
 	import PrototypeSwitcher from '$lib/components/prototype/PrototypeSwitcher.svelte';
 	import LockedView from '$lib/prototypes/two-tier-review/LockedView.svelte';
@@ -33,9 +34,9 @@
 	import VariantC from '$lib/prototypes/two-tier-review/VariantC.svelte';
 	import { twoTierReview } from '$lib/prototypes/two-tier-review/review.svelte.js';
 	const VARIANTS = [
-		{ key: 'A', label: 'Pair column' },
-		{ key: 'B', label: 'Pairs tab' },
-		{ key: 'C', label: 'Side by side' }
+		{ key: 'A1', label: 'One column' },
+		{ key: 'A2', label: 'Header bar' },
+		{ key: 'A3', label: 'Sidebar tabs' }
 	];
 	const variant = $derived(page.url.searchParams.get('variant'));
 	const review = twoTierReview();
@@ -145,7 +146,7 @@
 	{:else if variant === 'C'}
 		<VariantC />
 	{:else}
-		<VariantA />
+		<VariantA layout={variant === 'A2' ? 2 : variant === 'A3' ? 3 : 1} />
 	{/if}
 	<StubPanel />
 	<PrototypeSwitcher variants={VARIANTS} current={variant} />

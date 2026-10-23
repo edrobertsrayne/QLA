@@ -1,25 +1,35 @@
 <!--
-	PROTOTYPE (#113) — Variant A "Pair column": today's review page with tier tabs
-	(as on upload). Each tier's table gains a "Common with" column: a picker of the
-	other tier's equal-mark free entries. A pair is the same fact seen from either tab.
+	PROTOTYPE (#113) — Variant A "Pair column": tier tabs, and each tier's table gains a
+	"Common with" column: a picker of the other tier's equal-mark free entries.
+	`layout` tries three ways of laying out the page around the table:
+	1 "One column": the sidebar is one flow, heading → what it builds → button.
+	2 "Header bar": no sidebar; title, summary and button run across the top.
+	3 "Sidebar tabs": the sidebar lists the tiers and is how you switch between them.
 -->
 <script lang="ts">
+	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
+	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
+	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
-	import ConfirmCard from './ConfirmCard.svelte';
+	import { cn } from '$lib/utils.js';
 	import Notices from './Notices.svelte';
 	import TierTable from './TierTable.svelte';
 	import { twoTierReview, type Entry, type TierIndex } from './review.svelte.js';
+
+	let { layout }: { layout: 1 | 2 | 3 } = $props();
 
 	const review = twoTierReview();
 	let tab = $state('0');
 	const current = $derived<TierIndex>(tab === '1' ? 1 : 0);
 	const other = $derived<TierIndex>(current === 0 ? 1 : 0);
+	const blockers = $derived(review.blockers);
 
-	function tabHasProblem(t: TierIndex): boolean {
-		return review.blockers.some((b) => b.tier === t);
+	function tierProblems(t: TierIndex): string[] {
+		return blockers.filter((b) => b.tier === t).map((b) => b.message);
 	}
+	const pairProblems = $derived(blockers.filter((b) => b.tier === 'pairs').map((b) => b.message));
 </script>
 
 {#snippet pairCell(entry: Entry)}
@@ -46,64 +56,174 @@
 	</select>
 {/snippet}
 
+{#snippet intro()}
+	<p class="text-sm text-muted-foreground">
+		Fix anything the model got wrong on either tier, and pair the questions that appear on both in
+		the <strong>Common with</strong> column (only entries with the same available marks are offered).
+	</p>
+{/snippet}
+
+{#snippet confirmButton(cls: string)}
+	<Button class={cls} disabled={blockers.length > 0} onclick={() => review.confirm()}>
+		Confirm and build marksheet
+	</Button>
+{/snippet}
+
+{#snippet blockerList()}
+	{#if blockers.length > 0}
+		<div class="space-y-1 text-xs text-destructive">
+			{#each blockers as b (b.message)}
+				<p>{b.message}</p>
+			{/each}
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet tierTabs()}
+	<ToggleGroup.Root type="single" variant="outline" bind:value={tab}>
+		{#each [0, 1] as const as t (t)}
+			<ToggleGroup.Item value={String(t)} class="relative px-4">
+				{review.tierLabel(t)}
+				{#if tierProblems(t).length > 0}
+					<span class="absolute top-1 right-1 size-2 rounded-full bg-destructive"></span>
+				{/if}
+			</ToggleGroup.Item>
+		{/each}
+	</ToggleGroup.Root>
+{/snippet}
+
+{#snippet tierPanel()}
+	<div class="flex items-end gap-4">
+		<div class="space-y-1">
+			<Label for="a-tier-name" class="text-xs text-muted-foreground"
+				>Tier name, as printed on the paper</Label
+			>
+			<Input
+				id="a-tier-name"
+				class="w-56"
+				placeholder="e.g. Higher"
+				value={review.tiers[current].tierName ?? ''}
+				oninput={(e) => review.setTierName(current, e.currentTarget.value)}
+			/>
+		</div>
+		<p class="pb-2 text-xs text-muted-foreground">
+			{review.tiers[current].filename} · {review.tiers[current].entries.length} entries · {review.tierMarks(
+				current
+			)} marks
+		</p>
+	</div>
+	{#key current}
+		<TierTable tier={current} pairHeading="Common with Tier {other + 1}" {pairCell} />
+	{/key}
+{/snippet}
+
 <main class="mx-auto max-w-7xl space-y-6 p-6">
-	<header class="space-y-1">
-		<p class="text-lg font-semibold">8463 Paper 1 June 2024</p>
-		<p class="text-sm text-muted-foreground">Two tiers</p>
-	</header>
+	<p class="text-lg font-semibold">8463 Paper 1 June 2024</p>
 	<Notices />
 
-	<div class="grid gap-6 lg:grid-cols-[300px_1fr]">
-		<aside class="space-y-4 lg:sticky lg:top-4 lg:self-start">
-			<div>
+	{#if layout === 1}
+		<div class="grid gap-6 lg:grid-cols-[280px_1fr]">
+			<aside class="space-y-4 lg:sticky lg:top-4 lg:self-start">
 				<h1 class="text-xl font-semibold">Check the breakdowns</h1>
-				<p class="text-sm text-muted-foreground">
-					Fix anything the model got wrong on either tier. Once confirmed, these build your
-					marksheet.
-				</p>
-				<p class="mt-2 text-sm text-muted-foreground">
-					The <strong>Common with</strong> column pairs questions that appear on both tiers. Only entries
-					with the same available marks are offered.
-				</p>
+				{@render intro()}
+				<dl class="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-y py-3 text-sm">
+					{#each [0, 1] as const as t (t)}
+						<dt>{review.tierLabel(t)}</dt>
+						<dd class="text-right text-muted-foreground tabular-nums">
+							{review.tiers[t].entries.length} columns · {review.tierMarks(t)} marks
+						</dd>
+					{/each}
+					<dt>Common questions</dt>
+					<dd class="text-right text-muted-foreground tabular-nums">
+						{review.orderedPairs.length} pairs · {review.pairedMarks} marks
+					</dd>
+				</dl>
+				{@render blockerList()}
+				{@render confirmButton('w-full')}
+				<p class="text-xs text-muted-foreground">Both breakdowns and the pairs become read-only.</p>
+			</aside>
+			<div class="min-w-0 space-y-3">
+				{@render tierTabs()}
+				{@render tierPanel()}
 			</div>
-			<ConfirmCard />
-		</aside>
-
-		<div class="min-w-0 space-y-3">
-			<ToggleGroup.Root type="single" variant="outline" bind:value={tab}>
-				{#each [0, 1] as const as t (t)}
-					<ToggleGroup.Item value={String(t)} class="relative px-4">
-						{review.tierLabel(t)}
-						{#if tabHasProblem(t)}
-							<span class="absolute top-1 right-1 size-2 rounded-full bg-destructive"></span>
-						{/if}
-					</ToggleGroup.Item>
-				{/each}
-			</ToggleGroup.Root>
-
-			<div class="flex items-end gap-4">
-				<div class="space-y-1">
-					<Label for="a-tier-name" class="text-xs text-muted-foreground"
-						>Tier name, as printed on the paper</Label
-					>
-					<Input
-						id="a-tier-name"
-						class="w-56"
-						placeholder="e.g. Higher"
-						value={review.tiers[current].tierName ?? ''}
-						oninput={(e) => review.setTierName(current, e.currentTarget.value)}
-					/>
-				</div>
-				<p class="pb-2 text-xs text-muted-foreground">
-					{review.tiers[current].filename} · {review.tiers[current].entries.length} entries · {review.tierMarks(
-						current
-					)} marks
-				</p>
-			</div>
-
-			{#key current}
-				<TierTable tier={current} pairHeading="Common with Tier {other + 1}" {pairCell} />
-			{/key}
 		</div>
-	</div>
+	{:else if layout === 2}
+		<header class="flex flex-wrap items-start gap-6 border-b pb-4">
+			<div class="max-w-2xl space-y-1">
+				<h1 class="text-xl font-semibold">Check the breakdowns</h1>
+				{@render intro()}
+			</div>
+			<div class="ml-auto space-y-2 text-right">
+				{@render confirmButton('')}
+				<p class="text-xs text-muted-foreground">
+					{review.tiers[0].entries.length + review.tiers[1].entries.length} columns across both tiers
+					· {review.orderedPairs.length} common questions ({review.pairedMarks} marks)
+				</p>
+				{@render blockerList()}
+			</div>
+		</header>
+		<div class="space-y-3">
+			{@render tierTabs()}
+			{@render tierPanel()}
+		</div>
+	{:else}
+		<div class="grid gap-6 lg:grid-cols-[260px_1fr]">
+			<aside class="space-y-4 lg:sticky lg:top-4 lg:self-start">
+				<h1 class="text-xl font-semibold">Check the breakdowns</h1>
+				{@render intro()}
+				<nav class="space-y-1">
+					{#each [0, 1] as const as t (t)}
+						{@const problems = tierProblems(t)}
+						<button
+							type="button"
+							class={cn(
+								'flex w-full items-start gap-2 rounded-md border px-3 py-2 text-left text-sm',
+								current === t ? 'border-primary bg-muted' : 'border-transparent hover:bg-muted/50'
+							)}
+							aria-current={current === t ? 'page' : undefined}
+							onclick={() => (tab = String(t))}
+						>
+							{#if problems.length > 0}
+								<CircleAlertIcon class="mt-0.5 size-4 shrink-0 text-destructive" />
+							{:else}
+								<CircleCheckIcon class="mt-0.5 size-4 shrink-0 text-emerald-600" />
+							{/if}
+							<span class="space-y-0.5">
+								<span class="block font-medium">{review.tierLabel(t)}</span>
+								<span class="block text-xs text-muted-foreground">
+									{review.tiers[t].entries.length} columns · {review.tierMarks(t)} marks
+								</span>
+								{#each problems as p (p)}
+									<span class="block text-xs text-destructive">{p}</span>
+								{/each}
+							</span>
+						</button>
+					{/each}
+					<div class="flex items-start gap-2 px-3 py-2 text-sm">
+						{#if pairProblems.length > 0}
+							<CircleAlertIcon class="mt-0.5 size-4 shrink-0 text-destructive" />
+						{:else}
+							<CircleCheckIcon class="mt-0.5 size-4 shrink-0 text-emerald-600" />
+						{/if}
+						<span class="space-y-0.5">
+							<span class="block font-medium">Common questions</span>
+							<span class="block text-xs text-muted-foreground">
+								{review.orderedPairs.length} pairs · {review.pairedMarks} marks
+							</span>
+							{#each pairProblems as p (p)}
+								<span class="block text-xs text-destructive">{p}</span>
+							{/each}
+						</span>
+					</div>
+				</nav>
+				{@render confirmButton('w-full')}
+				<p class="text-xs text-muted-foreground">
+					Builds your marksheet. Both breakdowns and the pairs become read-only.
+				</p>
+			</aside>
+			<div class="min-w-0 space-y-3">
+				{@render tierPanel()}
+			</div>
+		</div>
+	{/if}
 </main>
