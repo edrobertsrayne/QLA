@@ -35,6 +35,7 @@ import {
 	type ModelResult
 } from '$lib/server/parse/model';
 import { setStubTransport, stubBreakdown, stubUsage } from '$lib/server/parse/model.spec-helpers';
+import { buildPdfBytes } from '$lib/server/parse/pdf.spec-helpers';
 import { clearEnvForTests, setEnvForTests } from '$lib/server/parse/env';
 import { resetDnsLookup, resetSpecFetch, setDnsLookup, setSpecFetch } from '$lib/server/parse/spec';
 
@@ -48,6 +49,7 @@ interface SeamWarning {
 
 interface SeamBody {
 	breakdown?: {
+		tierName?: string | null;
 		questions?: Array<Record<string, unknown>>;
 		aoDescriptions?: Array<{ ao: string; description: string | null }>;
 	};
@@ -61,48 +63,6 @@ interface SeamBody {
 		message?: string;
 		retryable?: boolean;
 	};
-}
-
-function buildPdfBytes(pages: string[]): Uint8Array {
-	const enc = new TextEncoder();
-	let out = '%PDF-1.4\n';
-	const offsets: number[] = [0];
-	const count = pages.length;
-	const pageIds: number[] = [];
-	const contentIds: number[] = [];
-	for (let i = 0; i < count; i++) {
-		pageIds.push(3 + i * 2);
-		contentIds.push(4 + i * 2);
-	}
-	const fontId = 3 + count * 2;
-	const objects: string[] = [];
-	objects.push('1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n');
-	objects.push(
-		`2 0 obj<</Type/Pages/Kids[${pageIds.map((id) => `${id} 0 R`).join(' ')}]/Count ${count}>>endobj\n`
-	);
-	for (let i = 0; i < count; i++) {
-		objects.push(
-			`${pageIds[i]} 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents ${contentIds[i]} 0 R/Resources<</Font<</F1 ${fontId} 0 R>>>>>>endobj\n`
-		);
-		const safe = pages[i].replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-		const stream = `BT /F1 12 Tf 72 720 Td (${safe}) Tj ET`;
-		objects.push(
-			`${contentIds[i]} 0 obj<</Length ${enc.encode(stream).length}>>stream\n${stream}\nendstream\nendobj\n`
-		);
-	}
-	objects.push(`${fontId} 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n`);
-	for (const obj of objects) {
-		offsets.push(enc.encode(out).length);
-		out += obj;
-	}
-	const xrefPos = enc.encode(out).length;
-	const total = fontId + 1;
-	out += `xref\n0 ${total}\n0000000000 65535 f \n`;
-	for (let i = 1; i < total; i++) {
-		out += `${String(offsets[i] ?? 0).padStart(10, '0')} 00000 n \n`;
-	}
-	out += `trailer<</Size ${total}/Root 1 0 R>>\nstartxref\n${xrefPos}\n%%EOF`;
-	return enc.encode(out);
 }
 
 function pdf(name: string, text = 'QLA extraction probe'): File {
@@ -331,6 +291,10 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		expect(status).toBe(200);
 		expect(seen?.useNativePdf).toBe(true);
 		expect(seen?.modelId).toBe('openai/gpt-4o-mini');
+		// pdf.js detaches the buffer it extracts, so the native copy must be
+		// encoded first; an empty one is silently useless to the model.
+		const decoded = Buffer.from(seen?.paper?.pdfBase64 ?? '', 'base64').toString('latin1');
+		expect(decoded.startsWith('%PDF-')).toBe(true);
 		expect(body.warnings).toEqual([]);
 	});
 
@@ -493,6 +457,8 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		expect(body.warnings).toEqual([]);
 		expect(seen?.spec?.pageCount).toBe(1);
 		expect(seen?.spec?.text).toContain('Specification topic code');
+		const decoded = Buffer.from(seen?.spec?.pdfBase64 ?? '', 'base64').toString('latin1');
+		expect(decoded.startsWith('%PDF-')).toBe(true);
 	});
 
 	describe('AO descriptions', () => {
@@ -572,6 +538,46 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 				{ ao: 'AO2', description: null },
 				{ ao: 'AO3', description: null }
 			]);
+		});
+	});
+
+	describe('tier name', () => {
+		it('carries the trimmed tier name the model read', async () => {
+			setModelTransport(async () =>
+				stubResultWith({ ...stubBreakdown(), tierName: '  Higher Tier  ' })
+			);
+
+			const { status, body } = await post(paperOnlyForm());
+
+			expect(status).toBe(200);
+			expect(body.breakdown?.tierName).toBe('Higher Tier');
+			expect(body.warnings).toEqual([]);
+		});
+
+		it('turns a blank tier name into null', async () => {
+			setModelTransport(async () => stubResultWith({ ...stubBreakdown(), tierName: '   ' }));
+
+			const { body } = await post(paperOnlyForm());
+
+			expect(body.breakdown?.tierName).toBeNull();
+		});
+
+		it('turns a missing tier name into null', async () => {
+			setModelTransport(async () =>
+				stubResultWith({ questions: stubBreakdown().questions, aoDescriptions: [] })
+			);
+
+			const { body } = await post(paperOnlyForm());
+
+			expect(body.breakdown?.tierName).toBeNull();
+		});
+
+		it('turns a non-string tier name into null', async () => {
+			setModelTransport(async () => stubResultWith({ ...stubBreakdown(), tierName: 42 }));
+
+			const { body } = await post(paperOnlyForm());
+
+			expect(body.breakdown?.tierName).toBeNull();
 		});
 	});
 
@@ -724,6 +730,7 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 describe('validateBreakdown v1 rules', () => {
 	it('accepts a minimal valid breakdown with zero warnings', () => {
 		const breakdown: Breakdown = {
+			tierName: null,
 			questions: [
 				{
 					id: '2bii',
@@ -799,6 +806,24 @@ describe('buildPromptText v1', () => {
 		expect(prompt).toContain('specification text ONLY');
 		expect(prompt).toContain('NEVER invent');
 		expect(prompt).toContain('Use null when no specification is provided');
+	});
+
+	it('appends the #108 tier-name instruction verbatim, on its own line after the AO descriptions', () => {
+		const instruction = [
+			'Top level also has tierName: the tier this paper is set at, lifted from the documents themselves (cover, title page or running header) — NEVER from a filename.',
+			'Copy the tier words verbatim as printed (e.g. "Higher Tier", "Foundation Tier", "Higher"), dropping only the wording around them such as the paper number, calculator rubric or brackets (e.g. "Higher (Calculator) Paper 2H" gives "Higher").',
+			'If the tier appears only as the letter suffix of the paper code (e.g. 8300/1H, 1MA1/2F), give the word that letter stands for: H gives "Higher", F gives "Foundation".',
+			'A paper number, paper title, qualification level or calculator rubric is NEVER a tier: "Paper 1", "Paper 2", "01", "Modelling physics", "A-level", "AS", "GCSE", "Non-Calculator" are not tiers.',
+			"When no tier is printed, tierName is null. When the assessment paper and markscheme both name the tier, use the assessment paper's wording."
+		].join(' ');
+
+		const prompt = buildPromptText({ paperText: 'p', markschemeText: null, useNativePdf: true });
+		const lines = prompt.split('\n');
+		const at = lines.indexOf(instruction);
+
+		expect(prompt).toContain('Top level also has tierName');
+		expect(at).toBeGreaterThan(0);
+		expect(lines[at - 1]).toContain('Top level also has aoDescriptions');
 	});
 
 	it('instructs the v1 shape with either-input handling', () => {

@@ -1,6 +1,6 @@
 // The grade surface: the banner button, the dialog's validation and save,
-// and the grid's Total | Grade | To next columns. Test-only: nothing in the
-// app imports this.
+// the tier name field, and the grid's Total | Grade | To next columns.
+// Test-only: nothing in the app imports this.
 import { describe, expect, it } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import {
@@ -8,25 +8,45 @@ import {
 	entry,
 	readSeeded,
 	seed,
-	student
+	student,
+	tier
 } from '$lib/marksheet/fixtures.spec-helpers.js';
-import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import type { BreakdownEntry, MarksheetDocument, StoredTier } from '$lib/marksheet/document.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { openPage } from '../spec-helpers.js';
 import MarksheetPage from './+page.svelte';
+
+/** One tier carrying these entries, and whatever else the test seeds. */
+function withEntries(
+	entries: BreakdownEntry[],
+	over: Partial<MarksheetDocument> = {}
+): MarksheetDocument {
+	return confirmed({
+		tiers: [tier({ breakdown: { entries, warnings: [] } })],
+		...over
+	});
+}
 
 /** A class covering every column state: full, part-marked, over-max and absent. */
 // Paper total is 10: entry-1 offers 4, entry-2 offers 6.
 function gradedClass(over: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({
-		breakdown: {
-			entries: [
-				entry('entry-1', '1a', '1', { marks: 4, summary: 'Define a term' }),
-				entry('entry-2', '1b', '1', { marks: 6, summary: 'Explain the result' })
-			],
-			warnings: [],
-			aoDescriptions: {}
-		},
+		tiers: [
+			tier({
+				breakdown: {
+					entries: [
+						entry('entry-1', '1a', '1', { marks: 4, summary: 'Define a term' }),
+						entry('entry-2', '1b', '1', { marks: 6, summary: 'Explain the result' })
+					],
+					warnings: []
+				},
+				boundaries: [
+					{ label: 'A', minimum: 9 },
+					{ label: 'B', minimum: 5 },
+					{ label: 'C', minimum: 2 }
+				]
+			})
+		],
 		students: [
 			student('full', 'Full', 'Marks'),
 			student('partial', 'Part', 'Marked'),
@@ -38,17 +58,32 @@ function gradedClass(over: Partial<MarksheetDocument> = {}): MarksheetDocument {
 			partial: { 'entry-1': 2 },
 			over: { 'entry-1': 9, 'entry-2': 1 }
 		},
-		paper: {
-			label: '10X Ph1',
-			className: null,
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: '2026-01-01T10:00:00.000Z',
-			boundaries: [
-				{ label: 'A', minimum: 9 },
-				{ label: 'B', minimum: 5 },
-				{ label: 'C', minimum: 2 }
-			],
-			belowLowestLabel: 'U'
+		...over
+	});
+}
+
+/** Two papers with a grade each, and one student on each. */
+function twoTierGraded(over: Partial<MarksheetDocument> = {}): MarksheetDocument {
+	return confirmed({
+		tiers: [
+			tier({
+				tierName: 'Higher',
+				breakdown: { entries: [entry('higher-1', 'H1', '1', { marks: 10 })], warnings: [] },
+				boundaries: [{ label: 'A', minimum: 9 }]
+			}),
+			tier({
+				tierName: 'Foundation',
+				breakdown: { entries: [entry('foundation-1', 'F1', '1', { marks: 10 })], warnings: [] },
+				boundaries: [{ label: 'C', minimum: 1 }]
+			})
+		],
+		students: [
+			student('higher-student', 'Ada', 'Lovelace', false, 0),
+			student('foundation-student', 'Grace', 'Hopper', false, 1)
+		],
+		marks: {
+			'higher-student': { 'higher-1': 9 },
+			'foundation-student': { 'foundation-1': 2 }
 		},
 		...over
 	});
@@ -90,12 +125,7 @@ describe('grade boundaries', () => {
 
 	it('opens Set grade boundaries with no grades yet, saving A level labels', async () => {
 		seed(
-			confirmed({
-				breakdown: {
-					entries: [entry('entry-1', '1a', '1', { marks: 10 })],
-					warnings: [],
-					aoDescriptions: {}
-				},
+			withEntries([entry('entry-1', '1a', '1', { marks: 10 })], {
 				students: [student('student-1', 'Ada', 'Lovelace')],
 				marks: { 'student-1': { 'entry-1': 8 } }
 			})
@@ -115,7 +145,7 @@ describe('grade boundaries', () => {
 		await expect.element(page.getByTestId('grade-boundaries-footer')).toHaveTextContent('6 grades');
 		await page.getByRole('button', { name: 'Save boundaries' }).click();
 
-		expect(marksheetStore().document?.paper.boundaries).toEqual([
+		expect(marksheetStore().document?.tiers[0].boundaries).toEqual([
 			{ label: 'A*', minimum: 8 },
 			{ label: 'A', minimum: 7 },
 			{ label: 'B', minimum: 5 },
@@ -130,12 +160,7 @@ describe('grade boundaries', () => {
 
 	it('shows each problem on its row and keeps Save disabled until fixed', async () => {
 		seed(
-			confirmed({
-				breakdown: {
-					entries: [entry('entry-1', '1a', '1', { marks: 10 })],
-					warnings: [],
-					aoDescriptions: {}
-				},
+			withEntries([entry('entry-1', '1a', '1', { marks: 10 })], {
 				students: [student('student-1', 'Ada', 'Lovelace')]
 			})
 		);
@@ -196,12 +221,7 @@ describe('grade boundaries', () => {
 
 	it('rejects non-whole marks, duplicate and missing labels, and a clash with the below-lowest label', async () => {
 		seed(
-			confirmed({
-				breakdown: {
-					entries: [entry('entry-1', '1a', '1', { marks: 10 })],
-					warnings: [],
-					aoDescriptions: {}
-				},
+			withEntries([entry('entry-1', '1a', '1', { marks: 10 })], {
 				students: [student('student-1', 'Ada', 'Lovelace')]
 			})
 		);
@@ -232,12 +252,7 @@ describe('grade boundaries', () => {
 
 	it('switching scale keeps marks typed against carried-over labels', async () => {
 		seed(
-			confirmed({
-				breakdown: {
-					entries: [entry('entry-1', '1a', '1', { marks: 10 })],
-					warnings: [],
-					aoDescriptions: {}
-				},
+			withEntries([entry('entry-1', '1a', '1', { marks: 10 })], {
 				students: [student('student-1', 'Ada', 'Lovelace')]
 			})
 		);
@@ -271,14 +286,14 @@ describe('grade boundaries', () => {
 		// two grades.
 		await expect.element(page.getByTestId('grade-boundaries-footer')).toHaveTextContent('2 grades');
 		await page.getByRole('button', { name: 'Save boundaries' }).click();
-		expect(marksheetStore().document?.paper.boundaries).toEqual([
+		expect(marksheetStore().document?.tiers[0].boundaries).toEqual([
 			{ label: 'A', minimum: 9 },
 			{ label: 'B', minimum: 5 }
 		]);
 
 		await page.getByRole('button', { name: 'Grade boundaries (2)' }).click();
 		await page.getByRole('button', { name: 'Remove grades' }).click();
-		expect(marksheetStore().document?.paper.boundaries).toBeNull();
+		expect(marksheetStore().document?.tiers[0].boundaries).toBeNull();
 		await expect
 			.element(page.getByRole('button', { name: 'Set grade boundaries' }))
 			.toBeInTheDocument();
@@ -292,7 +307,7 @@ describe('grade boundaries', () => {
 		await userEvent.fill(page.getByLabelText('Lowest mark for A', { exact: true }), '7');
 		await userEvent.keyboard('{Escape}');
 
-		expect(marksheetStore().document?.paper.boundaries).toEqual([
+		expect(marksheetStore().document?.tiers[0].boundaries).toEqual([
 			{ label: 'A', minimum: 9 },
 			{ label: 'B', minimum: 5 },
 			{ label: 'C', minimum: 2 }
@@ -306,13 +321,13 @@ describe('grade boundaries', () => {
 		await page.getByRole('button', { name: 'Grade boundaries (3)' }).click();
 		await userEvent.fill(page.getByLabelText('Lowest mark for A', { exact: true }), '10');
 		await page.getByRole('button', { name: 'Save boundaries' }).click();
-		expect(marksheetStore().document?.paper.boundaries?.[0]).toEqual({
+		expect(marksheetStore().document?.tiers[0].boundaries?.[0]).toEqual({
 			label: 'A',
 			minimum: 10
 		});
 
 		await page.getByTestId('undo').getByRole('button', { name: 'Undo' }).click();
-		expect(marksheetStore().document?.paper.boundaries).toEqual([
+		expect(marksheetStore().document?.tiers[0].boundaries).toEqual([
 			{ label: 'A', minimum: 9 },
 			{ label: 'B', minimum: 5 },
 			{ label: 'C', minimum: 2 }
@@ -320,18 +335,13 @@ describe('grade boundaries', () => {
 
 		await page.getByRole('button', { name: 'Grade boundaries (3)' }).click();
 		await page.getByRole('button', { name: 'Remove grades' }).click();
-		expect(marksheetStore().document?.paper.boundaries).toBeNull();
+		expect(marksheetStore().document?.tiers[0].boundaries).toBeNull();
 		await expect.element(page.getByText('Grade boundaries removed.')).toBeInTheDocument();
 	});
 
 	it('boundaries saved in the dialog reach storage, and a blank scale saves marks only', async () => {
 		seed(
-			confirmed({
-				breakdown: {
-					entries: [entry('entry-1', '1a', '1', { marks: 10 })],
-					warnings: [],
-					aoDescriptions: {}
-				},
+			withEntries([entry('entry-1', '1a', '1', { marks: 10 })], {
 				students: [student('student-1', 'Ada', 'Lovelace')],
 				marks: { 'student-1': { 'entry-1': 8 } }
 			})
@@ -344,7 +354,7 @@ describe('grade boundaries', () => {
 		await page.getByRole('button', { name: 'Save boundaries' }).click();
 
 		marksheetStore().flush();
-		expect(readSeeded().paper.boundaries).toEqual([{ label: 'A*', minimum: 8 }]);
+		expect(readSeeded().tiers[0].boundaries).toEqual([{ label: 'A*', minimum: 8 }]);
 
 		await page.getByRole('button', { name: 'Grade boundaries (1)' }).click();
 		await userEvent.fill(page.getByLabelText('Lowest mark for A*'), '');
@@ -352,9 +362,121 @@ describe('grade boundaries', () => {
 			.element(page.getByTestId('grade-boundaries-footer'))
 			.toHaveTextContent('No grades: reports show marks only');
 		await page.getByRole('button', { name: 'Save boundaries' }).click();
-		expect(marksheetStore().document?.paper.boundaries).toBeNull();
+		expect(marksheetStore().document?.tiers[0].boundaries).toBeNull();
 	});
 });
+
+describe('two-tier boundaries', () => {
+	it('names each tier’s button and dialog, and saves only the open tier', async () => {
+		const doc = twoTierGraded();
+		doc.tiers[0].boundaries = null;
+		const foundationBoundaries = doc.tiers[1].boundaries;
+		seed(doc);
+		openPage(MarksheetPage);
+
+		await page.getByRole('button', { name: 'Set Higher boundaries' }).click();
+		await expect
+			.element(page.getByRole('dialog').getByText('Grade boundaries · Tier 1 · Higher'))
+			.toBeInTheDocument();
+
+		await page.getByRole('radio', { name: 'A level A*–E' }).click();
+		await userEvent.fill(page.getByLabelText('Lowest mark for A*'), '8');
+		await page.getByRole('button', { name: 'Save boundaries' }).click();
+
+		expect(marksheetStore().document?.tiers[0].boundaries).toEqual([{ label: 'A*', minimum: 8 }]);
+		expect(marksheetStore().document?.tiers[1].boundaries).toEqual(foundationBoundaries);
+		await expect
+			.element(page.getByRole('button', { name: 'Higher boundaries (1)' }))
+			.toBeInTheDocument();
+
+		await page.getByRole('radio', { name: /Tier 2 · Foundation/ }).click();
+		await expect
+			.element(page.getByRole('button', { name: 'Foundation boundaries (1)' }))
+			.toBeInTheDocument();
+		await page.getByRole('button', { name: 'Foundation boundaries (1)' }).click();
+		await expect
+			.element(page.getByRole('dialog').getByText('Grade boundaries · Tier 2 · Foundation'))
+			.toBeInTheDocument();
+	});
+
+	it('keeps grade columns and totals on the open tier’s paper', async () => {
+		const doc = twoTierGraded();
+		doc.tiers[1].boundaries = null;
+		seed(doc);
+		const screen = openPage(MarksheetPage);
+
+		expect(totalCell(screen, 'higher-student').textContent?.trim()).toBe('9');
+		expect(gradeCell(screen, 'higher-student').textContent?.trim()).toBe('A');
+
+		await page.getByRole('radio', { name: /Tier 2 · Foundation/ }).click();
+
+		await expect
+			.element(page.getByTestId('total-cell').filter({ hasText: '2' }))
+			.toBeInTheDocument();
+		expect(totalCell(screen, 'foundation-student').textContent?.trim()).toBe('2');
+		expect(
+			screen.container.querySelector(
+				'[data-testid="grade-cell"][data-student-id="foundation-student"]'
+			)
+		).toBeNull();
+		expect(
+			screen.container.querySelector(
+				'[data-testid="to-next-cell"][data-student-id="foundation-student"]'
+			)
+		).toBeNull();
+	});
+
+	it('edits a tier name, blank allowed on one tier and distinct names required on two', async () => {
+		seed(twoTierGraded());
+		openPage(MarksheetPage);
+
+		await page.getByRole('button', { name: 'Higher boundaries (1)' }).click();
+		const name = page.getByTestId('tier-name');
+		await userEvent.fill(name, 'Higher Tier');
+		await page.getByTestId('tier-name-save').click();
+
+		expect(marksheetStore().document?.tiers[0].tierName).toBe('Higher Tier');
+		// A printed name is display data: there is no rename to take back.
+		expect(marksheetStore().undoable).toBeNull();
+		await expect
+			.element(page.getByRole('dialog').getByText('Grade boundaries · Tier 1 · Higher Tier'))
+			.toBeInTheDocument();
+
+		// Another tier's name is refused: the tabs must stay tellable apart.
+		await userEvent.fill(name, 'Foundation');
+		await expect
+			.element(page.getByTestId('tier-name-issue'))
+			.toHaveTextContent('The two tiers need different names.');
+		await expect.element(page.getByTestId('tier-name-save')).toBeDisabled();
+		expect(marksheetStore().document?.tiers[0].tierName).toBe('Higher Tier');
+
+		await userEvent.fill(name, '');
+		await expect
+			.element(page.getByTestId('tier-name-issue'))
+			.toHaveTextContent('Each tier needs a name.');
+		await expect.element(page.getByTestId('tier-name-save')).toBeDisabled();
+	});
+
+	it('lets a single tier have no name at all', async () => {
+		seed(gradedClass());
+		openPage(MarksheetPage);
+
+		await page.getByRole('button', { name: 'Grade boundaries (3)' }).click();
+		await expect
+			.element(page.getByRole('dialog').getByText('Grade boundaries', { exact: true }))
+			.toBeInTheDocument();
+		const name = page.getByTestId('tier-name');
+		await userEvent.fill(name, 'Higher');
+		await page.getByTestId('tier-name-save').click();
+		expect(marksheetStore().document?.tiers[0].tierName).toBe('Higher');
+
+		await userEvent.fill(name, '');
+		await page.getByTestId('tier-name-save').click();
+		expect(marksheetStore().document?.tiers[0].tierName).toBeNull();
+		expect(page.getByTestId('tier-name-issue').query()).toBeNull();
+	});
+});
+
 describe('marksheet grade columns', () => {
 	it('shows Total, Grade and To next for a full student, with Top-grade blank', async () => {
 		seed(gradedClass());
@@ -401,7 +523,9 @@ describe('marksheet grade columns', () => {
 	});
 
 	it('shows only Total without boundaries', async () => {
-		seed(gradedClass({ paper: { ...gradedClass().paper, boundaries: null } }));
+		const doc = gradedClass();
+		doc.tiers[0].boundaries = null;
+		seed(doc);
 		const screen = openPage(MarksheetPage);
 
 		expect(totalCell(screen, 'full').textContent?.trim()).toBe('9');
@@ -414,15 +538,11 @@ describe('marksheet grade columns', () => {
 	});
 
 	describe('percent entry', () => {
-		function seedPaper(total: number, boundaries: { label: string; minimum: number }[] | null) {
-			const doc = gradedClass({
-				breakdown: {
-					entries: total > 0 ? [entry('entry-1', '1a', '1', { marks: total })] : [],
-					warnings: [],
-					aoDescriptions: {}
-				}
-			});
-			doc.paper.boundaries = boundaries;
+		function seedPaper(total: number, boundaries: StoredTier['boundaries']) {
+			const doc = gradedClass();
+			doc.tiers[0].breakdown.entries =
+				total > 0 ? [entry('entry-1', '1a', '1', { marks: total })] : [];
+			doc.tiers[0].boundaries = boundaries;
 			seed(doc);
 		}
 
@@ -439,7 +559,7 @@ describe('marksheet grade columns', () => {
 			await expect.element(page.getByText('→ 42/83')).toBeInTheDocument();
 			await page.getByRole('button', { name: 'Save boundaries' }).click();
 			// 50% of 83 = 41.5 → 42, and A* must sit above A.
-			expect(marksheetStore().document?.paper.boundaries).toEqual([
+			expect(marksheetStore().document?.tiers[0].boundaries).toEqual([
 				{ label: 'A*', minimum: 54 },
 				{ label: 'A', minimum: 42 }
 			]);
@@ -455,7 +575,7 @@ describe('marksheet grade columns', () => {
 			await userEvent.fill(page.getByLabelText('Lowest percentage for A', { exact: true }), '50');
 			await userEvent.fill(page.getByLabelText('Lowest percentage for B'), '0');
 			await page.getByRole('button', { name: 'Save boundaries' }).click();
-			expect(marksheetStore().document?.paper.boundaries).toEqual([
+			expect(marksheetStore().document?.tiers[0].boundaries).toEqual([
 				{ label: 'A*', minimum: 80 },
 				{ label: 'A', minimum: 40 },
 				{ label: 'B', minimum: 0 }
@@ -475,7 +595,7 @@ describe('marksheet grade columns', () => {
 			await expect.element(page.getByLabelText('Lowest mark for A')).toHaveValue('54');
 			await page.getByRole('radio', { name: '%' }).click();
 			await page.getByRole('button', { name: 'Save boundaries' }).click();
-			expect(marksheetStore().document?.paper.boundaries).toEqual([
+			expect(marksheetStore().document?.tiers[0].boundaries).toEqual([
 				{ label: 'A', minimum: 54 },
 				{ label: 'B', minimum: 31 }
 			]);
@@ -496,7 +616,7 @@ describe('marksheet grade columns', () => {
 				.element(page.getByTestId('grade-boundaries-footer'))
 				.toHaveTextContent('1 grade');
 			await page.getByRole('button', { name: 'Save boundaries' }).click();
-			expect(marksheetStore().document?.paper.boundaries).toEqual([{ label: 'B', minimum: 31 }]);
+			expect(marksheetStore().document?.tiers[0].boundaries).toEqual([{ label: 'B', minimum: 31 }]);
 		});
 
 		it('restores the stored mark when switching back to Marks after invalid % text', async () => {
@@ -520,7 +640,7 @@ describe('marksheet grade columns', () => {
 				.element(page.getByTestId('grade-boundaries-footer'))
 				.toHaveTextContent('2 grades');
 			await page.getByRole('button', { name: 'Save boundaries' }).click();
-			expect(marksheetStore().document?.paper.boundaries).toEqual([
+			expect(marksheetStore().document?.tiers[0].boundaries).toEqual([
 				{ label: 'A', minimum: 54 },
 				{ label: 'B', minimum: 31 }
 			]);

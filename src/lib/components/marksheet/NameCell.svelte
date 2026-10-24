@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
+	import ArrowLeftRightIcon from '@lucide/svelte/icons/arrow-left-right';
 	import UserXIcon from '@lucide/svelte/icons/user-x';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { caretAtEnd } from '$lib/attachments.js';
@@ -16,17 +17,24 @@
 	import { readName, studentName } from '$lib/marksheet/students.js';
 	import { cn } from '$lib/utils.js';
 	import { CELL_EDITOR, NAME_COLUMN, rowControl, selectedCell } from './grid-layout.js';
+	import OffTierBadge from './OffTierBadge.svelte';
 
 	let {
 		student,
 		active,
 		onSelect,
-		onMove
+		onMove,
+		onMoveTier,
+		moveLabel
 	}: {
 		student: StoredStudent;
 		active: boolean;
 		onSelect: () => void;
 		onMove: (move: GridMove) => void;
+		/** Move the student to the other tier: present only on a two-tier tab. */
+		onMoveTier?: () => void;
+		/** The tier that control moves them to, for its label and tooltip. */
+		moveLabel?: string;
 	} = $props();
 
 	const store = marksheetStore();
@@ -180,6 +188,19 @@
 			>
 				{name}
 			</span>
+			<OffTierBadge {student} />
+			{#if onMoveTier && moveLabel}
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					class={cn(rowControl, 'shrink-0 text-muted-foreground')}
+					aria-label={`Move ${name} to ${moveLabel}`}
+					title={`Move to ${moveLabel}`}
+					onclick={onMoveTier}
+				>
+					<ArrowLeftRightIcon class="size-3.5" />
+				</Button>
+			{/if}
 			<Button
 				variant="ghost"
 				size="icon-xs"

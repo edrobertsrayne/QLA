@@ -9,6 +9,7 @@ export function stubUsage(): ParseUsage {
 /** Deterministic fixture breakdown. Schema-valid with zero warnings. */
 export function stubBreakdown(): Breakdown {
 	return {
+		tierName: null,
 		questions: [
 			{
 				id: '1a',

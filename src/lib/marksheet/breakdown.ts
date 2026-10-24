@@ -6,8 +6,16 @@
 // state — so the rules are testable on their own and every surface that shows
 // a breakdown derives them the same way.
 
-import type { BreakdownEntry, EditableField, StoredBreakdown, StoredWarning } from './document.js';
-import { EDITABLE_FIELDS, totalMarks } from './document.js';
+import type {
+	BreakdownEntry,
+	CommonQuestion,
+	EditableField,
+	MarksheetDocument,
+	StoredBreakdown,
+	StoredWarning,
+	TierIndex
+} from './document.js';
+import { EDITABLE_FIELDS, tierEntries } from './document.js';
 import {
 	ASSESSMENT_OBJECTIVES,
 	type AssessmentObjective
@@ -104,6 +112,65 @@ export function confirmationBlockers(entries: readonly BreakdownEntry[]): Confir
 	};
 }
 
+/**
+ * Why a whole assessment cannot be confirmed: what stops each tier's own
+ * breakdown, plus the rules that only exist when two papers are reviewed
+ * together. A tier name is what tells the marksheet, analysis and reports
+ * apart, and a pair whose marks differ cannot compare like with like.
+ */
+export interface AssessmentBlockers {
+	blocked: boolean;
+	/** Each tier's own blockers, in tier order. */
+	tiers: ConfirmationBlockers[];
+	/** Tiers with no name; empty on a single tier, where there is nothing to tell apart. */
+	blankTierNames: TierIndex[];
+	/** Both tiers carry the same name, trimmed and ignoring case. False on a single tier. */
+	sameTierNames: boolean;
+	/** Pairs whose entry is missing from its tier, or whose marks are unknown or differ between the two tiers. */
+	unequalPairs: CommonQuestion[];
+}
+
+/** What stops confirming the assessment, naming every offender (empty when nothing does). */
+export function assessmentBlockers(document: MarksheetDocument): AssessmentBlockers {
+	const tiers = document.tiers.map((stored) => confirmationBlockers(stored.breakdown.entries));
+
+	const twoTiers = document.tiers.length === 2;
+	const firstName = (document.tiers[0]?.tierName ?? '').trim();
+	const secondName = (document.tiers[1]?.tierName ?? '').trim();
+
+	const blankTierNames: TierIndex[] = [];
+	if (twoTiers) {
+		if (firstName === '') blankTierNames.push(0);
+		if (secondName === '') blankTierNames.push(1);
+	}
+
+	const sameTierNames = twoTiers && firstName.toLowerCase() === secondName.toLowerCase();
+
+	const unequalPairs = document.commonQuestions.filter((pair) => {
+		const tier1 = tierEntries(document, 0).find((entry) => entry.id === pair.tier1EntryId);
+		const tier2 = tierEntries(document, 1).find((entry) => entry.id === pair.tier2EntryId);
+		return (
+			tier1 === undefined ||
+			tier2 === undefined ||
+			tier1.marks === null ||
+			tier2.marks === null ||
+			tier1.marks !== tier2.marks
+		);
+	});
+
+	return {
+		blocked:
+			tiers.some((blocker) => blocker.blocked) ||
+			blankTierNames.length > 0 ||
+			sameTierNames ||
+			unequalPairs.length > 0,
+		tiers,
+		blankTierNames,
+		sameTierNames,
+		unequalPairs
+	};
+}
+
 /** What an entry is missing, in the order worth fixing it. */
 export type AttentionReason = 'no-available-marks' | 'empty-label' | 'duplicate-label';
 
@@ -159,42 +226,6 @@ export function entryEdits(entry: BreakdownEntry): EntryEdits {
 	return {
 		added: false,
 		fields: EDITABLE_FIELDS.filter((field) => original[field] !== entry[field])
-	};
-}
-
-/** How a breakdown adds up against the total printed on the paper. */
-export interface PaperTotalCheck {
-	/** The total the teacher typed off the paper. */
-	paperTotal: number;
-	/** Marks the breakdown accounts for: the entries whose marks are known. */
-	accounted: number;
-	/** Marks the printed total is missing, negative when the entries overrun it. */
-	unaccounted: number;
-	/** `unaccounted` read as a verdict: nothing, a shortfall, or an overrun. */
-	status: 'adds-up' | 'unaccounted' | 'over';
-	/** The entries with no available marks yet, which may explain the shortfall. */
-	noAvailableMarks: BreakdownEntry[];
-}
-
-/**
- * Check a breakdown against the total printed on the paper — the only thing
- * that catches an entry the parse never emitted. The entries with no available
- * marks yet ride along, so whoever reads the shortfall can say whether it is
- * waiting on marks or looks like an entry that is missing.
- */
-export function reconcilePaperTotal(
-	entries: readonly BreakdownEntry[],
-	paperTotal: number
-): PaperTotalCheck {
-	const noAvailableMarks = entries.filter((entry) => entry.marks === null);
-	const accounted = totalMarks(entries);
-	const unaccounted = paperTotal - accounted;
-	return {
-		paperTotal,
-		accounted,
-		unaccounted,
-		status: unaccounted > 0 ? 'unaccounted' : unaccounted < 0 ? 'over' : 'adds-up',
-		noAvailableMarks
 	};
 }
 

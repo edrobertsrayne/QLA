@@ -4,7 +4,7 @@
 // Kept away from the components and free of I/O, so every age boundary is
 // testable without a browser — including the day the only copy left matters.
 
-import { markCount, parseStoredDocument, type MarksheetDocument } from './document.js';
+import { parseStoredDocument, storedMarkCount, type MarksheetDocument } from './document.js';
 
 /** A stored moment as a date, or null when it holds none that can be read. */
 function readMoment(recorded: string | null): Date | null {
@@ -69,10 +69,10 @@ export function readBackup(
 	return {
 		document,
 		summary: {
-			paperLabel: document.paper.label,
-			className: document.paper.className,
+			paperLabel: document.label,
+			className: document.className,
 			students: document.students.length,
-			marks: markCount(document),
+			marks: storedMarkCount(document),
 			takenAt: backupTakenAt(document)
 		}
 	};

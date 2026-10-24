@@ -6,37 +6,56 @@
 // reactive state; every change goes through a command, never by poking the
 // document directly.
 
-import type { Breakdown, ParseUsage, ParseWarning } from '$lib/server/parse/schema.js';
+import type { ParseUsage } from '$lib/server/parse/schema.js';
 import type { AssessmentObjective } from '$lib/parse/assessment-objectives.js';
-import { analyseMarksheet } from './analysis.js';
-import { confirmationBlockers, entryName, needsAttention, questionBands } from './breakdown.js';
+import {
+	applyAoDescription,
+	assessmentFromParses,
+	trimOrNull,
+	type CreateFromAssessmentInput
+} from './create-assessment.js';
+import { analyseTier, type MarksheetAnalysis } from './analysis.js';
+import {
+	assessmentBlockers,
+	entryName,
+	needsAttention,
+	questionBands,
+	type AssessmentBlockers,
+	type AttentionItem,
+	type QuestionBand
+} from './breakdown.js';
 import { backupFile, type QlaFile } from './download.js';
 import {
 	applyPaste,
 	emptyPasteResult,
 	textGrid,
+	trimPasteGrid,
 	type PasteAnchor,
 	type PasteResult
 } from './paste.js';
 import {
-	DEFAULT_BELOW_LOWEST_LABEL,
+	allEntries,
 	copyOfDocument,
-	DOCUMENT_SCHEMA_VERSION,
 	dropUnreachable,
-	labelFromFilename,
+	entryTierOf,
 	localId,
 	marksOnEntry,
 	marksOverMax,
+	pairOfEntry,
+	partnerIdOf,
 	putMark,
 	removeMark,
+	tierEntries,
 	type AoDescriptions,
 	type BreakdownEntry,
-	type EntryValues,
+	type CommonQuestion,
 	type MarksheetDocument,
 	type ReportGenerationInput,
 	type ReportProse,
 	type StoredStudent,
-	type StoredWarning
+	type StoredTier,
+	type StoredWarning,
+	type TierIndex
 } from './document.js';
 import {
 	AUTOSAVE_DEBOUNCE_MS,
@@ -48,6 +67,7 @@ import {
 import {
 	newNames,
 	newStudent,
+	readName,
 	sortStudentsByName,
 	studentName,
 	type StudentName,
@@ -66,43 +86,26 @@ export interface MarksheetStoreDeps {
 /** The surface the stored state allows. */
 export type BootRoute = '/' | '/breakdown' | '/marksheet';
 
-export interface CreateFromParseInput {
-	breakdown: Breakdown;
-	warnings: ParseWarning[];
-	/** Shown for this session; never stored. */
-	usage: ParseUsage;
-	filenames: string[];
-}
-
-/** A field the teacher has cleared means "none", not an empty string. */
-function trimOrNull(value: string | null): string | null {
-	const trimmed = value?.trim() ?? '';
-	return trimmed === '' ? null : trimmed;
-}
-
-/** Sets a trimmed AO description, or removes the key when it is blank. */
-function applyAoDescription(
-	descriptions: AoDescriptions,
-	ao: AssessmentObjective,
-	text: string | null
-): void {
-	const trimmed = trimOrNull(text);
-	if (trimmed === null) delete descriptions[ao];
-	else descriptions[ao] = trimmed;
-}
-
 export class MarksheetStore {
 	readonly #now: () => Date;
 	readonly #persistence: DocumentPersistence;
 
 	document = $state<MarksheetDocument | null>(null);
-	entries = $derived(this.document?.breakdown.entries ?? []);
-	students = $derived(this.document?.students ?? []);
-	warnings = $derived(this.document?.breakdown.warnings ?? []);
+	tierCount: number = $derived(this.document?.tiers.length ?? 0);
+	tiers: StoredTier[] = $derived(this.document?.tiers ?? []);
+	entries: BreakdownEntry[] = $derived(this.document ? allEntries(this.document) : []);
+	students: StoredStudent[] = $derived(this.document?.students ?? []);
+	warnings: StoredWarning[] = $derived(this.tiers.flatMap((tier) => tier.breakdown.warnings));
+	aoDescriptions: AoDescriptions = $derived(this.document?.aoDescriptions ?? {});
+	commonQuestions: CommonQuestion[] = $derived(this.document?.commonQuestions ?? []);
+	label: string | null = $derived(this.document?.label ?? null);
+	className: string | null = $derived(this.document?.className ?? null);
 	/** The stored document that could not be read, if the last read found one. */
 	unreadable = $state<Unreadable | null>(null);
 	/** This session's parse cost. Absent after a reload. */
 	runUsage = $state<ParseUsage | null>(null);
+	/** Why matching proposed no pairs, when it failed. Session-only, like `runUsage`. */
+	matchNotice = $state<string | null>(null);
 	/** The one change undo would take back, or nothing. */
 	undoable = $state<Undoable | null>(null);
 	/**
@@ -111,6 +114,12 @@ export class MarksheetStore {
 	 * a stale account beside a sheet that has moved on is worse than none.
 	 */
 	pasteNotice = $state<PasteResult | null>(null);
+	/**
+	 * Why a paste was refused outright, when there is nowhere to put it: a
+	 * class list with marks has to wait for a tier. Session-only, cleared by the
+	 * next change like the paste notice.
+	 */
+	pasteRefusal = $state<string | null>(null);
 	/**
 	 * Whether this session's one backup nudge toast has been shown. It is about
 	 * the document in hand, so a new document asks again; a reload starts over.
@@ -151,86 +160,72 @@ export class MarksheetStore {
 		return document.breakdownConfirmedAt === null ? '/breakdown' : '/marksheet';
 	}
 
-	/** The bands the breakdown table groups its rows under. */
-	questionBands = $derived(questionBands(this.entries));
+	/** What stops the whole assessment being confirmed right now. */
+	blockers: AssessmentBlockers = $derived(
+		this.document
+			? assessmentBlockers(this.document)
+			: { blocked: false, tiers: [], blankTierNames: [], sameTierNames: false, unequalPairs: [] }
+	);
 
-	/** What stops the breakdown being confirmed right now. */
-	blockers = $derived(confirmationBlockers(this.entries));
+	/** One tier's entries in paper order. */
+	entriesOf(tier: TierIndex): BreakdownEntry[] {
+		return this.document ? tierEntries(this.document, tier) : [];
+	}
 
-	/** The entries worth a second look before confirming, in document order. */
-	attention = $derived(this.document ? needsAttention(this.document.breakdown) : []);
+	/** The bands one tier's breakdown table groups its rows under. */
+	bandsOf(tier: TierIndex): QuestionBand[] {
+		return questionBands(this.entriesOf(tier));
+	}
+
+	/** The entries on one tier worth a second look before confirming, in document order. */
+	attentionOf(tier: TierIndex): AttentionItem[] {
+		const stored = this.document?.tiers[tier];
+		return stored ? needsAttention(stored.breakdown) : [];
+	}
 
 	/**
-	 * What the marks say about every entry: facility, band and coverage, worst
-	 * first. Derived from the document as it stands, so it is current on every
-	 * change and there is nothing to run or to go out of date.
+	 * What the marks say about every entry on one tier: facility, band and
+	 * coverage, worst first. Derived from the document as it stands, so it is
+	 * current on every change and there is nothing to run or to go out of date.
 	 */
-	analysis = $derived(analyseMarksheet(this.document));
+	analysisOf(tier: TierIndex): MarksheetAnalysis {
+		return analyseTier(this.document, tier);
+	}
+
+	/** The students who sit one tier. */
+	studentsOf(tier: TierIndex): StoredStudent[] {
+		return this.students.filter((student) => student.tier === tier);
+	}
+
+	/** The students whose tier is not set yet. */
+	studentsWithoutTier(): StoredStudent[] {
+		return this.students.filter((student) => student.tier === null);
+	}
+
+	/** One tier's parse findings, the ones beside its own breakdown. */
+	warningsOf(tier: TierIndex): StoredWarning[] {
+		return this.document?.tiers[tier]?.breakdown.warnings ?? [];
+	}
+
+	/** The pair one entry belongs to, or null when it is not a common question. */
+	pairOf(tier: TierIndex, entryId: string): CommonQuestion | null {
+		return this.document ? pairOfEntry(this.document, tier, entryId) : null;
+	}
+
+	/** The other tier's entry id in an entry's pair, or null when it has no partner. */
+	partnerOf(tier: TierIndex, entryId: string): string | null {
+		return this.document ? partnerIdOf(this.document, tier, entryId) : null;
+	}
 
 	/**
-	 * The parse handoff: a run that validated becomes the stored document at
-	 * once, unconfirmed, so a reload before the teacher has read it costs
-	 * nothing. `usage` stays in memory.
+	 * The parse handoff: a finished run becomes the stored document at once,
+	 * unconfirmed, so a reload before the teacher has read it costs nothing.
+	 * `usage` stays in memory.
 	 */
-	createFromParse(input: CreateFromParseInput): void {
-		const at = this.#now();
-		const entries: BreakdownEntry[] = input.breakdown.questions.map((question) => {
-			const values: EntryValues = {
-				label: question.id,
-				questionNumber: question.questionNumber,
-				marks: question.marks,
-				summary: question.summary,
-				specPoint: question.specPoint,
-				commandWord: question.commandWord,
-				ao: question.ao
-			};
-			// What the parse produced, so the review table can show what has been
-			// changed since.
-			return { id: localId(), ...values, original: { ...values } };
-		});
-		const entryIdFor = (label: string | null): string | null => {
-			if (label === null) return null;
-			const matches = input.breakdown.questions.filter((question) => question.id === label);
-			// Only a label naming exactly one entry can carry a finding. A label the
-			// parse repeated, or one it never emitted (`q[3]` for an entry with no
-			// id), cannot be pinned to a row, so it stays beside the table.
-			return matches.length === 1
-				? entries[input.breakdown.questions.indexOf(matches[0])].id
-				: null;
-		};
-		const warnings: StoredWarning[] = input.warnings.map((warning) => ({
-			...warning,
-			questionId: entryIdFor(warning.questionId)
-		}));
-
-		const aoDescriptions: AoDescriptions = {};
-		for (const { ao, description } of input.breakdown.aoDescriptions) {
-			applyAoDescription(aoDescriptions, ao, description);
-		}
-
-		const document: MarksheetDocument = {
-			schemaVersion: DOCUMENT_SCHEMA_VERSION,
-			createdAt: at.toISOString(),
-			updatedAt: at.toISOString(),
-			breakdownConfirmedAt: null,
-			lastExportedAt: null,
-			firstUnbackedChangeAt: null,
-			paper: {
-				label: labelFromFilename(input.filenames[0]),
-				className: null,
-				sourceFilenames: [...input.filenames],
-				parsedAt: at.toISOString(),
-				boundaries: null,
-				belowLowestLabel: DEFAULT_BELOW_LOWEST_LABEL
-			},
-			breakdown: { entries, warnings, aoDescriptions },
-			students: [],
-			marks: {},
-			topicNames: {},
-			reports: {}
-		};
-		this.#adopt(document);
+	createFromAssessment(input: CreateFromAssessmentInput): void {
+		this.#adopt(assessmentFromParses(input, this.#now()));
 		this.runUsage = input.usage;
+		this.matchNotice = input.matchNotice ?? null;
 		this.#persistence.writeNow();
 	}
 
@@ -238,7 +233,7 @@ export class MarksheetStore {
 	setPaperLabel(label: string): void {
 		const document = this.document;
 		if (!document) return;
-		document.paper.label = trimOrNull(label);
+		document.label = trimOrNull(label);
 		this.#mutated();
 	}
 
@@ -246,7 +241,30 @@ export class MarksheetStore {
 	setClassName(name: string): void {
 		const document = this.document;
 		if (!document) return;
-		document.paper.className = trimOrNull(name);
+		document.className = trimOrNull(name);
+		this.#mutated();
+	}
+
+	/**
+	 * Name one tier as it is printed on its paper. Display data, so a confirmed
+	 * breakdown does not lock it; a blank name clears it on a single tier. Two
+	 * tiers need distinct names: a blank or the other tier's name would make the
+	 * tabs untellable apart, which is the rule that blocks confirmation.
+	 */
+	setTierName(tier: TierIndex, name: string): void {
+		const document = this.document;
+		if (!document) return;
+		const stored = document.tiers[tier];
+		if (stored === undefined) return;
+
+		const trimmed = trimOrNull(name);
+		if (stored.tierName === trimmed) return;
+		if (document.tiers.length === 2) {
+			if (trimmed === null) return;
+			const other = trimOrNull(document.tiers[tier === 0 ? 1 : 0]?.tierName ?? '');
+			if (other !== null && other.toLowerCase() === trimmed.toLowerCase()) return;
+		}
+		stored.tierName = trimmed;
 		this.#mutated();
 	}
 
@@ -327,26 +345,29 @@ export class MarksheetStore {
 	/**
 	 * Describe an assessment objective for the report's By skill strip. A blank
 	 * description clears it. Display only: reports are written without it, so it
-	 * leaves every report current.
+	 * leaves every report current. Like every breakdown edit, it is locked once
+	 * the breakdown is confirmed.
 	 */
 	setAoDescription(ao: AssessmentObjective, description: string): void {
 		const document = this.#editable();
 		if (!document) return;
-		applyAoDescription(document.breakdown.aoDescriptions, ao, description);
+		applyAoDescription(document.aoDescriptions, ao, description);
 		this.#mutated();
 	}
 
 	/**
-	 * Insert an entry the parse missed below the entry named, and hand back its
-	 * id. It joins the question of the row it follows, and carries nothing else:
-	 * a blank label and no marks stop it being mistaken for something the parse
-	 * found.
+	 * Insert an entry the parse missed below the entry named, on that entry's
+	 * tier, and hand back its id. It joins the question of the row it follows,
+	 * and carries nothing else: a blank label and no marks stop it being mistaken
+	 * for something the parse found.
 	 */
 	insertEntryAfter(entryId: string): string | null {
 		const document = this.#editable();
 		if (!document) return null;
 
-		const entries = document.breakdown.entries;
+		const tier = entryTierOf(document, entryId);
+		if (tier === null) return null;
+		const entries = document.tiers[tier].breakdown.entries;
 		const after = entries.findIndex((entry) => entry.id === entryId);
 		if (after === -1) return null;
 
@@ -357,36 +378,100 @@ export class MarksheetStore {
 	}
 
 	/**
-	 * Add an entry at the end of the breakdown, and hand back its id. It is a
-	 * question of its own for the teacher to number — the paper's last question
-	 * is the one a parse most often misses — so numbering it moves no other row.
+	 * Add an entry at the end of one tier's breakdown, and hand back its id. It
+	 * is a question of its own for the teacher to number — the paper's last
+	 * question is the one a parse most often misses — so numbering it moves no
+	 * other row.
 	 */
-	appendEntry(): string | null {
+	appendEntry(tier: TierIndex): string | null {
 		const document = this.#editable();
 		if (!document) return null;
+		const stored = document.tiers[tier];
+		if (stored === undefined) return null;
 
 		const entry = this.#blankEntry('');
-		document.breakdown.entries.push(entry);
+		stored.breakdown.entries.push(entry);
 		this.#mutated();
 		return entry.id;
 	}
 
-	/** Delete an entry, leaving it — and what was recorded against it — one undo away. */
+	/**
+	 * Delete an entry, leaving it — and what was recorded against it, its
+	 * findings and any common question it belonged to — one undo away.
+	 */
 	deleteEntry(entryId: string): boolean {
 		if (!this.#editable()) return false;
 		return this.#commit((document) => {
-			const entries = document.breakdown.entries;
-			const index = entries.findIndex((entry) => entry.id === entryId);
-			if (index === -1) return null;
-			const [entry] = entries.splice(index, 1);
+			let removed: BreakdownEntry | undefined;
+			for (const stored of document.tiers) {
+				const entries = stored.breakdown.entries;
+				const index = entries.findIndex((entry) => entry.id === entryId);
+				if (index === -1) continue;
+				[removed] = entries.splice(index, 1);
+				stored.breakdown.warnings = stored.breakdown.warnings.filter(
+					(warning) => warning.questionId !== entryId
+				);
+				break;
+			}
+			if (removed === undefined) return null;
 
 			// What was recorded against the entry goes with it: nothing can reach it
-			// again, so it would sit in the document unread.
+			// again, so it would sit in the document unread. A pair pointing at it
+			// would point at a question that is no longer there.
 			for (const byEntry of Object.values(document.marks)) delete byEntry[entryId];
-			document.breakdown.warnings = document.breakdown.warnings.filter(
-				(warning) => warning.questionId !== entryId
+			document.commonQuestions = document.commonQuestions.filter(
+				(pair) => pair.tier1EntryId !== entryId && pair.tier2EntryId !== entryId
 			);
-			return { kind: 'entry-removal', name: entryName(entry) };
+			return { kind: 'entry-removal', name: entryName(removed) };
+		});
+	}
+
+	/**
+	 * Put a pair of entries on the two tiers, change an entry's partner, or clear
+	 * it. Both entries must exist on different tiers and carry the same known
+	 * marks, and a partner already paired elsewhere is refused. Clearing touches
+	 * no marks; the breakdown's confirmation locks all three.
+	 */
+	setCommonQuestion(tier: TierIndex, entryId: string, partnerId: string | null): void {
+		const document = this.#editable();
+		if (!document) return;
+		if (entryTierOf(document, entryId) !== tier) return;
+
+		const current = pairOfEntry(document, tier, entryId);
+		if (partnerId === null) {
+			if (current === null) return;
+			this.#commit((commitDocument) => {
+				commitDocument.commonQuestions = commitDocument.commonQuestions.filter(
+					(pair) => pair.tier1EntryId !== entryId && pair.tier2EntryId !== entryId
+				);
+				return { kind: 'common-question' };
+			});
+			return;
+		}
+
+		const otherTier: TierIndex = tier === 0 ? 1 : 0;
+		const partner = tierEntries(document, otherTier).find((entry) => entry.id === partnerId);
+		const entry = tierEntries(document, tier).find((candidate) => candidate.id === entryId);
+		if (entry === undefined || partner === undefined) return;
+		if (entry.marks === null || partner.marks === null) return;
+		if (entry.marks !== partner.marks) return;
+		const partnerPair = pairOfEntry(document, otherTier, partnerId);
+		if (partnerPair !== null && partnerPair !== current) return;
+
+		const pairedId =
+			current === null ? null : tier === 0 ? current.tier2EntryId : current.tier1EntryId;
+		if (pairedId === partnerId) return;
+
+		this.#commit((commitDocument) => {
+			commitDocument.commonQuestions = commitDocument.commonQuestions.filter(
+				(pair) => pair.tier1EntryId !== entryId && pair.tier2EntryId !== entryId
+			);
+			commitDocument.commonQuestions.push(
+				tier === 0
+					? { tier1EntryId: entryId, tier2EntryId: partnerId }
+					: { tier1EntryId: partnerId, tier2EntryId: entryId }
+			);
+			return { kind: 'common-question' };
 		});
 	}
 
@@ -416,7 +501,9 @@ export class MarksheetStore {
 		const document = this.#editable();
 		if (!document) return false;
 
-		const entries = document.breakdown.entries;
+		const tier = entryTierOf(document, entryId);
+		if (tier === null) return false;
+		const entries = document.tiers[tier].breakdown.entries;
 		const from = entries.findIndex((entry) => entry.id === entryId);
 		const to = from + offset;
 		if (from === -1 || to < 0 || to >= entries.length) return false;
@@ -436,7 +523,7 @@ export class MarksheetStore {
 		const document = this.document;
 		if (!document) return null;
 
-		const student = newStudent(name);
+		const student = newStudent(name, document.tiers.length === 1 ? 0 : null);
 		document.students.push(student);
 		this.#mutated();
 		return student.id;
@@ -473,6 +560,54 @@ export class MarksheetStore {
 		this.#mutated();
 	}
 
+	/**
+	 * Put a student on one tier, or (on two tiers) back to no tier at all. Marks
+	 * on the tier they leave are kept; they count again if the student returns.
+	 * A tier the assessment does not have, or no tier on a single-tier
+	 * assessment, is refused: no document is ever left in an unreadable shape.
+	 */
+	setStudentTier(studentId: string, tier: TierIndex | null): boolean {
+		const document = this.document;
+		if (!document) return false;
+		if (tier !== null && document.tiers[tier] === undefined) return false;
+		if (tier === null && document.tiers.length === 1) return false;
+
+		return this.#commit((commitDocument) => {
+			const student = commitDocument.students.find((candidate) => candidate.id === studentId);
+			if (student === undefined || student.tier === tier) return null;
+			student.tier = tier;
+			return { kind: 'student-tier', name: studentName(student), to: tier };
+		});
+	}
+
+	/**
+	 * Place several students on one tier in a single undoable change: choosing
+	 * a group and a tier is one action to the teacher, so it is one to undo.
+	 */
+	setStudentsTier(studentIds: readonly string[], tier: TierIndex | null): boolean {
+		const document = this.document;
+		if (!document) return false;
+		if (tier !== null && document.tiers[tier] === undefined) return false;
+		if (tier === null && document.tiers.length === 1) return false;
+
+		let moved = 0;
+		let movedName: string | null = null;
+		return this.#commit((commitDocument) => {
+			for (const student of commitDocument.students) {
+				if (!studentIds.includes(student.id) || student.tier === tier) continue;
+				student.tier = tier;
+				moved += 1;
+				movedName = studentName(student);
+			}
+			if (moved === 0) return null;
+			return {
+				kind: 'student-tier',
+				name: moved === 1 && movedName !== null ? movedName : `${moved} students`,
+				to: tier
+			};
+		});
+	}
+
 	/** Remove a student, taking their marks with them, one undo away. */
 	removeStudent(studentId: string): boolean {
 		return this.#commit((document) => {
@@ -502,21 +637,67 @@ export class MarksheetStore {
 	 * many students it made. Lines that hold no name are not students. Text
 	 * copied from a spreadsheet with marks beside the names (tab-separated) is a
 	 * block anchored in the name column, so one copy builds the class and its marks.
+	 * A tier of null is the resting place for a new student: tier 0 on a single
+	 * tier, no tier on two, where the teacher places them afterward. Marks have
+	 * nowhere to go without a tier, so a block carrying them is refused whole
+	 * and nothing is added.
 	 */
-	pasteNames(names: string): number {
-		return this.pasteMarks(textGrid(names), { kind: 'names', studentId: null }).studentsAdded;
+	pasteNames(names: string, tier: TierIndex | null): number {
+		const document = this.document;
+		if (!document) return 0;
+		const target = tier ?? (document.tiers.length === 1 ? 0 : null);
+		if (target === null) {
+			const rows = trimPasteGrid(textGrid(names));
+			if (rows.some((row) => row.length > 1)) {
+				this.pasteNotice = null;
+				this.pasteRefusal =
+					'Nothing was pasted: marks need a tier. Put the class on a tier first, then paste them again.';
+				return 0;
+			}
+			return this.#addNamesWithoutTier(rows);
+		}
+		if (document.tiers[target] === undefined) return 0;
+		return this.pasteMarks(textGrid(names), { kind: 'names', studentId: null }, target)
+			.studentsAdded;
+	}
+
+	/** Add a pasted class list with no marks: students on no tier, for the teacher to place. */
+	#addNamesWithoutTier(rows: readonly (readonly string[])[]): number {
+		this.pasteRefusal = null;
+		let result = emptyPasteResult();
+		this.#commit((document) => {
+			for (const row of rows) {
+				const name = readName(row[0] ?? '');
+				if (name === null) continue;
+				document.students.push(newStudent(name, null));
+				result = {
+					...result,
+					changed: true,
+					studentsAdded: result.studentsAdded + 1
+				};
+			}
+			return result.changed ? { kind: 'mark-paste' } : null;
+		});
+		this.pasteNotice = result.changed ? result : null;
+		return result.studentsAdded;
 	}
 
 	/**
 	 * Add the students an uploaded class list names to the end of the class,
 	 * skipping those the class already has, and keep the account of it for the
-	 * notice beside the grid. One undo takes the whole upload back.
+	 * notice beside the grid. One undo takes the whole upload back. A tier of
+	 * null follows the same resting place as a new student.
 	 */
-	addStudentsFromUpload(names: readonly StudentName[]): void {
+	addStudentsFromUpload(names: readonly StudentName[], tier: TierIndex | null): void {
+		const document = this.document;
+		if (!document) return;
+		const target = tier ?? (document.tiers.length === 1 ? 0 : null);
+		if (target !== null && document.tiers[target] === undefined) return;
+
 		let result = emptyPasteResult();
-		this.#commit((document) => {
-			const { added, skipped } = newNames(document.students, names);
-			document.students.push(...added.map(newStudent));
+		this.#commit((commitDocument) => {
+			const { added, skipped } = newNames(commitDocument.students, names);
+			commitDocument.students.push(...added.map((name) => newStudent(name, target)));
 			result = {
 				...result,
 				changed: added.length > 0,
@@ -559,14 +740,20 @@ export class MarksheetStore {
 	 * `applyPaste`, and keep the account of it for the notice beside the grid. A
 	 * paste that changes nothing keeps no undo of its own.
 	 */
-	pasteMarks(rows: readonly (readonly string[])[], anchor: PasteAnchor): PasteResult {
-		if (!this.document) return emptyPasteResult();
+	pasteMarks(
+		rows: readonly (readonly string[])[],
+		anchor: PasteAnchor,
+		tier: TierIndex
+	): PasteResult {
+		const document = this.document;
+		if (!document || document.tiers[tier] === undefined) return emptyPasteResult();
+		this.pasteRefusal = null;
 
 		// The snapshot is taken before the first cell lands: undo puts back the
 		// document exactly as the teacher had it, added students included.
 		let result = emptyPasteResult();
-		this.#commit((document) => {
-			result = applyPaste(document, rows, anchor);
+		this.#commit((commitDocument) => {
+			result = applyPaste(commitDocument, rows, anchor, tier);
 			return result.changed ? { kind: 'mark-paste' } : null;
 		});
 		// A paste with nothing to say — every cell already held what was pasted —
@@ -581,15 +768,16 @@ export class MarksheetStore {
 	}
 
 	/**
-	 * Confirm the breakdown, unless something blocks the marksheet it would
-	 * build: an entry with no marks, or a blank or repeated label. Returns
-	 * whether the breakdown is confirmed, changing nothing when it is not.
+	 * Confirm the breakdowns and the pairs unless something blocks the marksheet
+	 * they would build: an entry with no marks or no unique label, two tiers with
+	 * blank or identical names, or a pair with unequal marks. Returns whether the
+	 * assessment is confirmed, changing nothing when it is not.
 	 */
 	confirmBreakdown(): boolean {
 		const document = this.document;
 		if (!document) return false;
 		if (document.breakdownConfirmedAt !== null) return true;
-		if (confirmationBlockers(document.breakdown.entries).blocked) return false;
+		if (assessmentBlockers(document).blocked) return false;
 
 		document.breakdownConfirmedAt = this.#now().toISOString();
 		this.#mutated();
@@ -704,21 +892,26 @@ export class MarksheetStore {
 	}
 
 	/**
-	 * Save the paper's grade boundaries: the kept rows top grade first, with
-	 * blank and unawarded rows left out, and the below-lowest label. One undo
-	 * takes the save back, like every other marksheet change.
+	 * Save one tier's grade boundaries: the kept rows top grade first, with blank
+	 * and unawarded rows left out, and the below-lowest label. One undo takes the
+	 * save back, like every other marksheet change.
 	 */
-	saveBoundaries(boundaries: { label: string; minimum: number }[], belowLowestLabel: string): void {
+	saveBoundaries(
+		tier: TierIndex,
+		boundaries: { label: string; minimum: number }[],
+		belowLowestLabel: string
+	): void {
 		this.#commit((document) => {
-			setBoundaries(document, boundaries, belowLowestLabel);
+			if (document.tiers[tier] === undefined) return null;
+			setBoundaries(document, tier, boundaries, belowLowestLabel);
 			return { kind: 'grade-boundaries', action: 'saved' };
 		});
 	}
 
-	/** Drop every boundary, back to marks only, one undo away. */
-	removeBoundaries(): void {
+	/** Drop every boundary on one tier, back to marks only, one undo away. */
+	removeBoundaries(tier: TierIndex): void {
 		this.#commit((document) =>
-			clearBoundaries(document) ? { kind: 'grade-boundaries', action: 'removed' } : null
+			clearBoundaries(document, tier) ? { kind: 'grade-boundaries', action: 'removed' } : null
 		);
 	}
 
@@ -780,7 +973,7 @@ export class MarksheetStore {
 		const document = this.document;
 		if (!document) return null;
 		if (!document.students.some((student) => student.id === studentId)) return null;
-		if (!document.breakdown.entries.some((entry) => entry.id === entryId)) return null;
+		if (entryTierOf(document, entryId) === null) return null;
 		return document;
 	}
 
@@ -794,8 +987,12 @@ export class MarksheetStore {
 
 		let edited = false;
 		for (const entryId of entryIds) {
-			const entry = document.breakdown.entries.find((candidate) => candidate.id === entryId);
-			if (!entry) continue;
+			const tier = entryTierOf(document, entryId);
+			if (tier === null) continue;
+			const entry = document.tiers[tier].breakdown.entries.find(
+				(candidate) => candidate.id === entryId
+			);
+			if (entry === undefined) continue;
 			edit(entry);
 			edited = true;
 		}
@@ -807,8 +1004,10 @@ export class MarksheetStore {
 		this.document = document;
 		this.undoable = null;
 		this.pasteNotice = null;
+		this.pasteRefusal = null;
 		this.unreadable = null;
 		this.runUsage = null;
+		this.matchNotice = null;
 		this.backupNudgeShown = false;
 	}
 
@@ -845,6 +1044,7 @@ export class MarksheetStore {
 		// with it the account of the paste the undo was offering.
 		this.undoable = null;
 		this.pasteNotice = null;
+		this.pasteRefusal = null;
 		const at = this.#now().toISOString();
 		document.updatedAt = at;
 		// The first change after a backup starts the clock on what a backup would

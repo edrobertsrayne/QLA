@@ -1,6 +1,6 @@
 // What an undo notice says about the change it offers to take back.
 
-import type { MarksheetDocument } from './document.js';
+import type { MarksheetDocument, TierIndex } from './document.js';
 import { studentName } from './students.js';
 
 /**
@@ -16,6 +16,10 @@ export type UndoableChange =
 	  }
 	/** A paste or a class-list upload: the paste notice speaks for it. */
 	| { kind: 'mark-paste' }
+	/** A student put on another tier, or back to no tier. */
+	| { kind: 'student-tier'; name: string; to: TierIndex | null }
+	/** A common question added, changed or cleared. */
+	| { kind: 'common-question' }
 	| { kind: 'report-edit'; studentId: string }
 	| { kind: 'report-kept'; studentId: string }
 	| { kind: 'grade-boundaries'; action: 'saved' | 'removed' };
@@ -38,6 +42,13 @@ export function undoNotice(undoable: Undoable, document: MarksheetDocument): Und
 			return { verb: 'Removed', subject: undoable.name };
 		case 'mark-paste':
 			return null;
+		case 'student-tier':
+			return {
+				verb: 'Moved',
+				subject: `${undoable.name} to ${destinationLabel(document, undoable.to)}`
+			};
+		case 'common-question':
+			return { verb: 'Changed common questions', subject: null };
 		case 'grade-boundaries':
 			return {
 				verb: undoable.action === 'saved' ? 'Grade boundaries saved' : 'Grade boundaries removed',
@@ -57,4 +68,11 @@ function nameOrReport(document: MarksheetDocument, studentId: string): string {
 	const student = document.students.find((candidate) => candidate.id === studentId);
 	const name = student ? studentName(student) : '';
 	return name === '' ? 'a report' : name;
+}
+
+/** Where a moved student went: the printed tier name, its number, or the unplaced tab. */
+function destinationLabel(document: MarksheetDocument, tier: TierIndex | null): string {
+	if (tier === null) return 'Tier not set';
+	const name = document.tiers[tier]?.tierName?.trim() ?? '';
+	return name === '' ? `Tier ${tier + 1}` : name;
 }

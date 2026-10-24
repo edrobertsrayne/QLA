@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { STORAGE_KEY } from '$lib/marksheet/document.js';
-import { NOW, parsed, seed } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { NOW, parsed, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { load } from './+layout.js';
 import BreakdownPage from './breakdown/+page.svelte';
@@ -105,12 +105,17 @@ describe('first paint', () => {
 	});
 
 	it('shows the confirmed marksheet surface', () => {
-		seed(parsed({ breakdownConfirmedAt: NOW }));
+		seed(
+			parsed({
+				breakdownConfirmedAt: NOW,
+				students: [student('student-1', 'Ada', 'Lovelace', false, 0)]
+			})
+		);
 		expect(redirectFrom('/marksheet')).toBeNull();
 
 		const screen = render(MarksheetPage);
 
-		expect(screen.container.textContent).toContain('0 students · 1 entry · 4 marks');
+		expect(screen.container.textContent).toContain('1 student · 1 entry · 4 marks');
 		// The columns the marksheet is built from, read-only.
 		expect(screen.container.textContent).toContain('2bii');
 		expect(screen.container.textContent).toContain('/4');

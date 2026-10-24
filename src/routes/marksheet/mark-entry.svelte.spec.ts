@@ -1,14 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
-import { confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { confirmed, entry, seed, student, tier } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { openPage } from '../spec-helpers.js';
 import {
 	markCell,
 	cellText,
 	progressText,
+	rowNames,
 	tabbableCells,
-	focusedCell
+	focusedCell,
+	twoTier
 } from './marksheet.spec-helpers.js';
 import MarksheetPage from './+page.svelte';
 
@@ -17,11 +19,14 @@ describe('mark entry', () => {
 	function openGrid(marks: Record<string, Record<string, number>> = {}) {
 		seed(
 			confirmed({
-				breakdown: {
-					entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
-					warnings: [],
-					aoDescriptions: {}
-				},
+				tiers: [
+					tier({
+						breakdown: {
+							entries: [entry('entry-1', '1a', '1'), entry('entry-2', '1b', '1')],
+							warnings: []
+						}
+					})
+				],
 				students: [
 					student('student-1', 'Ada', 'Lovelace'),
 					student('student-2', 'Grace', 'Hopper')
@@ -299,13 +304,16 @@ describe('mark entry', () => {
 	it('scrolls the cursor into view, clear of the frozen columns', async () => {
 		seed(
 			confirmed({
-				breakdown: {
-					entries: Array.from({ length: 24 }, (_, index) =>
-						entry(`entry-${index + 1}`, `${index + 1}`, `${index + 1}`)
-					),
-					warnings: [],
-					aoDescriptions: {}
-				},
+				tiers: [
+					tier({
+						breakdown: {
+							entries: Array.from({ length: 24 }, (_, index) =>
+								entry(`entry-${index + 1}`, `${index + 1}`, `${index + 1}`)
+							),
+							warnings: []
+						}
+					})
+				],
 				students: [student('student-1', 'Ada', 'Lovelace')]
 			})
 		);
@@ -329,5 +337,87 @@ describe('mark entry', () => {
 		const first = markCell(screen, 'student-1', 'entry-1');
 		expect(focusedCell()).toBe(first);
 		expect(first.getBoundingClientRect().left).toBeGreaterThanOrEqual(frozenRight() - 1);
+	});
+
+	/** Two papers with a class on each: switching tabs has something on either side. */
+	function openTwoTierGrid() {
+		seed(
+			twoTier({
+				tiers: [
+					tier({
+						tierName: 'Higher',
+						breakdown: {
+							entries: [entry('higher-1', 'H1', '1'), entry('higher-2', 'H2', '2')],
+							warnings: []
+						}
+					}),
+					tier({
+						tierName: 'Foundation',
+						breakdown: { entries: [entry('foundation-1', 'F1', '1')], warnings: [] }
+					})
+				],
+				students: [
+					student('student-1', 'Ada', 'Lovelace', false, 0),
+					student('student-2', 'Grace', 'Hopper', false, 1)
+				]
+			})
+		);
+		return openPage(MarksheetPage);
+	}
+
+	/**
+	 * Switch tabs without moving the keyboard: a real click would blur an open
+	 * editor first, which would hide the state this spec is about.
+	 */
+	function switchTab(name: RegExp): void {
+		(page.getByRole('radio', { name }).element() as HTMLElement).click();
+	}
+
+	it('starts a fresh sheet when the teacher switches tier', async () => {
+		const screen = openTwoTierGrid();
+
+		await userEvent.click(markCell(screen, 'student-1', 'higher-2'));
+		await userEvent.keyboard('3');
+		await expect.element(page.getByTestId('mark-editor')).toHaveValue('3');
+
+		switchTab(/Tier 2 · Foundation/);
+		await vi.waitFor(() => expect(rowNames(screen)).toEqual(['Grace Hopper']));
+		switchTab(/Tier 1 · Higher/);
+		await vi.waitFor(() => expect(rowNames(screen)).toEqual(['Ada Lovelace']));
+
+		// The editor and the cursor belonged to the paper the teacher left.
+		expect(page.getByTestId('mark-editor').query()).toBeNull();
+		expect(tabbableCells(screen)).toEqual([markCell(screen, 'student-1', 'higher-1')]);
+
+		// A refusal is about the cell it happened on, not the next paper.
+		await userEvent.click(markCell(screen, 'student-1', 'higher-1'));
+		await userEvent.keyboard('{F2}');
+		await page.getByTestId('mark-editor').fill('2.5');
+		await userEvent.keyboard('{Enter}');
+		await expect.element(page.getByRole('status')).toHaveTextContent('2.5');
+
+		switchTab(/Tier 2 · Foundation/);
+		await vi.waitFor(() => expect(rowNames(screen)).toEqual(['Grace Hopper']));
+		switchTab(/Tier 1 · Higher/);
+		await vi.waitFor(() => expect(rowNames(screen)).toEqual(['Ada Lovelace']));
+
+		expect(page.getByRole('status').query()).toBeNull();
+	});
+
+	it('drops a half-typed new student when the tier changes', async () => {
+		const screen = openTwoTierGrid();
+
+		await page.getByRole('button', { name: 'Add student', exact: true }).click();
+		await page.getByLabelText('New student name').fill('Cher');
+
+		switchTab(/Tier 2 · Foundation/);
+		await vi.waitFor(() => expect(rowNames(screen)).toEqual(['Grace Hopper']));
+		expect(page.getByLabelText('New student name').query()).toBeNull();
+
+		switchTab(/Tier 1 · Higher/);
+		await vi.waitFor(() => expect(rowNames(screen)).toEqual(['Ada Lovelace']));
+		await page.getByRole('button', { name: 'Add student', exact: true }).click();
+
+		await expect.element(page.getByLabelText('New student name')).toHaveValue('');
 	});
 });

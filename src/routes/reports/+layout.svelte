@@ -23,7 +23,7 @@
 	const store = marksheetStore();
 	const document = $derived(store.document);
 	const steps = $derived(document ? availableSteps(document) : []);
-	const className = $derived(document?.paper.className ?? null);
+	const className = $derived(document?.className ?? null);
 	const stepTitle = $derived(stepTitleOf(data.step));
 	const title = $derived(`${className ? `${className} · ` : ''}Reports — ${stepTitle} · QLA`);
 

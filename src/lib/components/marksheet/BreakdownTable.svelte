@@ -1,9 +1,11 @@
 <!--
-	The breakdown as an editable document: one row per entry, grouped under its
-	question when banding is on. Every field is editable in place, so a mistake
-	the model made is fixed here rather than by paying for another parse — and
-	the structure can be repaired too, by adding a row the parse missed, taking
-	one out, or moving one to where the paper has it.
+	One tier's breakdown as an editable document: one row per entry, grouped
+	under its question when banding is on, ending with its total available
+	marks. Every field is editable in place, so a mistake the model made is
+	fixed here rather than by paying for another parse — and the structure can
+	be repaired too, by adding a row the parse missed, taking one out, or moving
+	one to where the paper has it. On a two-tier assessment each row also picks
+	the question it is common with on the other tier.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';
@@ -15,6 +17,7 @@
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import CommonQuestionPicker from './CommonQuestionPicker.svelte';
 	import UndoAlert from './UndoAlert.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Popover from '$lib/components/ui/popover';
@@ -28,8 +31,8 @@
 		type EntryEdits,
 		type QuestionBand
 	} from '$lib/marksheet/breakdown.js';
-	import type { BreakdownEntry, EditableField } from '$lib/marksheet/document.js';
-	import { isWholeNumber, totalMarks } from '$lib/marksheet/document.js';
+	import type { BreakdownEntry, EditableField, TierIndex } from '$lib/marksheet/document.js';
+	import { isWholeNumber, specPointCodes, totalMarks } from '$lib/marksheet/document.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import {
 		assessmentObjectiveOf,
@@ -38,12 +41,17 @@
 	import { cn } from '$lib/utils.js';
 	import { agree, count } from '$lib/prose.js';
 
-	let { banded = true }: { banded?: boolean } = $props();
+	let { tier, banded = true }: { tier: TierIndex; banded?: boolean } = $props();
 
 	const store = marksheetStore();
-	const entries = $derived(store.entries);
-	const bands = $derived(store.questionBands);
-	const warnings = $derived(store.warnings);
+	/** One tier's entries: the open tab is the only one on screen. */
+	const entries = $derived(store.entriesOf(tier));
+	const bands = $derived(store.bandsOf(tier));
+	const warnings = $derived(store.tiers[tier]?.breakdown.warnings ?? []);
+	const twoTiers = $derived(store.tierCount === 2);
+	/** The other tier's number, as the Common with Tier N heading says it. */
+	const otherTierNumber = $derived(tier === 0 ? 2 : 1);
+	const total = $derived(totalMarks(entries));
 	/**
 	 * The entry whose marks field the cursor is in. It is left out of the warning
 	 * below while it is being typed in: a total is saved keystroke by keystroke,
@@ -143,6 +151,19 @@
 	}
 
 	/**
+	 * Commit a spec point on blur, one code per line. Newlines become the comma
+	 * list the document stores, and the field reads back as the codes the
+	 * document holds — one per line, so several never run into their neighbours.
+	 */
+	function onSpecPointChange(entry: BreakdownEntry, event: Event): void {
+		const lines = (event.currentTarget as HTMLTextAreaElement).value
+			.split('\n')
+			.map((line) => line.trim())
+			.filter((line) => line !== '');
+		store.setEntrySpecPoint(entry.id, lines.join(', '));
+	}
+
+	/**
 	 * Delete an entry, or ask first when it has marks: the number goes in the
 	 * question, since those marks cannot be read again once the entry is gone.
 	 */
@@ -215,7 +236,8 @@
 	{@const own = warningsForEntry(warnings, entry.id)}
 	{@const edits = entryEdits(entry)}
 	{@const place = entries.indexOf(entry)}
-	<Table.Row class="group" data-entry={entry.id}>
+	{@const paired = store.pairOf(tier, entry.id) !== null}
+	<Table.Row class={['group', paired && 'bg-violet-500/5']} data-entry={entry.id}>
 		<Table.Cell class="w-20 pl-2">
 			<span class="flex items-center gap-1">
 				{#if own.length > 0}
@@ -290,14 +312,18 @@
 			/>
 		</Table.Cell>
 		<Table.Cell class="px-1">
-			<input
+			<textarea
 				data-field="specPoint"
 				aria-label={`Spec point for ${entryName(entry)}`}
-				class={fieldClass(edits, 'specPoint', 'font-mono text-xs')}
+				rows={1}
+				class={fieldClass(
+					edits,
+					'specPoint',
+					'resize-none whitespace-normal break-words font-mono text-xs field-sizing-content'
+				)}
 				placeholder="—"
-				value={entry.specPoint ?? ''}
-				oninput={(event) => store.setEntrySpecPoint(entry.id, event.currentTarget.value)}
-			/>
+				value={specPointCodes(entry.specPoint).join('\n')}
+				onchange={(event) => onSpecPointChange(entry, event)}></textarea>
 		</Table.Cell>
 		<Table.Cell class="px-1">
 			<input
@@ -324,6 +350,11 @@
 				{/each}
 			</select>
 		</Table.Cell>
+		{#if twoTiers}
+			<Table.Cell class="w-44 px-1">
+				<CommonQuestionPicker {tier} {entry} />
+			</Table.Cell>
+		{/if}
 		{@render rowActionsCell(entry, place)}
 	</Table.Row>
 {/snippet}
@@ -331,7 +362,7 @@
 <!-- Sticky: a row deleted 30 rows down must still offer its undo where the
      teacher is looking, and it stays until the next change clears it. -->
 <UndoAlert
-	kinds={['entry-removal']}
+	kinds={['entry-removal', 'common-question']}
 	class="sticky top-2 z-10 flex flex-row items-center gap-2 py-2 shadow-sm"
 />
 
@@ -377,6 +408,11 @@
 				<Table.Head class="px-2 whitespace-normal">{FIELD_NAMES.specPoint}</Table.Head>
 				<Table.Head class="px-2 whitespace-normal">{FIELD_NAMES.commandWord}</Table.Head>
 				<Table.Head class="w-20 px-2 whitespace-normal">{FIELD_NAMES.ao}</Table.Head>
+				{#if twoTiers}
+					<Table.Head class="w-44 px-2 whitespace-normal"
+						>Common with Tier {otherTierNumber}</Table.Head
+					>
+				{/if}
 				<Table.Head class="w-28 px-2"></Table.Head>
 			</Table.Row>
 		</Table.Header>
@@ -385,7 +421,7 @@
 				{#each bands as band (band.entries[0].id)}
 					<Table.Row data-testid="band-row" class="bg-muted/30 hover:bg-muted/30">
 						<Table.Cell />
-						<Table.Cell colspan={6} class="py-1.5 text-xs">
+						<Table.Cell colspan={6 + (twoTiers ? 1 : 0)} class="py-1.5 text-xs">
 							<span class="font-semibold">Question</span>
 							<input
 								aria-label={`Question number for band ${bandName(band)}`}
@@ -426,10 +462,26 @@
 				{/each}
 			{/if}
 		</Table.Body>
+		<Table.Footer>
+			<Table.Row data-testid="totals-row">
+				<Table.Cell colspan={2} class="text-right text-xs font-semibold">Total</Table.Cell>
+				{#if !banded}
+					<Table.Cell />
+				{/if}
+				<Table.Cell class="px-1 text-right font-semibold tabular-nums">{total}</Table.Cell>
+				<Table.Cell colspan={4} class="px-2 text-xs text-muted-foreground">
+					Total available marks
+				</Table.Cell>
+				{#if twoTiers}
+					<Table.Cell />
+				{/if}
+				<Table.Cell />
+			</Table.Row>
+		</Table.Footer>
 	</Table.Root>
 </div>
 
-<Button variant="outline" size="sm" onclick={() => addRow(() => store.appendEntry())}>
+<Button variant="outline" size="sm" onclick={() => addRow(() => store.appendEntry(tier))}>
 	<PlusIcon class="size-4" /> Add entry at end
 </Button>
 

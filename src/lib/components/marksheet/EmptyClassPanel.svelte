@@ -8,10 +8,18 @@
 	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import type { TierIndex } from '$lib/marksheet/document.js';
 	import UploadStudentsDialog from './UploadStudentsDialog.svelte';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 
-	let { onAddOne }: { onAddOne: () => void } = $props();
+	let {
+		tier,
+		onAddOne
+	}: {
+		/** Where a pasted class starts: a tier, or no tier on a two-tier assessment. */
+		tier: TierIndex | null;
+		onAddOne: () => void;
+	} = $props();
 
 	const store = marksheetStore();
 	/** A column of names waiting to become the class. */
@@ -21,7 +29,7 @@
 
 	/** A pasted column of names becomes the class, or joins it when there is one. */
 	function addPastedNames(): void {
-		if (store.pasteNames(pastedNames) > 0) pastedNames = '';
+		if (store.pasteNames(pastedNames, tier) > 0) pastedNames = '';
 	}
 </script>
 
@@ -41,7 +49,7 @@
 		<code>Surname, First name</code>; otherwise the last word is the surname.
 	</p>
 	<div class="flex flex-wrap items-center gap-2">
-		<UploadStudentsDialog />
+		<UploadStudentsDialog {tier} />
 		<Button variant="ghost" size="sm" class="w-fit" onclick={onAddOne}>
 			<UserPlusIcon class="size-4" /> Or add students one at a time
 		</Button>

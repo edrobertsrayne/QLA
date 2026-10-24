@@ -7,23 +7,30 @@
 // no student identifier of any kind; the browser matches each response to its
 // `fetch`.
 
-import type { MarksheetDocument, ReportGenerationInput } from './document.js';
+import {
+	entriesOfStudent,
+	type MarksheetDocument,
+	type ReportGenerationInput
+} from './document.js';
 import { topicNamesFor } from './report-rollup.js';
 import { isEligible } from './report-eligibility.js';
 
 /**
  * The generation input for one student: the request body minus `model`,
- * exactly as sent. Null when the student is blocked (absent, unmarked, or
- * over max) — there is nothing final to write from.
+ * exactly as sent. Null when the student is blocked (no tier, absent,
+ * unmarked, or over max) — there is nothing final to write from. The entries
+ * are the student's own tier's only, so the out-of-date check follows a tier
+ * move; the tier name is display data and never part of what the model saw.
  */
 export function generationInputFor(
 	document: MarksheetDocument,
 	studentId: string
 ): ReportGenerationInput | null {
-	if (!isEligible(document, studentId)) return null;
+	const student = document.students.find((candidate) => candidate.id === studentId);
+	if (!student || !isEligible(document, studentId)) return null;
 	const marks = document.marks[studentId] ?? {};
 	const entries: ReportGenerationInput['entries'] = [];
-	for (const entry of document.breakdown.entries) {
+	for (const entry of entriesOfStudent(document, student)) {
 		const gained = marks[entry.id] ?? 0;
 		entries.push({
 			label: entry.label,
@@ -35,7 +42,7 @@ export function generationInputFor(
 			available: entry.marks ?? 0
 		});
 	}
-	return { paperLabel: document.paper.label ?? '', entries };
+	return { paperLabel: document.label ?? '', entries };
 }
 
 /**

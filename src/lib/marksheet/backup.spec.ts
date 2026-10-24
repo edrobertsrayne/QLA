@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { MarksheetDocument } from './document.js';
 import { backupState, backupTakenAt, readBackup } from './backup.js';
-import { confirmed, entry, student, writtenAsV2, ago } from './fixtures.spec-helpers.js';
+import { confirmed, entry, student, tier, writtenAsV2, ago } from './fixtures.spec-helpers.js';
 
 function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({
-		paper: { ...confirmed().paper, className: '10C1' },
-		breakdown: {
-			entries: [entry('entry-1', '2bii', '2')],
-			warnings: [],
-			aoDescriptions: {}
-		},
+		className: '10C1',
+		tiers: [
+			tier({
+				breakdown: {
+					entries: [entry('entry-1', '2bii', '2')],
+					warnings: []
+				}
+			})
+		],
 		students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
 		marks: { 'student-1': { 'entry-1': 3 } },
 		...overrides
@@ -66,6 +69,29 @@ describe('backupState', () => {
 			takenAt: new Date(ago(1))
 		});
 	});
+
+	it('counts every stored mark the file holds, on either tier', () => {
+		const document = marksheet({
+			tiers: [
+				tier({ breakdown: { entries: [entry('entry-1', '1a', '1')], warnings: [] } }),
+				tier({ breakdown: { entries: [entry('entry-2', '8a', '8')], warnings: [] } })
+			],
+			students: [
+				student('student-1', 'Ada', 'Lovelace', false, 0),
+				student('student-2', 'Grace', 'Hopper', false, null)
+			],
+			marks: {
+				'student-1': { 'entry-1': 1, 'entry-2': 2 },
+				'student-2': { 'entry-2': 3 }
+			}
+		});
+
+		// student-1's Foundation mark is off-tier, but the backup carries it: a
+		// restore must bring it back, so the summary counts it as stored work.
+		const restored = readBackup(JSON.stringify(document));
+		expect(restored?.summary.marks).toBe(3);
+		expect(restored?.document.marks).toEqual(document.marks);
+	});
 });
 
 describe('readBackup', () => {
@@ -83,7 +109,8 @@ describe('readBackup', () => {
 
 	it('reads a document with nothing in it yet', () => {
 		const document = marksheet({
-			paper: { ...marksheet().paper, label: null, className: null },
+			label: null,
+			className: null,
 			students: [],
 			marks: {}
 		});

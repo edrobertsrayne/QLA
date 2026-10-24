@@ -14,17 +14,22 @@ function marksheet(lastExportedAt: string | null): MarksheetDocument {
 		breakdownConfirmedAt: NOW.toISOString(),
 		lastExportedAt,
 		firstUnbackedChangeAt: null,
-		paper: {
-			label: 'Ph1',
-			className: null,
-			sourceFilenames: ['paper.pdf'],
-			parsedAt: NOW.toISOString(),
-			boundaries: null,
-			belowLowestLabel: 'U'
-		},
-		breakdown: { entries: [], warnings: [], aoDescriptions: {} },
+		label: 'Ph1',
+		className: null,
+		aoDescriptions: {},
+		tiers: [
+			{
+				tierName: null,
+				sourceFilenames: ['paper.pdf'],
+				parsedAt: NOW.toISOString(),
+				breakdown: { entries: [], warnings: [] },
+				boundaries: null,
+				belowLowestLabel: 'U'
+			}
+		],
 		students: [],
 		marks: {},
+		commonQuestions: [],
 		topicNames: {},
 		reports: {}
 	};

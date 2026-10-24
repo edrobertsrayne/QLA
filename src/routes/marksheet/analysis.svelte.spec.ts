@@ -1,228 +1,434 @@
 import { describe, expect, it, vi } from 'vitest';
-import { page, userEvent } from 'vitest/browser';
-import type { MarksheetDocument } from '$lib/marksheet/document.js';
-import { confirmed, entry, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { page } from 'vitest/browser';
+import { confirmed, entry, seed, student, tier } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { goto } from '$app/navigation';
-import { openPage } from '../spec-helpers.js';
-import { markCell } from './marksheet.spec-helpers.js';
-import MarksheetPage from './+page.svelte';
-import AnalysisPage from './analysis/+page.svelte';
-import { load } from './analysis/+page.ts';
+import {
+	commonOrder,
+	commonRow,
+	figureText,
+	openAnalysisAt,
+	seedTwoTierAnalysis,
+	tierOrder,
+	tierRow,
+	trackValue,
+	twoTierAnalysisDocument
+} from './analysis.spec-helpers.js';
+
+/** One tier of four entries: red, amber, green and unmarked, each figure over two students. */
+function seedSingleTierAnalysis(): void {
+	seed(
+		confirmed({
+			tiers: [
+				tier({
+					breakdown: {
+						entries: [
+							entry('entry-red', '1a', '1', { marks: 10, summary: 'Red question' }),
+							entry('entry-amber', '1b', '1', { marks: 10, summary: 'Amber question' }),
+							entry('entry-green', '1c', '1', { marks: 10, summary: 'Green question' }),
+							entry('entry-unmarked', '1d', '1', { marks: 10, summary: 'Unmarked question' })
+						],
+						warnings: []
+					}
+				})
+			],
+			students: [student('s1', 'Ada', 'Lovelace'), student('s2', 'Grace', 'Hopper')],
+			marks: {
+				s1: { 'entry-red': 2, 'entry-amber': 5, 'entry-green': 9 },
+				s2: { 'entry-red': 2, 'entry-amber': 5, 'entry-green': 9 }
+			}
+		})
+	);
+}
 
 describe('analysis', () => {
-	/** A marksheet with figures worth reading: two entries over two students. */
-	function openAnalysisSheet(overrides: Partial<MarksheetDocument> = {}) {
-		seed(
-			confirmed({
-				breakdown: {
-					entries: [
-						entry('entry-1', '1a', '1', { marks: 4 }),
-						entry('entry-2', '1b', '1', { marks: 4 })
-					],
-					warnings: [],
-					aoDescriptions: {}
-				},
-				students: [
-					student('student-1', 'Ada', 'Lovelace'),
-					student('student-2', 'Grace', 'Hopper')
-				],
-				marks: { 'student-1': { 'entry-1': 1 }, 'student-2': { 'entry-1': 3 } },
-				...overrides
-			})
-		);
-		return openPage(MarksheetPage);
-	}
+	it('draws a single tier as band sections over track charts, with no tabs and no tier name', async () => {
+		seedSingleTierAnalysis();
+		const screen = openAnalysisAt();
 
-	/** The analysis route for a URL, as the router opens it: load first, then the page. */
-	function openAnalysisAt(search = '') {
-		const data = load({ url: new URL(`http://localhost/marksheet/analysis${search}`) });
-		return openPage(AnalysisPage, { data });
-	}
+		await expect.element(page.getByTestId('analysis-view')).toBeInTheDocument();
+		expect(screen.container.querySelector('[data-testid="analysis-tabs"]')).toBeNull();
+		await expect
+			.element(page.getByRole('heading', { level: 2 }))
+			.toHaveTextContent('Question analysis — 10X Ph1');
 
-	/** The figure under one entry's column, or nothing where the row has no cell for it. */
-	function rowCell(
-		screen: { container: HTMLElement },
-		testid: 'facility-cell' | 'coverage-cell',
-		entryId: string
-	): HTMLElement {
-		const cell = screen.container.querySelector<HTMLElement>(
-			`[data-testid="${testid}"][data-entry-id="${entryId}"]`
-		);
-		if (!cell) throw new Error(`no ${testid} for ${entryId}`);
-		return cell;
-	}
+		const red = tierRow(screen.container, 'entry-red');
+		expect(figureText(red, 'facility')).toBe('20%');
+		expect(figureText(red, 'coverage')).toBe('2/2');
+		expect(trackValue(red, 'tier1')).toBe('20');
+		expect(trackValue(red, 'tier2')).toBe('');
+		expect(trackValue(red, 'pooled')).toBe('');
 
-	function rowText(
-		screen: { container: HTMLElement },
-		testid: 'facility-cell' | 'coverage-cell',
-		entryId: string
-	): string {
-		return rowCell(screen, testid, entryId).textContent?.trim() ?? '';
-	}
+		const amber = tierRow(screen.container, 'entry-amber');
+		expect(figureText(amber, 'facility')).toBe('50%');
+		expect(trackValue(amber, 'tier1')).toBe('50');
 
-	/** What the Hardest strip names, in the order it names them. */
-	function hardestNames(screen: { container: HTMLElement }): string[] {
-		return [
-			...screen.container.querySelectorAll<HTMLElement>('[data-testid="hardest"] button')
-		].map((button) => (button.textContent ?? '').replace(/\s+/g, ' ').trim());
-	}
-
-	/** One entry's row in the analysis view, so a test can ask whether it is there and outlined. */
-	function analysisRow(entryId: string): HTMLElement | null {
-		return document.querySelector<HTMLElement>(
-			`[data-testid="analysis-row"][data-entry-id="${entryId}"]`
-		);
-	}
-
-	it('shows a facility row under the grid that follows the marks as they are entered', async () => {
-		const screen = openAnalysisSheet();
-
-		expect(rowText(screen, 'facility-cell', 'entry-1')).toBe('50%');
-		expect(rowText(screen, 'facility-cell', 'entry-2')).toBe('—');
-
-		await userEvent.click(markCell(screen, 'student-1', 'entry-1'));
-		await userEvent.keyboard('3');
-		await userEvent.keyboard('{Enter}');
-
-		await vi.waitFor(() => expect(rowText(screen, 'facility-cell', 'entry-1')).toBe('75%'));
-	});
-
-	it('gives a part-marked entry its coverage in the row beneath', async () => {
-		const screen = openAnalysisSheet({ marks: { 'student-1': { 'entry-1': 4 } } });
-
-		expect(rowText(screen, 'facility-cell', 'entry-1')).toBe('100%');
-		expect(rowText(screen, 'coverage-cell', 'entry-1')).toBe('1/2');
-		expect(rowText(screen, 'coverage-cell', 'entry-2')).toBe('');
-	});
-
-	it('names the hardest entries in the toolbar, worst first', async () => {
-		const screen = openAnalysisSheet({
-			breakdown: {
-				entries: [
-					entry('entry-1', '1a', '1', { marks: 10 }),
-					entry('entry-2', '1b', '1', { marks: 10 }),
-					entry('entry-3', '1c', '1', { marks: 10 })
-				],
-				warnings: [],
-				aoDescriptions: {}
-			},
-			marks: { 'student-1': { 'entry-1': 1, 'entry-2': 2, 'entry-3': 3 } }
-		});
-
-		expect(hardestNames(screen)).toEqual(['1a 10%', '1b 20%', '1c 30%']);
-	});
-
-	it('opens the analysis grouped by band, with Green folded and the rest scored worst first', async () => {
-		openAnalysisSheet({
-			breakdown: {
-				entries: [
-					entry('entry-green', '1a', '1', { marks: 10 }),
-					entry('entry-amber', '1b', '1', { marks: 10 }),
-					entry('entry-red', '1c', '1', { marks: 10 }),
-					entry('entry-unmarked', '1d', '1', { marks: 10 })
-				],
-				warnings: [],
-				aoDescriptions: {}
-			},
-			marks: { 'student-1': { 'entry-green': 9, 'entry-amber': 5, 'entry-red': 2 } }
-		});
-
-		await page.getByRole('button', { name: 'View analysis' }).click();
-		expect(goto).toHaveBeenCalledWith('/marksheet/analysis');
-		openAnalysisAt();
-
+		// Today's sections, green folded, the unmarked entry last.
 		await expect
 			.element(page.getByRole('heading', { name: 'Red — below 40%' }))
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('heading', { name: 'Amber — 40% to below 70%' }))
 			.toBeInTheDocument();
-		expect(analysisRow('entry-red')).not.toBeNull();
-		expect(analysisRow('entry-green')).toBeNull();
+		// Green is folded: its row stays in the page for print, hidden on screen.
+		expect(tierRow(screen.container, 'entry-green').checkVisibility()).toBe(false);
+		expect(figureText(tierRow(screen.container, 'entry-unmarked'), 'facility')).toBe(
+			'Not marked yet'
+		);
 
-		const green = page.getByRole('button', { name: 'Green — 70% and above' });
-		await expect.element(green).toHaveAttribute('aria-expanded', 'false');
-		await green.click();
-		await expect.element(page.getByRole('heading', { name: 'Not scored' })).toBeInTheDocument();
-		await vi.waitFor(() => expect(analysisRow('entry-green')).not.toBeNull());
+		await page.getByRole('button', { name: 'Green — 70% and above' }).click();
+		await vi.waitFor(() =>
+			expect(tierRow(screen.container, 'entry-green').checkVisibility()).toBe(true)
+		);
+		await vi.waitFor(() =>
+			expect(figureText(tierRow(screen.container, 'entry-green'), 'facility')).toBe('90%')
+		);
+		await vi.waitFor(() =>
+			expect(tierOrder(screen.container)).toEqual([
+				'entry-red',
+				'entry-amber',
+				'entry-green',
+				'entry-unmarked'
+			])
+		);
+	});
 
-		// What the figures rest on, beside them: who was counted, what was left out.
+	it('names each tier and the common questions, with figures over that tier’s students', async () => {
+		seedTwoTierAnalysis();
+		const screen = openAnalysisAt();
+
+		await expect.element(page.getByRole('radio', { name: 'Tier 1 · Higher' })).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('radio', { name: 'Tier 2 · Foundation' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('radio', { name: 'Common questions (4)' }))
+			.toBeInTheDocument();
+
+		// Tier 1's own students: two present, one absent; Flo's off-tier mark is not counted.
+		await page.getByRole('button', { name: 'Green — 70% and above' }).click();
+		await vi.waitFor(() =>
+			expect(screen.container.querySelector('[data-entry-id="e-a"]')).not.toBeNull()
+		);
+		const pair = tierRow(screen.container, 'e-a');
+		expect(figureText(pair, 'facility')).toBe('70%');
+		expect(figureText(pair, 'coverage')).toBe('H 2/2');
+		expect(figureText(pair, 'partner-chip')).toBe('⇔ F 8a');
+		expect(trackValue(pair, 'tier1')).toBe('70');
+		expect(trackValue(pair, 'tier2')).toBe('50');
+		expect(trackValue(pair, 'pooled')).toBe('60');
 		await expect.element(page.getByTestId('analysis-view')).toHaveTextContent('2 students counted');
-		await expect.element(page.getByTestId('analysis-view')).toHaveTextContent('0 absent excluded');
-		await expect.element(page.getByTestId('analysis-view')).toHaveTextContent('3 marks counted');
-		await expect.element(page.getByTestId('analysis-view')).toHaveTextContent('Not marked yet');
+		await expect.element(page.getByTestId('analysis-view')).toHaveTextContent('1 absent excluded');
+		expect(screen.container.querySelector('[data-entry-id="f-a"]')).toBeNull();
+
+		await page.getByRole('radio', { name: 'Tier 2 · Foundation' }).click();
+		await vi.waitFor(() =>
+			expect(figureText(tierRow(screen.container, 'f-a'), 'facility')).toBe('50%')
+		);
+		const foundation = tierRow(screen.container, 'f-a');
+		expect(figureText(foundation, 'coverage')).toBe('F 2/2');
+		expect(figureText(foundation, 'partner-chip')).toBe('⇔ H 1a');
+		expect(trackValue(foundation, 'tier1')).toBe('70');
+		expect(trackValue(foundation, 'tier2')).toBe('50');
+		expect(trackValue(foundation, 'pooled')).toBe('60');
+		expect(screen.container.querySelector('[data-entry-id="e-a"]')).toBeNull();
+		expect(figureText(tierRow(screen.container, 'f-d'), 'facility')).toBe('Not marked yet');
 	});
 
-	it('opens the analysis at an entry with no figure too, from its facility cell', async () => {
-		const screen = openAnalysisSheet();
+	it('stays on the tab clicked twice, and keys every track by tier, not by the open tab', async () => {
+		seedTwoTierAnalysis();
+		const screen = openAnalysisAt();
 
-		await userEvent.click(rowCell(screen, 'facility-cell', 'entry-2'));
-		expect(goto).toHaveBeenCalledWith('/marksheet/analysis?entry=entry-2');
-		screen.unmount();
+		const legend = screen.container.querySelector('[data-testid="track-legend"]');
+		const keys = [...(legend?.querySelectorAll<HTMLElement>('[data-testid="legend-tier"]') ?? [])];
+		expect(keys.map((key) => key.dataset.tier)).toEqual(['0', '1']);
+		// Filled is always Tier 1's figure; hollow always Tier 2's.
+		expect(keys[0].textContent).toContain('Higher');
+		expect(keys[1].textContent).toContain('Foundation');
+		expect(keys[0].classList.contains('opacity-40')).toBe(false);
+		expect(keys[1].classList.contains('opacity-40')).toBe(true);
 
-		openAnalysisAt('?entry=entry-2');
-		expect(analysisRow('entry-2')?.dataset.highlighted).toBe('true');
+		await page.getByRole('radio', { name: 'Tier 2 · Foundation' }).click();
+		await vi.waitFor(() => expect(tierRow(screen.container, 'f-a').checkVisibility()).toBe(true));
+		await vi.waitFor(() => expect(keys[0].classList.contains('opacity-40')).toBe(true));
+		expect(keys[1].classList.contains('opacity-40')).toBe(false);
+
+		// Re-clicking the open tab reports no value; it must stay open rather than fall back.
+		await page.getByRole('radio', { name: 'Tier 2 · Foundation' }).click();
+		await expect.element(page.getByRole('radio', { name: 'Tier 2 · Foundation' })).toBeChecked();
+		expect(tierRow(screen.container, 'f-a').checkVisibility()).toBe(true);
+		expect(screen.container.querySelector('[data-entry-id="e-a"]')).toBeNull();
 	});
 
-	it('opens the analysis at the entry a facility cell names, unfolding Green to reveal it', async () => {
-		const entries = Array.from({ length: 40 }, (_, index) =>
-			entry(`entry-${index + 1}`, `1${index}`, '1', { marks: 4 })
-		);
-		seed(
-			confirmed({
-				breakdown: { entries, warnings: [], aoDescriptions: {} },
-				students: [student('student-1', 'Ada', 'Lovelace')],
-				marks: { 'student-1': { 'entry-40': 4 } }
-			})
-		);
-		const screen = openPage(MarksheetPage);
+	it('keeps the band sections on a tier tab, worst first within each, with the band in every heading', async () => {
+		seedTwoTierAnalysis();
+		const screen = openAnalysisAt();
 
-		await userEvent.click(rowCell(screen, 'facility-cell', 'entry-40'));
-		expect(goto).toHaveBeenCalledWith('/marksheet/analysis?entry=entry-40');
+		await expect
+			.element(page.getByRole('heading', { name: 'Red — below 40%' }))
+			.toBeInTheDocument();
+		await vi.waitFor(() => expect(tierOrder(screen.container)).toEqual(['e-b', 'e-d', 'e-c']));
+
+		await page.getByRole('button', { name: 'Green — 70% and above' }).click();
+		await vi.waitFor(() =>
+			expect(tierOrder(screen.container)).toEqual(['e-b', 'e-d', 'e-c', 'e-a'])
+		);
+
+		await page.getByRole('radio', { name: 'Tier 2 · Foundation' }).click();
+		await vi.waitFor(() =>
+			expect(screen.container.querySelector('[data-entry-id="f-d"]')).not.toBeNull()
+		);
+		// The fold carries across the tabs: green stays open where the teacher left it.
+		expect(screen.container.querySelector('[data-entry-id="f-b"]')).not.toBeNull();
+		await vi.waitFor(() =>
+			expect(tierOrder(screen.container)).toEqual(['f-a', 'f-c', 'f-b', 'f-d'])
+		);
+	});
+
+	it('compares each pair on the common tab and leaves pooled and gap blank until both tiers are marked', async () => {
+		seedTwoTierAnalysis();
+		const screen = openAnalysisAt('?tier=common');
+
+		await expect.element(page.getByTestId('common-questions')).toBeInTheDocument();
+
+		const both = commonRow(screen.container, 'e-a');
+		expect(both.textContent).toContain('1a ↔ 8a');
+		expect(figureText(both, 'common-coverage')).toBe('H 2/2 · F 2/2');
+		expect(figureText(both, 'common-gap')).toBe('+20');
+		expect(figureText(both, 'common-pooled')).toBe('pooled 60%');
+		expect(trackValue(both, 'tier1')).toBe('70');
+		expect(trackValue(both, 'tier2')).toBe('50');
+		expect(trackValue(both, 'pooled')).toBe('60');
+
+		const foundationAhead = commonRow(screen.container, 'e-b');
+		expect(figureText(foundationAhead, 'common-gap')).toBe('-70');
+		expect(figureText(foundationAhead, 'common-pooled')).toBe('pooled 45%');
+
+		const level = commonRow(screen.container, 'e-c');
+		expect(figureText(level, 'common-gap')).toBe('0');
+		expect(figureText(level, 'common-pooled')).toBe('pooled 50%');
+
+		// Foundation has no mark on the fourth pair: no pooled figure, no gap.
+		const oneSided = commonRow(screen.container, 'e-d');
+		expect(figureText(oneSided, 'common-gap')).toBe('—');
+		expect(figureText(oneSided, 'common-pooled')).toBe('—');
+		expect(trackValue(oneSided, 'tier1')).toBe('40');
+		expect(trackValue(oneSided, 'tier2')).toBe('');
+		expect(trackValue(oneSided, 'pooled')).toBe('');
+		expect(figureText(oneSided, 'common-note-tier2')).toBe('F Not marked yet');
+		expect(oneSided.querySelector('[data-testid="common-note-tier1"]')).toBeNull();
+	});
+
+	it('names what one side of a pair leaves out of its figure', async () => {
+		const document = twoTierAnalysisDocument();
+		// Flo's only mark on 8d is above its available marks: marked, but nothing counted.
+		document.marks.f1 = { 'f-a': 5, 'f-b': 8, 'f-c': 5, 'e-a': 10, 'f-d': 11 };
+		seed(document);
+		const screen = openAnalysisAt('?tier=common');
+
+		const pair = commonRow(screen.container, 'e-d');
+		expect(figureText(pair, 'common-coverage')).toBe('H 2/2 · F 1/2');
+		expect(figureText(pair, 'common-note-tier2')).toBe(
+			'F No mark within the available marks · F 1 above max — not counted'
+		);
+		expect(pair.querySelector('[data-testid="common-note-tier1"]')).toBeNull();
+	});
+
+	it('says when students without a tier are left out of the common facts', async () => {
+		const document = twoTierAnalysisDocument();
+		document.students.push(student('u1', 'Una', 'Tierless', false, null));
+		seed(document);
+		openAnalysisAt('?tier=common');
+
+		await expect
+			.element(page.getByTestId('analysis-view'))
+			.toHaveTextContent('1 student without a tier excluded');
+	});
+
+	it('falls back to T1 and T2 when two tier names share an initial', async () => {
+		const document = twoTierAnalysisDocument();
+		document.tiers[0].tierName = 'Higher';
+		document.tiers[1].tierName = 'Higher Prep';
+		seed(document);
+		const screen = openAnalysisAt('?tier=common');
+
+		await expect.element(page.getByRole('columnheader', { name: 'T1 ↔ T2' })).toBeInTheDocument();
+		expect(
+			screen.container
+				.querySelector('[data-testid="common-coverage"]')
+				?.textContent?.replace(/\s+/g, ' ')
+				.trim()
+		).toContain('T1 2/2 · T2 2/2');
+	});
+
+	it('draws the gap line between the whole percentages its labels show', async () => {
+		const document = twoTierAnalysisDocument();
+		// 5/13 = 38.46% and 3/8 = 37.5% both label 38%, so the line has no length.
+		document.tiers[0].breakdown.entries = [entry('e-a', '1a', '1', { marks: 13 })];
+		document.tiers[1].breakdown.entries = [entry('f-a', '8a', '8', { marks: 8 })];
+		document.commonQuestions = [{ tier1EntryId: 'e-a', tier2EntryId: 'f-a' }];
+		document.students = [
+			student('h1', 'Ada', 'Lovelace', false, 0),
+			student('f1', 'Flo', 'Found', false, 1)
+		];
+		document.marks = { h1: { 'e-a': 5 }, f1: { 'f-a': 3 } };
+		seed(document);
+		const screen = openAnalysisAt('?tier=common');
+
+		const row = commonRow(screen.container, 'e-a');
+		const gap = row.querySelector<HTMLElement>('[data-testid="track-gap"]');
+		expect(gap?.style.left).toBe('38%');
+		expect(gap?.style.width).toBe('0%');
+	});
+
+	it('keeps the open tier and sort selected when they are clicked again', async () => {
+		seedTwoTierAnalysis();
+		openAnalysisAt('?tier=common');
+
+		const common = page.getByRole('radio', { name: /Common questions/ });
+		await expect.element(common).toHaveAttribute('aria-checked', 'true');
+		await common.click();
+		await expect.element(common).toHaveAttribute('aria-checked', 'true');
+
+		const sort = page.getByRole('radio', { name: 'Biggest gap' });
+		await sort.click();
+		await expect.element(sort).toHaveAttribute('aria-checked', 'true');
+	});
+
+	it('sorts the common questions by biggest gap, then by pooled and paper order', async () => {
+		seedTwoTierAnalysis();
+		const screen = openAnalysisAt('?tier=common');
+
+		await vi.waitFor(() =>
+			expect(commonOrder(screen.container)).toEqual(['e-b', 'e-a', 'e-c', 'e-d'])
+		);
+
+		await page.getByRole('radio', { name: 'Pooled, worst first' }).click();
+		await vi.waitFor(() =>
+			expect(commonOrder(screen.container)).toEqual(['e-b', 'e-c', 'e-a', 'e-d'])
+		);
+
+		// Re-clicking the chosen sort keeps it: the order must not quietly fall back.
+		await page.getByRole('radio', { name: 'Pooled, worst first' }).click();
+		await expect.element(page.getByRole('radio', { name: 'Pooled, worst first' })).toBeChecked();
+		await vi.waitFor(() =>
+			expect(commonOrder(screen.container)).toEqual(['e-b', 'e-c', 'e-a', 'e-d'])
+		);
+
+		await page.getByRole('radio', { name: 'Tier 1 paper order' }).click();
+		await vi.waitFor(() =>
+			expect(commonOrder(screen.container)).toEqual(['e-a', 'e-b', 'e-c', 'e-d'])
+		);
+	});
+
+	it('leaves the Common tab out when no pairs were confirmed', async () => {
+		seed({ ...twoTierAnalysisDocument(), commonQuestions: [] });
+		const screen = openAnalysisAt();
+
+		await expect.element(page.getByRole('radio', { name: 'Tier 1 · Higher' })).toBeInTheDocument();
+		expect(
+			screen.container.querySelector('[data-testid="analysis-tabs"]')?.textContent
+		).not.toContain('Common questions');
+		expect(tierRow(screen.container, 'e-b')).not.toBeNull();
+	});
+
+	it('opens at the requested tab and highlights that entry, or its pair on the common tab', async () => {
+		seedTwoTierAnalysis();
+		const screen = openAnalysisAt('?tier=1&entry=f-b');
+
+		await vi.waitFor(() =>
+			expect(tierRow(screen.container, 'f-b').dataset.highlighted).toBe('true')
+		);
+		expect(screen.container.querySelector('[data-entry-id="e-b"]')).toBeNull();
 		screen.unmount();
 
-		// Reloading the URL does the same: the entry is in the query, not in page state.
-		openAnalysisAt('?entry=entry-40');
+		const common = openAnalysisAt('?tier=common&entry=e-b');
+		await vi.waitFor(() =>
+			expect(commonRow(common.container, 'e-b').dataset.highlighted).toBe('true')
+		);
+		common.unmount();
 
-		const row = analysisRow('entry-40');
-		if (!row) throw new Error('the analysis did not open at the entry');
-		expect(row.dataset.highlighted).toBe('true');
-		const box = row.getBoundingClientRect();
+		// Either side of a pair opens the same line: Tier 1's id is only the preference.
+		const byPartner = openAnalysisAt('?tier=common&entry=f-b');
+		await vi.waitFor(() =>
+			expect(commonRow(byPartner.container, 'e-b').dataset.highlighted).toBe('true')
+		);
+		byPartner.unmount();
+
+		// An absent or invalid tier opens Tier 1's chart; an unknown entry outlines nothing.
+		const fallback = openAnalysisAt('?tier=9&entry=e-b');
+		await vi.waitFor(() =>
+			expect(tierRow(fallback.container, 'e-b').dataset.highlighted).toBe('true')
+		);
+		expect(fallback.container.querySelector('[data-entry-id="f-b"]')).toBeNull();
+		fallback.unmount();
+
+		const unknown = openAnalysisAt('?entry=nope');
+		await expect.element(page.getByTestId('analysis-view')).toBeInTheDocument();
+		expect(unknown.container.querySelector('[data-highlighted]')).toBeNull();
+	});
+
+	it('unfolds green to reveal the entry the view opened at', async () => {
+		seedSingleTierAnalysis();
+		const screen = openAnalysisAt('?entry=entry-green');
+
+		await vi.waitFor(() =>
+			expect(tierRow(screen.container, 'entry-green').dataset.highlighted).toBe('true')
+		);
+		const box = tierRow(screen.container, 'entry-green').getBoundingClientRect();
 		expect(box.top).toBeGreaterThanOrEqual(0);
 		expect(box.bottom).toBeLessThanOrEqual(window.innerHeight);
-
-		await page.getByRole('button', { name: 'Back to marksheet' }).click();
-		expect(goto).toHaveBeenLastCalledWith('/marksheet');
 	});
 
-	it('opens the analysis without a highlight for an unknown entry id', async () => {
-		openAnalysisSheet();
-		openAnalysisAt('?entry=nope');
+	it('takes a single tier asked for Tier 2 or the common tab back to its one chart', async () => {
+		seedSingleTierAnalysis();
+		const asked = openAnalysisAt('?tier=1&entry=entry-red');
 
+		await vi.waitFor(() =>
+			expect(tierRow(asked.container, 'entry-red').dataset.highlighted).toBe('true')
+		);
+		expect(asked.container.querySelector('[data-testid="analysis-tabs"]')).toBeNull();
+		asked.unmount();
+
+		const common = openAnalysisAt('?tier=common');
 		await expect.element(page.getByTestId('analysis-view')).toBeInTheDocument();
-		expect(document.querySelector('[data-highlighted]')).toBeNull();
+		expect(common.container.querySelector('[data-testid="analysis-tabs"]')).toBeNull();
+		expect(common.container.querySelector('[data-testid="common-questions"]')).toBeNull();
+		expect(tierRow(common.container, 'entry-red')).not.toBeNull();
+	});
+
+	it('recomputes when a student changes tier, without a reload', async () => {
+		seedTwoTierAnalysis();
+		const screen = openAnalysisAt();
+
+		await page.getByRole('button', { name: 'Green — 70% and above' }).click();
+		await vi.waitFor(() =>
+			expect(figureText(tierRow(screen.container, 'e-a'), 'facility')).toBe('70%')
+		);
+
+		// Flo joins Tier 1: her mark on the Higher entry is now counted, not off-tier.
+		marksheetStore().setStudentTier('f1', 0);
+
+		await vi.waitFor(() =>
+			expect(figureText(tierRow(screen.container, 'e-a'), 'facility')).toBe('80%')
+		);
+		expect(figureText(tierRow(screen.container, 'e-a'), 'coverage')).toBe('H 3/3');
+	});
+
+	it('takes the back link to the marksheet', async () => {
+		seedSingleTierAnalysis();
+		openAnalysisAt();
+
+		await page.getByRole('button', { name: 'Back to marksheet' }).click();
+		expect(goto).toHaveBeenCalledWith('/marksheet');
 	});
 
 	it('names the analysis in the page title', async () => {
-		openAnalysisSheet();
+		seedSingleTierAnalysis();
+		marksheetStore().load();
 		marksheetStore().setClassName('10C1');
 		openAnalysisAt();
 
 		await vi.waitFor(() => expect(document.title).toBe('10C1 · Analysis · QLA'));
-	});
-
-	it('opens the analysis at the entry a Hardest item names', async () => {
-		const screen = openAnalysisSheet({
-			marks: { 'student-1': { 'entry-1': 1, 'entry-2': 4 } }
-		});
-
-		await page.getByTestId('hardest').getByRole('button', { name: '1a 25%' }).click();
-		expect(goto).toHaveBeenCalledWith('/marksheet/analysis?entry=entry-1');
-		screen.unmount();
-
-		openAnalysisAt('?entry=entry-1');
-		expect(analysisRow('entry-1')?.dataset.highlighted).toBe('true');
-		expect(document.body.textContent).toContain('Red — below 40%');
 	});
 });

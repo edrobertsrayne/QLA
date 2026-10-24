@@ -49,6 +49,8 @@ export const MAX_AO_DESCRIPTION_WORDS = AO_DESCRIPTION_TARGET_WORDS + 2;
 
 /** Structured per-question breakdown of an upload. */
 export interface Breakdown {
+	/** The tier this paper is set at, copied verbatim from the documents, or null when none is printed. */
+	tierName: string | null;
 	questions: ParseQuestion[];
 	aoDescriptions: AoDescription[];
 }
@@ -100,10 +102,10 @@ export const SPEC_UNREADABLE_CODE = 'SPEC_UNREADABLE';
 
 // --- Limits (client pre-checks these; the route re-enforces them) ---
 
-/** Per-file cap for assessment paper / markscheme PDFs. Fatal (413) when exceeded. */
+/** Per-file cap for assessment paper / markscheme PDFs, applied to each parse call. Fatal (413) when exceeded. */
 export const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
-/** Total page ceiling across the uploaded PDFs (paper + markscheme; the spec has its own cap). Fatal (413) when exceeded. */
+/** Page ceiling per parse call, across that call's uploaded PDFs (paper + markscheme; the spec has its own cap). Fatal (413) when exceeded. */
 export const MAX_TOTAL_PAGES = 100;
 
 /** Byte cap for the fetched specification PDF (OCR H556 Physics A is 16.6MB). Fatal (413) when exceeded. */

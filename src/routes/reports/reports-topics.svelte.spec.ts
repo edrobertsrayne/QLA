@@ -6,6 +6,7 @@ import { marksheetStore } from '$lib/marksheet/index.js';
 import {
 	plain,
 	h556,
+	twoTiers,
 	stubFetch,
 	ok,
 	topicNames,
@@ -99,7 +100,7 @@ describe('topic names step', () => {
 			'5.1.2': 'Gas pressure and temperature',
 			'5.2.1': 'Internal energy stores'
 		};
-		doc.breakdown.aoDescriptions = { AO3: 'Analyse information to make judgements' };
+		doc.aoDescriptions = { AO3: 'Analyse information to make judgements' };
 		seed(doc);
 		const { stub } = stubFetch(() => ok());
 		await openReports();
@@ -238,5 +239,67 @@ describe('review fixes', () => {
 		expect(shared).toHaveLength(1);
 		expect(shared[0]).toMatch(/^Kinetic model 5\/10\b/);
 		expect(posted(stub)[0].entries[0].topics).toEqual(['Kinetic model', 'Kinetic model']);
+	});
+});
+
+describe('topic names across both tiers', () => {
+	it('proposes every code from both tiers once, with summaries from every entry carrying it', async () => {
+		seed(twoTiers());
+		const { stub } = stubFetch(() => topicNames());
+		await openReports();
+
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		await vi.waitFor(() =>
+			expect(stub.mock.calls.filter(([url]) => String(url) === '/api/topic-names')).toHaveLength(1)
+		);
+		const calls = stub.mock.calls.filter(([url]) => String(url) === '/api/topic-names');
+		const body = JSON.parse((calls[0][1] as { body: string }).body) as {
+			paperLabel: string;
+			codes: { code: string; summaries: string[]; tier?: number }[];
+		};
+
+		// Tier 1 first, then Tier 2's new code; the shared code carries both
+		// papers' summaries and no code carries a tier.
+		expect(body.paperLabel).toBe('10X Ph1');
+		expect(body.codes).toEqual([
+			{ code: '5.1.1', summaries: ['Higher question one'] },
+			{ code: '5.1.2', summaries: ['Higher question two', 'Foundation question one'] },
+			{ code: '5.2.1', summaries: ['Foundation question two'] }
+		]);
+		for (const code of body.codes) expect(code).not.toHaveProperty('tier');
+
+		const nameFor = (code: string): HTMLInputElement | null =>
+			document.querySelector(`#topic-${CSS.escape(code)}`);
+		await vi.waitFor(() => expect(nameFor('5.1.1')?.value).toBe('Kinetic theory of gases'), {
+			timeout: 5000
+		});
+		expect(nameFor('5.2.1')?.value).toBe('Internal energy stores');
+
+		// A blank Tier 2 name blocks Next: the gaps are judged on the combined list.
+		await page.getByLabelText('Name for 5.2.1').clear();
+		expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
+		await page.getByLabelText('Name for 5.2.1').fill('Internal energy stores');
+		await expect.element(page.getByRole('button', { name: 'Next' })).toBeEnabled();
+	});
+
+	it('keeps a name whose code is on either tier and drops only one on neither', async () => {
+		const doc = twoTiers();
+		doc.topicNames = {
+			'5.1.1': 'Kinetic theory',
+			'5.1.2': 'Gas pressure',
+			// Carried by Tier 2 only: still a live name.
+			'5.2.1': 'Internal energy',
+			'9.9.9': 'Ghost code'
+		};
+		seed(doc);
+		stubFetch();
+		await openReports('/reports/topics');
+
+		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		const nameFor = (code: string): HTMLInputElement | null =>
+			document.querySelector(`#topic-${CSS.escape(code)}`);
+		expect(nameFor('5.2.1')?.value).toBe('Internal energy');
+		expect(marksheetStore().document?.topicNames['5.2.1']).toBe('Internal energy');
+		expect(marksheetStore().document?.topicNames['9.9.9']).toBeUndefined();
 	});
 });

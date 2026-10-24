@@ -11,6 +11,7 @@ import {
 	HOSTILE,
 	plain,
 	solo,
+	namedTwoTiers,
 	stubFetch,
 	reportCalls,
 	retryable,
@@ -355,5 +356,30 @@ describe('review fixes', () => {
 
 		await expect.element(page.getByRole('button', { name: 'Write 0 reports' })).toBeDisabled();
 		await expect.element(page.getByText(/Every student here has a report/)).toBeInTheDocument();
+	});
+});
+
+describe('students without a tier', () => {
+	it('blocks a no-tier student from reports, names the reason, and writes only the rest', async () => {
+		seed(namedTwoTiers());
+		const { stub } = stubFetch();
+		await openReports('/reports/who');
+
+		await expect
+			.element(page.getByRole('heading', { name: '2 students get a report' }))
+			.toBeInTheDocument();
+		const blocked = document.body.textContent ?? '';
+		expect(blocked).toContain('Nora Nought');
+		expect(blocked).toContain('No tier set');
+
+		await page.getByRole('button', { name: 'Write 2 reports' }).click();
+		await expect.element(page.getByRole('button', { name: 'Print all 2' })).toBeInTheDocument();
+		expect(posted(stub)).toHaveLength(2);
+		expect(JSON.stringify(posted(stub))).not.toContain('Nora');
+
+		// The Review rail says why she has no page.
+		const rail = document.querySelector('aside');
+		expect(rail?.textContent).toContain('Nora Nought');
+		expect(rail?.textContent).toContain('Blocked (No tier set)');
 	});
 });

@@ -5,7 +5,38 @@
 // The frozen columns and truncated names are Tailwind classes, so the
 // stylesheet has to be in the page for their computed styles to mean anything.
 import '../../app.css';
+import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import { confirmed, entry, tier } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
+
+/**
+ * A two-tier assessment with a paper each: Higher (one 4-mark entry) and
+ * Foundation (a 5-mark and a 3-mark entry), no boundaries and no class.
+ */
+export function twoTier(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
+	return confirmed({
+		tiers: [
+			tier({
+				tierName: 'Higher',
+				breakdown: {
+					entries: [entry('higher-1', 'H1', '1', { marks: 4 })],
+					warnings: []
+				}
+			}),
+			tier({
+				tierName: 'Foundation',
+				breakdown: {
+					entries: [
+						entry('foundation-1', 'F1', '1', { marks: 5 }),
+						entry('foundation-2', 'F2', '2', { marks: 3 })
+					],
+					warnings: []
+				}
+			})
+		],
+		...overrides
+	});
+}
 
 /** The class as the grid shows it, in the order it shows them. */
 export function rowNames(screen: { container: HTMLElement }): string[] {

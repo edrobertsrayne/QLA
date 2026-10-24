@@ -6,9 +6,20 @@
 // Downloads folder as well as in the app, because that is where they are picked
 // up at restore time.
 
-import { analyseMarksheet, facilityPercent, notScoredLabel } from './analysis.js';
+import {
+	analyseCommonQuestions,
+	analyseTier,
+	facilityPercent,
+	notScoredLabel
+} from './analysis.js';
 import { entryName } from './breakdown.js';
-import { CORRUPT_KEY_PREFIX, totalMarks, type MarksheetDocument } from './document.js';
+import {
+	CORRUPT_KEY_PREFIX,
+	tierEntries,
+	totalMarks,
+	type MarksheetDocument,
+	type TierIndex
+} from './document.js';
 import { studentName, type StudentName } from './students.js';
 
 /** A file the browser will save: its name, its body, and what it is. */
@@ -31,6 +42,11 @@ function slugOr(value: string | null, fallback: string): string {
 	return slug(value ?? '') || fallback;
 }
 
+/** A tier's part of a filename: its printed name, or its position when it has none. */
+function tierSlug(document: MarksheetDocument, tier: TierIndex): string {
+	return slug(document.tiers[tier]?.tierName ?? '') || `tier-${tier + 1}`;
+}
+
 /** The local day a file was made, as `2026-01-01`. */
 function dayStamp(at: Date): string {
 	const month = String(at.getMonth() + 1).padStart(2, '0');
@@ -49,7 +65,7 @@ export function exportFilename(
 	return [
 		'qla',
 		kind,
-		slugOr(document.paper.label, 'marksheet'),
+		slugOr(document.label, 'marksheet'),
 		...also,
 		`${dayStamp(now)}.${extension}`
 	].join('-');
@@ -61,7 +77,7 @@ export function exportFilename(
  */
 export function backupFile(document: MarksheetDocument, now: Date): QlaFile {
 	return {
-		filename: `qla-backup-${slugOr(document.paper.label, 'marksheet')}-${dayStamp(now)}.json`,
+		filename: `qla-backup-${slugOr(document.label, 'marksheet')}-${dayStamp(now)}.json`,
 		text: JSON.stringify(document),
 		type: 'application/json'
 	};
@@ -69,21 +85,28 @@ export function backupFile(document: MarksheetDocument, now: Date): QlaFile {
 
 /** A cell as it has to be written: quoted when a comma, a quote or a line break would split the row. */
 function csvCell(value: string): string {
-	return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+	// Spreadsheets evaluate a cell starting with a formula marker. A leading
+	// apostrophe keeps paper- or model-derived text text — but a signed number
+	// is a figure the teacher sorts, so it stays one.
+	const formula = /^[=+\-@\t\r]/.test(value);
+	const signedNumber = /^-?\d+(\.\d+)?$/.test(value);
+	const safe = formula && !signedNumber ? `'${value}` : value;
+	return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 
 /**
- * The marksheet's marks as a spreadsheet reads them: one row per student in
- * display order, one column per breakdown entry in breakdown order, and a `Max`
- * row under the header saying what each column is out of.
+ * One tier's marks as a spreadsheet reads them: one row per student on that
+ * tier in display order, one column per entry on that tier in breakdown order,
+ * and a `Max` row under the header saying what each column is out of.
  *
  * Lossy and one-way, by design: an unmarked cell is empty, an absent student is
  * flagged rather than dropped, and the total is the marks exactly as entered —
  * no band, no facility, nothing that could be read back as a marksheet.
  */
-export function marksCsvFile(document: MarksheetDocument): QlaFile {
-	const entries = document.breakdown.entries;
-	const rows = document.students.map((student) => {
+export function marksCsvFile(document: MarksheetDocument, tier: TierIndex): QlaFile {
+	const entries = tierEntries(document, tier);
+	const students = document.students.filter((student) => student.tier === tier);
+	const rows = students.map((student) => {
 		const marks = entries.map((entry) => document.marks[student.id]?.[entry.id]);
 		return [
 			student.surname,
@@ -96,10 +119,12 @@ export function marksCsvFile(document: MarksheetDocument): QlaFile {
 	const maxima = entries.map((entry) => (entry.marks === null ? '' : String(entry.marks)));
 
 	return {
-		filename: `${slugOr(document.paper.label, 'marksheet')}-${slugOr(
-			document.paper.className,
-			'class'
-		)}-marks.csv`,
+		filename: [
+			slugOr(document.label, 'marksheet'),
+			slugOr(document.className, 'class'),
+			tierSlug(document, tier),
+			'marks.csv'
+		].join('-'),
 		text:
 			[
 				['Surname', 'First name', 'Absent', ...entries.map((entry) => entry.label), 'Total'],
@@ -113,13 +138,13 @@ export function marksCsvFile(document: MarksheetDocument): QlaFile {
 }
 
 /**
- * The analysis figures as a spreadsheet reads them: one row per breakdown
- * entry, in breakdown order, every entry included. A missing field is an empty
- * cell. Lossy and one-way like the marks export, and like it, it takes no part
- * in the backup: nothing here marks a backup as taken.
+ * One tier's analysis figures as a spreadsheet reads them: one row per entry
+ * on that tier, in breakdown order, every entry included. A missing field is
+ * an empty cell. Lossy and one-way like the marks export, and like it, it
+ * takes no part in the backup: nothing here marks a backup as taken.
  */
-export function analysisCsvFile(document: MarksheetDocument, now: Date): QlaFile {
-	const rows = analyseMarksheet(document).entries.map((row) => [
+export function analysisCsvFile(document: MarksheetDocument, tier: TierIndex, now: Date): QlaFile {
+	const rows = analyseTier(document, tier).entries.map((row) => [
 		entryName(row.entry),
 		row.entry.questionNumber,
 		row.entry.summary,
@@ -136,7 +161,7 @@ export function analysisCsvFile(document: MarksheetDocument, now: Date): QlaFile
 		row.notScored === null ? '' : notScoredLabel(row)
 	]);
 	return {
-		filename: exportFilename('analysis', document, now, 'csv'),
+		filename: exportFilename('analysis', document, now, 'csv', tierSlug(document, tier)),
 		text:
 			[
 				[
@@ -161,6 +186,88 @@ export function analysisCsvFile(document: MarksheetDocument, now: Date): QlaFile
 				.join('\r\n') + '\r\n',
 		type: 'text/csv'
 	};
+}
+
+/** How the common-questions export names a tier that has no printed name. */
+function tierHeading(document: MarksheetDocument, tier: TierIndex): string {
+	const name = document.tiers[tier]?.tierName?.trim() ?? '';
+	return name === '' ? `Tier ${tier + 1}` : name;
+}
+
+/**
+ * The common questions as a spreadsheet reads them: one row per pair in Tier
+ * 1's paper order. Each tier's own figures sit beside the pooled figure and
+ * the gap, so the comparison stands without the app. Summary, spec point and
+ * AO come from Tier 1; a tier with no printed name is headed `Tier N`.
+ */
+export function commonQuestionsCsvFile(document: MarksheetDocument, now: Date): QlaFile {
+	const tier1 = tierHeading(document, 0);
+	const tier2 = tierHeading(document, 1);
+	const rows = analyseCommonQuestions(document).map((row) => [
+		row.tier1.entry.label,
+		row.tier2.entry.label,
+		row.tier1.entry.summary,
+		row.tier1.entry.marks === null ? '' : String(row.tier1.entry.marks),
+		row.tier1.entry.specPoint ?? '',
+		row.tier1.entry.ao ?? '',
+		row.tier1.analysis.facility === null
+			? ''
+			: String(facilityPercent(row.tier1.analysis.facility)),
+		row.tier1.analysis.band ?? '',
+		String(row.tier1.analysis.coverage.marked),
+		String(row.tier1.analysis.coverage.of),
+		row.tier2.analysis.facility === null
+			? ''
+			: String(facilityPercent(row.tier2.analysis.facility)),
+		row.tier2.analysis.band ?? '',
+		String(row.tier2.analysis.coverage.marked),
+		String(row.tier2.analysis.coverage.of),
+		row.pooled.facility === null ? '' : String(facilityPercent(row.pooled.facility)),
+		row.pooled.band ?? '',
+		row.gap === null ? '' : String(row.gap),
+		row.pooled.partMarked ? 'yes' : 'no'
+	]);
+	return {
+		filename: exportFilename('common-questions', document, now, 'csv'),
+		text:
+			[
+				[
+					`${tier1} question`,
+					`${tier2} question`,
+					'Summary',
+					'Available marks',
+					'Spec point',
+					'AO',
+					`${tier1} facility %`,
+					`${tier1} band`,
+					`${tier1} marked`,
+					`${tier1} of`,
+					`${tier2} facility %`,
+					`${tier2} band`,
+					`${tier2} marked`,
+					`${tier2} of`,
+					'Pooled facility %',
+					'Pooled band',
+					`Gap (${tier1} − ${tier2}, points)`,
+					'Part-marked'
+				],
+				...rows
+			]
+				.map((row) => row.map(csvCell).join(','))
+				.join('\r\n') + '\r\n',
+		type: 'text/csv'
+	};
+}
+
+/** The name of the analysis view's PDF: one tier's chart, or the common-questions comparison. */
+export function analysisPdfFilename(
+	document: MarksheetDocument,
+	tab: TierIndex | 'common',
+	now: Date
+): string {
+	return tab === 'common'
+		? exportFilename('common-questions', document, now, 'pdf')
+		: exportFilename('analysis', document, now, 'pdf', tierSlug(document, tab));
 }
 
 /** The name of one student's report PDF. */

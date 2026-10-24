@@ -14,6 +14,6 @@
 	aria-label="Paper label"
 	class="h-auto border-transparent bg-transparent px-1 text-2xl font-bold tracking-tight shadow-none hover:border-input"
 	placeholder="Name this paper"
-	value={store.document?.paper.label ?? ''}
+	value={store.label ?? ''}
 	oninput={(event) => store.setPaperLabel(event.currentTarget.value)}
 />

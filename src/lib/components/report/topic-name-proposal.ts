@@ -1,6 +1,6 @@
 // The browser's side of `POST /api/topic-names`.
 
-import { specPointCodes, type MarksheetDocument } from '$lib/marksheet/document.js';
+import { allEntries, specPointCodes, type MarksheetDocument } from '$lib/marksheet/document.js';
 import { MAX_SUMMARIES_PER_CODE } from '$lib/marksheet/report-limits.js';
 import { isRecord } from '$lib/parse/is-breakdown.js';
 import { ApiFailure, failureFrom } from '$lib/api-error.js';
@@ -15,8 +15,11 @@ export async function proposeTopicNames(
 	codes: readonly string[],
 	model: string
 ): Promise<Record<string, string>> {
+	// Every entry on either tier, Tier 1 first: a code shared by both papers
+	// carries summaries from both, so one name serves the shared set.
+	const entries = allEntries(document);
 	const summariesOf = (wanted: string): string[] =>
-		document.breakdown.entries
+		entries
 			.filter((entry) => specPointCodes(entry.specPoint).includes(wanted))
 			.map((entry) => entry.summary || entry.label)
 			.slice(0, MAX_SUMMARIES_PER_CODE);
@@ -25,7 +28,7 @@ export async function proposeTopicNames(
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({
 			...(model.trim() === '' ? {} : { model: model.trim() }),
-			paperLabel: document.paper.label ?? '',
+			paperLabel: document.label ?? '',
 			codes: codes.map((code) => ({ code, summaries: summariesOf(code) }))
 		})
 	});

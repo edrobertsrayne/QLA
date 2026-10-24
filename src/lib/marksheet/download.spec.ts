@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CORRUPT_KEY_PREFIX, DOCUMENT_SCHEMA_VERSION } from './document.js';
+import { CORRUPT_KEY_PREFIX } from './document.js';
 import type { MarksheetDocument } from './document.js';
+import { confirmed, entry, student, tier } from './fixtures.spec-helpers.js';
 import {
 	analysisCsvFile,
+	analysisPdfFilename,
 	backupFile,
+	commonQuestionsCsvFile,
 	corruptFile,
 	exportFilename,
 	marksCsvFile,
@@ -15,44 +18,16 @@ import {
 const NOW = new Date(2026, 0, 1, 10, 0);
 
 function marksheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
-	return {
-		schemaVersion: DOCUMENT_SCHEMA_VERSION,
-		createdAt: NOW.toISOString(),
-		updatedAt: NOW.toISOString(),
-		breakdownConfirmedAt: NOW.toISOString(),
-		lastExportedAt: null,
-		firstUnbackedChangeAt: null,
-		paper: {
-			label: '10X Ph1',
-			className: '10C1',
-			sourceFilenames: ['10X Ph1.pdf'],
-			parsedAt: NOW.toISOString(),
-			boundaries: null,
-			belowLowestLabel: 'U'
-		},
-		breakdown: {
-			entries: [
-				{
-					id: 'entry-1',
-					label: '2bii',
-					questionNumber: '2',
-					marks: 4,
-					summary: 'Explain the process shown',
-					specPoint: '3.2.1.4',
-					commandWord: 'Explain',
-					ao: 'AO1',
-					original: null
-				}
-			],
-			warnings: [],
-			aoDescriptions: {}
-		},
-		students: [{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false }],
+	return confirmed({
+		label: '10X Ph1',
+		className: '10C1',
+		tiers: [
+			tier({ breakdown: { entries: [entry('entry-1', '2bii', '2', { marks: 4 })], warnings: [] } })
+		],
+		students: [student('student-1', 'Ada', 'Lovelace', false, 0)],
 		marks: { 'student-1': { 'entry-1': 3 } },
-		topicNames: {},
-		reports: {},
 		...overrides
-	};
+	});
 }
 
 describe('backupFile', () => {
@@ -66,20 +41,18 @@ describe('backupFile', () => {
 		expect(file.type).toBe('application/json');
 	});
 
-	it('names itself by paper and date', () => {
+	it('names itself by assessment and date', () => {
 		expect(backupFile(marksheet(), NOW).filename).toBe('qla-backup-10x-ph1-2026-01-01.json');
 	});
 
-	it('falls back to a plain name when the paper has none', () => {
-		const document = marksheet({ paper: { ...marksheet().paper, label: null } });
+	it('falls back to a plain name when the assessment has none', () => {
+		const document = marksheet({ label: null });
 
 		expect(backupFile(document, NOW).filename).toBe('qla-backup-marksheet-2026-01-01.json');
 	});
 
 	it('names a paper the filesystem would not take as one it will', () => {
-		const document = marksheet({
-			paper: { ...marksheet().paper, label: '  AQA GCSE Physics P1 — Nov mock  ' }
-		});
+		const document = marksheet({ label: '  AQA GCSE Physics P1 — Nov mock  ' });
 
 		expect(backupFile(document, NOW).filename).toBe(
 			'qla-backup-aqa-gcse-physics-p1-nov-mock-2026-01-01.json'
@@ -89,32 +62,38 @@ describe('backupFile', () => {
 
 describe('marksCsvFile', () => {
 	/**
-	 * Two entries and two students, with an absent flag, a 0 and a cell still
-	 * unmarked between them: every state a mark column can hold.
+	 * Two entries and two students on one tier, with an absent flag, a 0 and a
+	 * cell still unmarked between them: every state a mark column can hold.
 	 */
 	function marksForSpreadsheet(): MarksheetDocument {
 		const base = marksheet();
-		const [, other] = base.breakdown.entries;
-		return {
-			...base,
-			breakdown: {
-				entries: [
-					{ ...base.breakdown.entries[0], id: 'entry-2bii', label: '2bii', marks: 4 },
-					{ ...(other ?? base.breakdown.entries[0]), id: 'entry-3a', label: '3a', marks: 2 }
-				],
-				warnings: [],
-				aoDescriptions: {}
-			},
-			students: [
-				{ id: 'student-1', firstName: 'Ada', surname: 'Lovelace', absent: false },
-				{ id: 'student-2', firstName: 'Grace', surname: 'Hopper', absent: true }
+		const first = base.tiers[0].breakdown.entries[0];
+		return marksheet({
+			tiers: [
+				tier({
+					tierName: 'Higher',
+					breakdown: {
+						entries: [
+							{ ...first, id: 'entry-2bii', label: '2bii', marks: 4 },
+							{ ...first, id: 'entry-3a', label: '3a', marks: 2 }
+						],
+						warnings: []
+					}
+				})
 			],
-			marks: { 'student-1': { 'entry-2bii': 3 }, 'student-2': { 'entry-2bii': 0, 'entry-3a': 2 } }
-		};
+			students: [
+				student('student-1', 'Ada', 'Lovelace', false, 0),
+				student('student-2', 'Grace', 'Hopper', true, 0)
+			],
+			marks: {
+				'student-1': { 'entry-2bii': 3 },
+				'student-2': { 'entry-2bii': 0, 'entry-3a': 2 }
+			}
+		});
 	}
 
-	it('lays the marks out as a spreadsheet reads them', () => {
-		const file = marksCsvFile(marksForSpreadsheet());
+	it('lays the tier’s marks out as a spreadsheet reads them', () => {
+		const file = marksCsvFile(marksForSpreadsheet(), 0);
 
 		expect(file.text).toBe(
 			[
@@ -130,23 +109,51 @@ describe('marksCsvFile', () => {
 		expect(file.type).toBe('text/csv');
 	});
 
-	it('names itself by paper and class, so a Downloads folder tells it from a backup', () => {
-		expect(marksCsvFile(marksForSpreadsheet()).filename).toBe('10x-ph1-10c1-marks.csv');
+	it('names itself by assessment, class and tier, using the tier’s position when it has no name', () => {
+		expect(marksCsvFile(marksForSpreadsheet(), 0).filename).toBe('10x-ph1-10c1-higher-marks.csv');
+		expect(marksCsvFile(marksheet(), 0).filename).toBe('10x-ph1-10c1-tier-1-marks.csv');
 	});
 
-	it('falls back for a paper or a class the teacher never named', () => {
+	it('falls back for an assessment or a class the teacher never named', () => {
 		const document = marksForSpreadsheet();
-		document.paper.label = null;
-		document.paper.className = null;
+		document.label = null;
+		document.className = null;
 
-		expect(marksCsvFile(document).filename).toBe('marksheet-class-marks.csv');
+		expect(marksCsvFile(document, 0).filename).toBe('marksheet-class-higher-marks.csv');
+	});
+
+	it('holds only the tier’s students, entries and on-tier marks', () => {
+		const document = marksheet({
+			tiers: [
+				tier({
+					tierName: 'Higher',
+					breakdown: { entries: [entry('entry-1', '1a', '1', { marks: 4 })], warnings: [] }
+				}),
+				tier({
+					tierName: 'Foundation',
+					breakdown: { entries: [entry('entry-2', '8a', '8', { marks: 2 })], warnings: [] }
+				})
+			],
+			students: [
+				student('h1', 'Hana', 'Higher', false, 0),
+				student('f1', 'Flo', 'Foundation', false, 1)
+			],
+			marks: { h1: { 'entry-1': 3, 'entry-2': 2 }, f1: { 'entry-2': 1 } }
+		});
+
+		expect(marksCsvFile(document, 0).text).toBe(
+			['Surname,First name,Absent,1a,Total', 'Max,,,4,4', 'Higher,Hana,,3,3', ''].join('\r\n')
+		);
+		expect(marksCsvFile(document, 1).text).toBe(
+			['Surname,First name,Absent,8a,Total', 'Max,,,2,2', 'Foundation,Flo,,1,1', ''].join('\r\n')
+		);
 	});
 
 	it('quotes a label a spreadsheet would otherwise read as two columns', () => {
 		const document = marksForSpreadsheet();
-		document.breakdown.entries[0].label = '2b, ii';
+		document.tiers[0].breakdown.entries[0].label = '2b, ii';
 
-		expect(marksCsvFile(document).text.split('\r\n')[0]).toBe(
+		expect(marksCsvFile(document, 0).text.split('\r\n')[0]).toBe(
 			'Surname,First name,Absent,"2b, ii",3a,Total'
 		);
 	});
@@ -199,46 +206,57 @@ describe('analysisCsvFile', () => {
 	/** Entries in an order band order would scramble: green, then red, then not scored. */
 	function analysed(): MarksheetDocument {
 		const base = marksheet();
-		const entry = base.breakdown.entries[0];
-		return {
-			...base,
-			breakdown: {
-				entries: [
-					{ ...entry, id: 'e-green', label: '1a', questionNumber: '1', marks: 4, summary: NASTY },
-					{
-						...entry,
-						id: 'e-red',
-						label: '1b',
-						questionNumber: '1',
-						marks: 4,
-						summary: 'Red one',
-						specPoint: null,
-						ao: null
-					},
-					{
-						...entry,
-						id: 'e-none',
-						label: '2',
-						questionNumber: '',
-						marks: null,
-						summary: 'No marks given',
-						specPoint: null,
-						ao: null
+		const sample = base.tiers[0].breakdown.entries[0];
+		return marksheet({
+			tiers: [
+				tier({
+					tierName: 'Higher',
+					breakdown: {
+						entries: [
+							{
+								...sample,
+								id: 'e-green',
+								label: '1a',
+								questionNumber: '1',
+								marks: 4,
+								summary: NASTY,
+								ao: 'AO1'
+							},
+							{
+								...sample,
+								id: 'e-red',
+								label: '1b',
+								questionNumber: '1',
+								marks: 4,
+								summary: 'Red one',
+								specPoint: null,
+								ao: null
+							},
+							{
+								...sample,
+								id: 'e-none',
+								label: '2',
+								questionNumber: '',
+								marks: null,
+								summary: 'No marks given',
+								specPoint: null,
+								ao: null
+							}
+						],
+						warnings: []
 					}
-				],
-				warnings: [],
-				aoDescriptions: {}
-			},
+				})
+			],
 			students: [
-				{ id: 's1', firstName: 'Ada', surname: 'Lovelace', absent: false },
-				{ id: 's2', firstName: 'Grace', surname: 'Hopper', absent: false }
+				student('s1', 'Ada', 'Lovelace', false, 0),
+				student('s2', 'Grace', 'Hopper', false, 0)
 			],
 			marks: { s1: { 'e-green': 4, 'e-red': 1 }, s2: { 'e-green': 3, 'e-red': 9 } }
-		};
+		});
 	}
 
-	it('has the header, then one row per entry in breakdown order', () => {
-		const rows = parseCsv(analysisCsvFile(analysed(), NOW).text);
+	it('has the header, then one row per entry on the tier in breakdown order', () => {
+		const rows = parseCsv(analysisCsvFile(analysed(), 0, NOW).text);
 
 		expect(rows[0]).toEqual([
 			'Question',
@@ -260,7 +278,7 @@ describe('analysisCsvFile', () => {
 	});
 
 	it('fills figures for scored entries and leaves unscored ones empty', () => {
-		const [, green, red, none] = parseCsv(analysisCsvFile(analysed(), NOW).text);
+		const [, green, red, none] = parseCsv(analysisCsvFile(analysed(), 0, NOW).text);
 
 		expect(green).toEqual([
 			'1a',
@@ -314,16 +332,229 @@ describe('analysisCsvFile', () => {
 	});
 
 	it('survives a CSV parser: commas, quotes and line breaks in a summary', () => {
-		const rows = parseCsv(analysisCsvFile(analysed(), NOW).text);
+		const rows = parseCsv(analysisCsvFile(analysed(), 0, NOW).text);
 
 		expect(rows[1][2]).toBe(NASTY);
 		expect(rows.every((row) => row.length === 14)).toBe(true);
 	});
 
-	it('is named by paper and day', () => {
-		const file = analysisCsvFile(analysed(), NOW);
+	it('exports only the entries of the tier asked for', () => {
+		const document = analysed();
+		document.tiers.push(
+			tier({
+				tierName: 'Foundation',
+				breakdown: { entries: [entry('f1', '8a', '8', { marks: 2 })], warnings: [] }
+			})
+		);
 
-		expect(file.filename).toBe('qla-analysis-10x-ph1-2026-01-01.csv');
+		const rows = parseCsv(analysisCsvFile(document, 1, NOW).text);
+
+		expect(rows.slice(1).map((row) => row[0])).toEqual(['8a']);
+	});
+
+	it('is named by assessment, tier and day', () => {
+		const file = analysisCsvFile(analysed(), 0, NOW);
+
+		expect(file.filename).toBe('qla-analysis-10x-ph1-higher-2026-01-01.csv');
+		expect(file.type).toBe('text/csv');
+	});
+
+	it('names a tier with no printed name by its position, so two tiers never collide', () => {
+		const document = analysed();
+		document.tiers[0].tierName = null;
+
+		expect(analysisCsvFile(document, 0, NOW).filename).toBe(
+			'qla-analysis-10x-ph1-tier-1-2026-01-01.csv'
+		);
+	});
+});
+
+describe('commonQuestionsCsvFile', () => {
+	/** One pair, marked on both tiers: Tier 1 63%, Tier 2 38%, pooled 50%, gap 25. */
+	function paired(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
+		return marksheet({
+			tiers: [
+				tier({
+					tierName: 'Higher',
+					breakdown: {
+						entries: [
+							entry('e1', '1a', '1', {
+								marks: 4,
+								summary: 'Shared question',
+								specPoint: '3.2.1.4',
+								ao: 'AO1'
+							})
+						],
+						warnings: []
+					}
+				}),
+				tier({
+					tierName: 'Foundation',
+					breakdown: {
+						entries: [
+							entry('e2', '8a', '8', {
+								marks: 4,
+								summary: 'Foundation wording',
+								specPoint: null,
+								ao: null
+							})
+						],
+						warnings: []
+					}
+				})
+			],
+			commonQuestions: [{ tier1EntryId: 'e1', tier2EntryId: 'e2' }],
+			students: [
+				student('h1', 'Hana', 'Higher', false, 0),
+				student('h2', 'Hugo', 'Higher', false, 0),
+				student('f1', 'Flo', 'Foundation', false, 1),
+				student('f2', 'Finn', 'Foundation', false, 1)
+			],
+			marks: { h1: { e1: 3 }, h2: { e1: 2 }, f1: { e2: 1 }, f2: { e2: 2 } },
+			...overrides
+		});
+	}
+
+	it('has the fixed columns in order, naming each tier', () => {
+		const [header] = parseCsv(commonQuestionsCsvFile(paired(), NOW).text);
+
+		expect(header).toEqual([
+			'Higher question',
+			'Foundation question',
+			'Summary',
+			'Available marks',
+			'Spec point',
+			'AO',
+			'Higher facility %',
+			'Higher band',
+			'Higher marked',
+			'Higher of',
+			'Foundation facility %',
+			'Foundation band',
+			'Foundation marked',
+			'Foundation of',
+			'Pooled facility %',
+			'Pooled band',
+			'Gap (Higher − Foundation, points)',
+			'Part-marked'
+		]);
+	});
+
+	it('keeps a formula-looking cell as text for the spreadsheet', () => {
+		const document = paired();
+		document.tiers[0].breakdown.entries[0].summary = '=SUM(A1,B1)';
+		document.tiers[0].tierName = '=cmd';
+
+		const text = commonQuestionsCsvFile(document, NOW).text;
+		const [header, row] = parseCsv(text);
+
+		expect(header?.[0]).toBe("'=cmd question");
+		expect(row?.[2]).toBe("'=SUM(A1,B1)");
+		// The apostrophe comes before the quotes the comma forces.
+		expect(text).toContain(`"'=SUM(A1,B1)"`);
+	});
+
+	it('writes one row per pair with both tiers’ figures, the pooled figure and the gap', () => {
+		const [, row] = parseCsv(commonQuestionsCsvFile(paired(), NOW).text);
+
+		expect(row).toEqual([
+			'1a',
+			'8a',
+			'Shared question',
+			'4',
+			'3.2.1.4',
+			'AO1',
+			'63',
+			'amber',
+			'2',
+			'2',
+			'38',
+			'red',
+			'2',
+			'2',
+			'50',
+			'amber',
+			'25',
+			'no'
+		]);
+	});
+
+	it('keeps a negative gap a number the spreadsheet can sort', () => {
+		const document = paired({
+			marks: { h1: { e1: 1 }, h2: { e1: 0 }, f1: { e2: 4 }, f2: { e2: 3 } }
+		});
+
+		const [, row] = parseCsv(commonQuestionsCsvFile(document, NOW).text);
+
+		expect(row?.[16]).toBe('-75');
+	});
+
+	it('writes the pairs in Tier 1’s paper order', () => {
+		const document = paired({
+			tiers: [
+				tier({
+					tierName: 'Higher',
+					breakdown: {
+						entries: [entry('e1a', '1a', '1', { marks: 4 }), entry('e1b', '1b', '1', { marks: 4 })],
+						warnings: []
+					}
+				}),
+				tier({
+					tierName: 'Foundation',
+					breakdown: {
+						entries: [entry('e2a', '8a', '8', { marks: 4 }), entry('e2b', '8b', '8', { marks: 4 })],
+						warnings: []
+					}
+				})
+			],
+			commonQuestions: [
+				{ tier1EntryId: 'e1b', tier2EntryId: 'e2b' },
+				{ tier1EntryId: 'e1a', tier2EntryId: 'e2a' }
+			],
+			students: [
+				student('h1', 'Hana', 'Higher', false, 0),
+				student('f1', 'Flo', 'Foundation', false, 1)
+			],
+			marks: { h1: { e1a: 4, e1b: 4 }, f1: { e2a: 2, e2b: 2 } }
+		});
+
+		const rows = parseCsv(commonQuestionsCsvFile(document, NOW).text);
+
+		expect(rows.slice(1).map((row) => row[0])).toEqual(['1a', '1b']);
+	});
+
+	it('falls back to Tier 1 and Tier 2 when a tier has no printed name', () => {
+		const document = paired({
+			tiers: [
+				tier({ breakdown: { entries: [entry('e1', '1a', '1', { marks: 4 })], warnings: [] } }),
+				tier({
+					breakdown: { entries: [entry('e2', '8a', '8', { marks: 4 })], warnings: [] }
+				})
+			]
+		});
+
+		const [header] = parseCsv(commonQuestionsCsvFile(document, NOW).text);
+
+		expect(header[0]).toBe('Tier 1 question');
+		expect(header[1]).toBe('Tier 2 question');
+		expect(header[6]).toBe('Tier 1 facility %');
+		expect(header[16]).toBe('Gap (Tier 1 − Tier 2, points)');
+	});
+
+	it('marks a pooled figure that rests on part of the class', () => {
+		const document = paired();
+		document.students.push(student('h3', 'Hattie', 'Higher', false, 0));
+
+		const [, row] = parseCsv(commonQuestionsCsvFile(document, NOW).text);
+
+		expect(row[15]).toBe('amber');
+		expect(row[17]).toBe('yes');
+	});
+
+	it('is named by assessment and day', () => {
+		const file = commonQuestionsCsvFile(paired(), NOW);
+
+		expect(file.filename).toBe('qla-common-questions-10x-ph1-2026-01-01.csv');
 		expect(file.type).toBe('text/csv');
 	});
 });
@@ -342,8 +573,11 @@ describe('PDF filenames', () => {
 		expect(exportFilename('reports', document, NOW, 'zip')).toBe(
 			'qla-reports-10x-ph1-2026-01-01.zip'
 		);
-		expect(exportFilename('analysis', document, NOW, 'pdf')).toBe(
-			'qla-analysis-10x-ph1-2026-01-01.pdf'
+		expect(analysisPdfFilename(document, 0, NOW)).toBe(
+			'qla-analysis-10x-ph1-tier-1-2026-01-01.pdf'
+		);
+		expect(analysisPdfFilename(document, 'common', NOW)).toBe(
+			'qla-common-questions-10x-ph1-2026-01-01.pdf'
 		);
 	});
 });

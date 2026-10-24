@@ -3,7 +3,8 @@
 
 import { goto } from '$app/navigation';
 import { resolve } from '$app/paths';
-import { analysisCsvFile, marksCsvFile, saveFile } from './download.js';
+import { analysisCsvFile, commonQuestionsCsvFile, marksCsvFile, saveFile } from './download.js';
+import type { TierIndex } from './document.js';
 import type { DocumentStorage } from './persistence.svelte.js';
 import { MarksheetStore } from './store.svelte.js';
 
@@ -58,20 +59,26 @@ export function backUpNow(): boolean {
 }
 
 /**
- * Hand the marks to the browser as a spreadsheet. The second document action,
- * and deliberately not the first: what it writes cannot be restored from, and
- * nothing it does touches the age of the backup that can.
+ * Hand one tier's marks to the browser as a spreadsheet. The second document
+ * action, and deliberately not the first: what it writes cannot be restored
+ * from, and nothing it does touches the age of the backup that can.
  */
-export function exportMarksNow(): void {
+export function exportMarksNow(tier: TierIndex): void {
 	const document = marksheetStore().document;
-	if (document) saveFile(marksCsvFile(document));
+	if (document) saveFile(marksCsvFile(document, tier));
 }
 
 /**
- * Hand the analysis figures to the browser as a spreadsheet. Like the marks
- * export it is one-way and leaves the backup's age alone.
+ * Hand the open analysis tab to the browser as a spreadsheet: one tier's
+ * figures, or the common-questions comparison. Like the marks export it is
+ * one-way and leaves the backup's age alone.
  */
-export function exportAnalysisNow(): void {
+export function exportAnalysisNow(tab: TierIndex | 'common'): void {
 	const document = marksheetStore().document;
-	if (document) saveFile(analysisCsvFile(document, new Date()));
+	if (!document) return;
+	saveFile(
+		tab === 'common'
+			? commonQuestionsCsvFile(document, new Date())
+			: analysisCsvFile(document, tab, new Date())
+	);
 }

@@ -64,7 +64,12 @@ export function rowsOf<K extends RosterStatus['kind']>(
 /** What the Review rail says beside a student without a visible page. */
 export function railStatus(status: Exclude<RosterStatus, { kind: 'review' }>): string {
 	if (status.kind === 'blocked') {
-		if (status.written) return `Blocked (${status.blockers.map(blockerText).join(' · ')})`;
+		const reasons = status.blockers.map(blockerText).join(' · ');
+		// A student with no tier is blocked by a paper that does not exist:
+		// name that reason wherever the student is listed.
+		if (status.written || status.blockers.some((blocker) => blocker.kind === 'no-tier')) {
+			return `Blocked (${reasons})`;
+		}
 		return status.blockers.some((blocker) => blocker.kind === 'absent') ? 'Absent' : 'Blocked';
 	}
 	return status.tile?.kind === 'failed' ? 'Failed' : 'Not written';

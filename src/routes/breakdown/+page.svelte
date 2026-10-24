@@ -1,7 +1,14 @@
 <!--
-	The review step: the whole breakdown, editable in place, checked against the
-	paper, and confirmed once it can carry a marksheet. Confirming is the moment
-	the breakdown stops being editable and becomes what marks are keyed against.
+	The review step: the whole assessment's breakdowns, editable in place,
+	checked against the papers, and confirmed once they can carry a marksheet.
+	Confirming is the moment the breakdowns and the common questions stop being
+	editable and become what marks and the common-questions analysis are keyed
+	against.
+
+	One layout serves one tier and two: the header bar holds whatever the
+	assessment has (tier tabs and the common-questions summary on two tiers),
+	the row of cards beneath it holds the shared skill descriptions and the open
+	tier's findings, and the open tier's table runs at full width.
 -->
 <script lang="ts">
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
@@ -9,18 +16,14 @@
 	import BreakdownTable from '$lib/components/marksheet/BreakdownTable.svelte';
 	import BackupControl from '$lib/components/marksheet/BackupControl.svelte';
 	import PaperLabelInput from '$lib/components/shell/PaperLabelInput.svelte';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import {
-		entryName,
-		questionCount,
-		reconcilePaperTotal,
-		runWarnings,
-		type AttentionItem
-	} from '$lib/marksheet/breakdown.js';
-	import { isWholeNumber, totalMarks } from '$lib/marksheet/document.js';
+	import * as ToggleGroup from '$lib/components/ui/toggle-group';
+	import { entryName, runWarnings, type AttentionItem } from '$lib/marksheet/breakdown.js';
+	import { totalMarks, type TierIndex } from '$lib/marksheet/document.js';
 	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 	import { agree, count } from '$lib/prose.js';
 
@@ -29,63 +32,80 @@
 
 	let table = $state<ReturnType<typeof BreakdownTable>>();
 
+	/** The open tier tab. A string because the toggle group binds one. */
+	let tab = $state('0');
+	const current = $derived<TierIndex>(tab === '1' ? 1 : 0);
+	/** Whether this assessment has two papers to review together. */
+	const twoTiers = $derived(store.tierCount === 2);
 	const entries = $derived(store.entries);
-	const runLevelWarnings = $derived(runWarnings(store.warnings));
-	const attention = $derived(store.attention);
+	const openTier = $derived(store.tiers[current]);
+	const attention = $derived(store.attentionOf(current));
+	const runLevelWarnings = $derived(openTier ? runWarnings(openTier.breakdown.warnings) : []);
 	const blockers = $derived(store.blockers);
-	const questions = $derived(questionCount(entries));
-	const marks = $derived(totalMarks(entries));
 	const usage = $derived(store.runUsage);
-	/** Whether the table groups its rows under their question (a bound checkbox needs `let`). */
-	let banded = $state(true);
 	/**
-	 * The total the teacher reads off the paper's cover. It is theirs for this
-	 * visit only: it is not part of the stored document, so it is never restored.
+	 * What to say when no pairs are offered. Only a run speaks for the matching:
+	 * a sheet whose pairs were cleared by hand says nothing about what was
+	 * proposed, so it asks for a pair rather than claiming there was none.
 	 */
-	let paperTotal = $state<number | null>(null);
-
-	const check = $derived(paperTotal === null ? null : reconcilePaperTotal(entries, paperTotal));
-
-	const title = $derived(
-		store.document?.paper.label
-			? `${store.document.paper.label} · Breakdown · QLA`
-			: 'Breakdown · QLA'
+	const noPairs = $derived.by(() => {
+		if (!twoTiers || store.commonQuestions.length > 0) return null;
+		const notice = store.matchNotice;
+		return notice === null
+			? { title: 'No common questions yet', description: 'Pair them by hand below.' }
+			: { title: 'No common questions proposed', description: notice };
+	});
+	/** Whether the breakdown was unlocked after marks were entered: the stakes, before an edit. */
+	const studentsWithMarks = $derived.by(() => {
+		const document = store.document;
+		if (document === null) return 0;
+		return store.students.filter(
+			(student) => Object.keys(document.marks[student.id] ?? {}).length > 0
+		).length;
+	});
+	const unlocked = $derived(
+		store.document !== null && store.document.breakdownConfirmedAt === null && studentsWithMarks > 0
+	);
+	/** What confirming builds, in one line, so the whole thing is visible as it is confirmed. */
+	const summary = $derived(
+		twoTiers
+			? `${count(entries.length, 'column')} across both tiers · ${count(
+					store.commonQuestions.length,
+					'common question'
+				)} (${count(pairedMarks(), 'mark')})`
+			: `${count(entries.length, 'column')} · ${count(totalMarks(entries), 'mark')}`
 	);
 
-	const missingMarkNames = $derived(blockers.noAvailableMarks.map(entryName));
-	const repeatedLabels = $derived([
-		...new Set(blockers.duplicateLabels.map((entry) => entry.label.trim()))
-	]);
+	/** Whether the table groups its rows under their question (a bound checkbox needs `let`). */
+	let banded = $state(true);
 
-	/** What stops confirmation, said once: each reason is a sentence of its own. */
-	const blockerMessages = $derived.by(() => {
-		const messages: string[] = [];
-		if (missingMarkNames.length > 0) {
-			messages.push(
-				`Available marks are not yet known for ${missingMarkNames.join(', ')} — every column needs them before the marksheet can be built.`
-			);
-		}
-		if (blockers.emptyLabels.length > 0) {
-			const n = blockers.emptyLabels.length;
-			messages.push(
-				`${count(n, 'entry', 'entries')} ${agree(n, 'has', 'have')} no label, so ${agree(n, 'its column would have', 'their columns would have')} no ${agree(n, 'heading', 'headings')}.`
-			);
-		}
-		if (repeatedLabels.length > 0) {
-			messages.push(
-				`${repeatedLabels.join(', ')} ${agree(repeatedLabels.length, 'is', 'are each')} used more than once — every column needs its own label.`
-			);
-		}
-		return messages;
-	});
+	const title = $derived(store.label ? `${store.label} · Breakdown · QLA` : 'Breakdown · QLA');
+	const heading = $derived(twoTiers ? 'Check the breakdowns' : 'Check the breakdown');
 
-	/** Take the printed total as it is typed, and refuse anything that is not a whole number. */
-	function onPaperTotalInput(event: Event): void {
-		const input = event.currentTarget as HTMLInputElement;
-		const typed = input.value.trim();
-		if (typed === '') paperTotal = null;
-		else if (isWholeNumber(typed)) paperTotal = Number(typed);
-		else input.value = paperTotal === null ? '' : String(paperTotal);
+	/** Every pair's marks on Tier 1's side: each pair counts once, whatever its tiers are called. */
+	function pairedMarks(): number {
+		return store.commonQuestions.reduce((sum, pair) => {
+			const entry = store.tiers[0]?.breakdown.entries.find(
+				(candidate) => candidate.id === pair.tier1EntryId
+			);
+			return sum + (entry?.marks ?? 0);
+		}, 0);
+	}
+
+	/** A tier as its tab and its panel name it. */
+	function tierLabel(tier: TierIndex): string {
+		const name = store.tiers[tier]?.tierName?.trim();
+		return name ? `Tier ${tier + 1} · ${name}` : `Tier ${tier + 1}`;
+	}
+
+	/** Whether a red dot on this tab points at something that stops confirmation. */
+	function tierHasBlocker(tier: TierIndex): boolean {
+		return (
+			(blockers.tiers[tier]?.blocked ?? false) ||
+			blockers.blankTierNames.includes(tier) ||
+			blockers.sameTierNames ||
+			blockers.unequalPairs.length > 0
+		);
 	}
 
 	/** Why an entry is on the list, in the words a teacher would use. */
@@ -112,6 +132,59 @@
 		);
 	}
 
+	/**
+	 * What stops confirmation, said once: each reason is a sentence of its own.
+	 * A blocker on one tier names it, since the sentence may be read from the
+	 * other tab.
+	 */
+	const blockerMessages = $derived.by(() => {
+		const messages: string[] = [];
+		blockers.tiers.forEach((tierBlockers, index) => {
+			const who = twoTiers ? `Tier ${index + 1}: ` : '';
+			const missing = tierBlockers.noAvailableMarks.map(entryName);
+			if (missing.length > 0) {
+				messages.push(
+					twoTiers
+						? `${who}available marks are not yet known for ${missing.join(', ')} — every column needs them before the marksheet can be built.`
+						: `Available marks are not yet known for ${missing.join(', ')} — every column needs them before the marksheet can be built.`
+				);
+			}
+			if (tierBlockers.emptyLabels.length > 0) {
+				const n = tierBlockers.emptyLabels.length;
+				messages.push(
+					`${who}${count(n, 'entry', 'entries')} ${agree(n, 'has', 'have')} no label, so ${agree(n, 'its column would have', 'their columns would have')} no ${agree(n, 'heading', 'headings')}.`
+				);
+			}
+			const repeated = [
+				...new Set(tierBlockers.duplicateLabels.map((entry) => entry.label.trim()))
+			];
+			if (repeated.length > 0) {
+				messages.push(
+					`${who}${repeated.join(', ')} ${agree(repeated.length, 'is', 'are each')} used more than once — every column needs its own label.`
+				);
+			}
+		});
+		for (const tier of blockers.blankTierNames) {
+			messages.push(`Tier ${tier + 1} needs a tier name.`);
+		}
+		if (blockers.sameTierNames && blockers.blankTierNames.length === 0) {
+			messages.push('The two tiers need different names.');
+		}
+		for (const pair of blockers.unequalPairs) {
+			const tier1 = store.tiers[0]?.breakdown.entries.find(
+				(entry) => entry.id === pair.tier1EntryId
+			);
+			const tier2 = store.tiers[1]?.breakdown.entries.find(
+				(entry) => entry.id === pair.tier2EntryId
+			);
+			if (tier1 === undefined || tier2 === undefined) continue;
+			messages.push(
+				`${entryName(tier1)} (${tier1.marks ?? '?'}) and ${entryName(tier2)} (${tier2.marks ?? '?'}) are paired but have different available marks.`
+			);
+		}
+		return messages;
+	});
+
 	function confirmBreakdown(): void {
 		if (store.confirmBreakdown()) goToSurface();
 	}
@@ -121,150 +194,178 @@
 	<title>{title}</title>
 </svelte:head>
 
-<main class="mx-auto max-w-6xl space-y-6 p-6">
+<main class="mx-auto max-w-7xl space-y-6 p-6">
+	<div class="space-y-2">
+		<PaperLabelInput />
+	</div>
+
+	{#if noPairs !== null}
+		<Alert data-testid="match-notice">
+			<AlertTitle>{noPairs.title}</AlertTitle>
+			<AlertDescription>{noPairs.description}</AlertDescription>
+		</Alert>
+	{/if}
+
+	{#if unlocked}
+		<Alert data-testid="unlocked-notice">
+			<AlertTitle>Unlocked for editing</AlertTitle>
+			<AlertDescription>
+				{count(studentsWithMarks, 'student')}
+				{agree(studentsWithMarks, 'has', 'have')} marks. Deleting an entry removes its marks{#if twoTiers};
+					changing a pair only changes the common-questions analysis{/if}. Confirm again to go back
+				to marking.
+			</AlertDescription>
+		</Alert>
+	{/if}
+
 	<header class="space-y-3">
 		<div class="flex items-start justify-between gap-4">
-			<div class="space-y-2">
-				<PaperLabelInput />
-				<p class="px-1 text-sm text-muted-foreground">
-					{entries.length} entries · {marks} marks{#if usage}
-						· this run: {usage.totalTokens} tokens · ${usage.estCost.toFixed(4)}{/if}
+			<div class="space-y-1">
+				<h1 class="text-xl font-semibold">{heading}</h1>
+				<p class="text-sm text-muted-foreground">
+					{#if twoTiers}
+						Fix anything the model got wrong on either tier, and pair the questions that appear on
+						both in the Common with column (only entries with the same available marks are offered).
+					{:else}
+						Fix anything the model got wrong.
+					{/if}
 				</p>
+				{#if usage}
+					<p class="text-xs text-muted-foreground">
+						This run: {usage.totalTokens} tokens · ${usage.estCost.toFixed(4)}
+					</p>
+				{/if}
 			</div>
 			<BackupControl />
 		</div>
+
+		<div class="flex flex-wrap items-center gap-4">
+			{#if twoTiers}
+				<!-- A single toggle group reports '' when the open tab is clicked again; stay on it. -->
+				<ToggleGroup.Root
+					type="single"
+					variant="outline"
+					bind:value={
+						() => tab,
+						(value: string | string[] | undefined) => {
+							if (value === '0' || value === '1') tab = value;
+						}
+					}
+				>
+					{#each [0, 1] as const as tier (tier)}
+						<ToggleGroup.Item value={String(tier)} class="relative px-4" data-tier={tier}>
+							{tierLabel(tier)}
+							{#if tierHasBlocker(tier)}
+								<span
+									class="absolute top-1 right-1 size-2 rounded-full bg-destructive"
+									title="Stops confirmation"
+									aria-hidden="true"
+									data-testid="tier-blocker-dot"
+								></span>
+							{/if}
+						</ToggleGroup.Item>
+					{/each}
+				</ToggleGroup.Root>
+			{/if}
+			<p class="text-xs text-muted-foreground md:ml-auto md:text-right" data-testid="summary">
+				{summary}
+			</p>
+			<Button disabled={blockers.blocked} onclick={confirmBreakdown}>
+				Confirm and build marksheet
+			</Button>
+		</div>
+
+		{#if blockerMessages.length > 0}
+			<div class="space-y-1 text-xs text-destructive" data-testid="blockers" role="status">
+				{#each blockerMessages as message, index (index)}
+					<p>{message}</p>
+				{/each}
+			</div>
+		{/if}
 	</header>
 
-	<div class="grid gap-6 lg:grid-cols-[320px_1fr]">
-		<aside class="space-y-4 lg:sticky lg:top-4 lg:self-start">
-			<div>
-				<h1 class="text-xl font-semibold">Check the breakdown</h1>
-				<p class="text-sm text-muted-foreground">
-					Fix anything the model got wrong. Once confirmed, this is what your marksheet columns are
-					built from.
-				</p>
-			</div>
+	<div class="grid gap-3 md:grid-cols-2">
+		<AoDescriptionsCard />
 
+		<section class="space-y-2 rounded-lg border p-3" data-testid="needs-attention">
+			<h2 class="text-sm font-semibold">
+				Needs attention ({attention.length}){#if twoTiers}<span
+						class="font-normal text-muted-foreground"
+					>
+						{` · ${tierLabel(current)}`}</span
+					>{/if}
+			</h2>
+			<ul class="space-y-0.5">
+				{#each attention as item (item.entry.id)}
+					{@const reasons = attentionReasons(item)}
+					{@const codes = item.warnings.map((warning) => warning.code).join(', ')}
+					<li>
+						<button
+							type="button"
+							aria-label={attentionLabel(item)}
+							class="w-full rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
+							onclick={() => goToEntry(item)}
+						>
+							<strong class="mr-1">{entryName(item.entry)}</strong>
+							{#if reasons !== ''}
+								<span class="text-destructive">{reasons}</span>
+							{/if}
+							{#if codes !== ''}
+								<span class="text-amber-700 dark:text-amber-400">{codes}</span>
+							{/if}
+						</button>
+					</li>
+				{:else}
+					<li class="text-xs text-muted-foreground">Nothing flagged.</li>
+				{/each}
+			</ul>
 			{#if runLevelWarnings.length > 0}
-				<section class="space-y-1 rounded-lg border p-3" data-testid="run-warnings">
-					<h2 class="text-sm font-semibold">From the parse</h2>
+				<div class="space-y-1" data-testid="run-warnings">
+					<h3 class="text-xs font-semibold">From the parse</h3>
 					{#each runLevelWarnings as warning (warning.code + warning.message)}
 						<p class="text-xs text-amber-800 dark:text-amber-300">
 							<TriangleAlertIcon class="mr-1 inline size-3.5" /><strong>{warning.code}</strong>: {warning.message}
 						</p>
 					{/each}
-				</section>
+				</div>
 			{/if}
+		</section>
+	</div>
 
-			<section class="space-y-2 rounded-lg border p-3" data-testid="paper-total">
-				<h2 class="text-sm font-semibold">Does it add up?</h2>
-				<Label class="text-xs text-muted-foreground" for="paper-total">
-					Total marks printed on the paper
-				</Label>
-				<Input
-					id="paper-total"
-					class="w-24"
-					type="number"
-					min="0"
-					step="1"
-					inputmode="numeric"
-					placeholder="—"
-					value={paperTotal ?? ''}
-					oninput={onPaperTotalInput}
-				/>
-				{#if check === null}
-					<p class="text-xs text-muted-foreground">
-						This breakdown accounts for <strong>{marks}</strong>
-						{agree(marks, 'mark', 'marks')}.
-					</p>
-				{:else if check.status === 'adds-up'}
-					<p class="text-xs text-emerald-700 dark:text-emerald-400">
-						{check.accounted} of {check.paperTotal} — adds up{#if check.noAvailableMarks.length > 0},
-							but {count(check.noAvailableMarks.length, 'entry', 'entries')}
-							{agree(check.noAvailableMarks.length, 'has', 'have')} no available marks yet{/if}.
-					</p>
-				{:else if check.status === 'unaccounted'}
-					<p class="text-xs text-destructive">
-						{check.accounted} of {check.paperTotal} — {check.unaccounted}
-						{agree(check.unaccounted, 'mark', 'marks')} unaccounted —
-						{#if check.noAvailableMarks.length > 0}
-							{count(check.noAvailableMarks.length, 'entry', 'entries')}
-							{agree(check.noAvailableMarks.length, 'has', 'have')} no available marks yet.
-						{:else}
-							an entry may be missing.
-						{/if}
-					</p>
-				{:else}
-					<p class="text-xs text-destructive">
-						{check.accounted} of {check.paperTotal} — {-check.unaccounted}
-						{agree(-check.unaccounted, 'mark', 'marks')} too many — an entry may be duplicated or over-marked.
-					</p>
-				{/if}
-			</section>
-
-			<AoDescriptionsCard />
-
-			<section class="space-y-1 rounded-lg border p-3">
-				<h2 class="text-sm font-semibold">Needs attention ({attention.length})</h2>
-				<ul class="space-y-0.5">
-					{#each attention as item (item.entry.id)}
-						{@const reasons = attentionReasons(item)}
-						{@const codes = item.warnings.map((warning) => warning.code).join(', ')}
-						<li>
-							<button
-								type="button"
-								aria-label={attentionLabel(item)}
-								class="w-full rounded px-1.5 py-1 text-left text-xs hover:bg-muted"
-								onclick={() => goToEntry(item)}
-							>
-								<strong class="mr-1">{entryName(item.entry)}</strong>
-								{#if reasons !== ''}
-									<span class="text-destructive">{reasons}</span>
-								{/if}
-								{#if codes !== ''}
-									<span class="text-amber-700 dark:text-amber-400">{codes}</span>
-								{/if}
-							</button>
-						</li>
-					{:else}
-						<li class="text-xs text-muted-foreground">Nothing flagged.</li>
-					{/each}
-				</ul>
-			</section>
-
-			<section class="space-y-2 rounded-lg border-2 border-primary p-3">
-				<h2 class="text-sm font-semibold">Confirm breakdown</h2>
-				<p class="text-xs text-muted-foreground">
-					Builds your marksheet: <strong>{entries.length}</strong>
-					{agree(entries.length, 'column', 'columns')} across <strong>{questions}</strong>
-					{agree(questions, 'question', 'questions')}, <strong>{marks}</strong> marks. The breakdown becomes
-					read-only.
-				</p>
-				{#if blockerMessages.length > 0}
-					<div class="space-y-1 text-xs text-destructive">
-						{#each blockerMessages as message (message)}
-							<p>{message}</p>
-						{/each}
+	{#if openTier}
+		<section class="space-y-3">
+			<div class="flex flex-wrap items-end gap-4">
+				{#if twoTiers}
+					<div class="space-y-1">
+						<Label for="tier-name" class="text-xs text-muted-foreground">
+							Tier name, as printed on the paper
+						</Label>
+						<Input
+							id="tier-name"
+							class="w-56"
+							placeholder="e.g. Higher"
+							value={openTier.tierName ?? ''}
+							oninput={(event) => store.setTierName(current, event.currentTarget.value)}
+						/>
 					</div>
 				{/if}
-				<Button class="w-full" disabled={blockers.blocked} onclick={confirmBreakdown}>
-					Confirm and build marksheet
-				</Button>
-			</section>
+				<p class="pb-2 text-xs text-muted-foreground" data-testid="tier-counts">
+					{openTier.sourceFilenames[0] ?? 'No file'}
+					· {count(openTier.breakdown.entries.length, 'entry', 'entries')}
+					· {count(totalMarks(openTier.breakdown.entries), 'mark')}
+				</p>
+				<Label class="ml-auto gap-1.5 pb-2 text-xs font-normal text-muted-foreground">
+					<Checkbox bind:checked={banded} /> Band by question
+				</Label>
+			</div>
 
-			<Label class="gap-1.5 text-xs font-normal text-muted-foreground">
-				<Checkbox bind:checked={banded} /> Band by question
-			</Label>
-		</aside>
+			<BreakdownTable bind:this={table} tier={current} {banded} />
 
-		<div class="min-w-0 space-y-3">
-			<BreakdownTable bind:this={table} {banded} />
-
-			{#if entries.length === 0}
+			{#if openTier.breakdown.entries.length === 0}
 				<p class="text-sm text-muted-foreground">
 					The parse returned no entries. Add one below, or start a new upload to try another paper.
 				</p>
 			{/if}
-		</div>
-	</div>
+		</section>
+	{/if}
 </main>

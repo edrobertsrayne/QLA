@@ -15,7 +15,7 @@
 	import NewUploadChecklist from '$lib/components/marksheet/NewUploadChecklist.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { markCount } from '$lib/marksheet/document.js';
+	import { storedMarkCount } from '$lib/marksheet/document.js';
 	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 	import { count } from '$lib/prose.js';
 
@@ -23,30 +23,42 @@
 	let open = $state(false);
 
 	/** The work a wipe would take: how much of it, and whose paper. */
-	const marksEntered = $derived(store.document ? markCount(store.document) : 0);
+	const marksStored = $derived(store.document ? storedMarkCount(store.document) : 0);
 	const studentsInClass = $derived(store.document?.students.length ?? 0);
-	const label = $derived(store.document?.paper.label ?? null);
+	const label = $derived(store.label);
+	/** Each tier as the teacher knows it: its printed name, or its position when it has none. */
+	const tierNames = $derived(
+		store.tiers.map((tier, index) => tier.tierName?.trim() || `Tier ${index + 1}`)
+	);
+	/** Both tiers' names on a two-tier assessment, so a wipe names everything it takes. */
+	const bothTiers = $derived(tierNames.length === 2 ? `${tierNames[0]} and ${tierNames[1]}` : null);
 
 	/**
 	 * What the wipe takes, from the state the teacher is in: marks entered, a
 	 * class with nothing marked yet, or a breakdown on its own. It is the middle
-	 * of one sentence, and reads in bold.
+	 * of one sentence, and reads in bold. On two tiers it names both papers.
 	 */
 	const loss = $derived.by(() => {
-		const inPaper = label === null ? '' : ` in ${label}`;
-		if (marksEntered > 0) {
-			return `${count(marksEntered, 'mark')} for ${count(studentsInClass, 'student')}${inPaper}`;
+		const namedTiers = bothTiers === null ? '' : ` (${bothTiers})`;
+		const inPaper = label === null ? '' : ` in ${label}${namedTiers}`;
+		if (marksStored > 0) {
+			return `${count(marksStored, 'mark')} for ${count(studentsInClass, 'student')}${inPaper}`;
 		}
 		if (studentsInClass > 0) {
 			return `the class of ${count(studentsInClass, 'student')} and the breakdown${inPaper}`;
 		}
-		return label === null ? 'the stored breakdown' : `the stored breakdown for ${label}`;
+		if (label === null) {
+			return bothTiers === null
+				? 'the stored breakdown'
+				: `the stored breakdown across ${bothTiers}`;
+		}
+		return `the stored breakdown for ${label}${namedTiers}`;
 	});
 
 	/** The button says what the click costs, so it can never be pressed by reflex. */
 	const deleteLabel = $derived(
-		marksEntered > 0
-			? `Delete ${count(marksEntered, 'mark')} and start again`
+		marksStored > 0
+			? `Delete ${count(marksStored, 'mark')} and start again`
 			: 'Delete and start again'
 	);
 

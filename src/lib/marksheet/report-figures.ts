@@ -9,7 +9,7 @@
 
 import { assessmentObjectiveOf } from '$lib/parse/assessment-objectives.js';
 import { facilityBand, type RagBand } from './analysis.js';
-import { studentTotal, totalMarks, type MarksheetDocument } from './document.js';
+import { entriesOfStudent, studentTotal, totalMarks, type MarksheetDocument } from './document.js';
 import { rollupBy, topicNamesFor, type RollupTotals } from './report-rollup.js';
 
 /** One roll-up row: marks summed over the entries carrying the name. */
@@ -25,9 +25,13 @@ export const EMPTY_STRENGTHS_LINE = 'No particular strengths stood out on this p
 export const EMPTY_AREAS_LINE =
 	'You dropped no marks on this paper: keep doing what you are doing.';
 
-/** Whether the student gained every mark: the only time the app's no-areas line is true. */
+/**
+ * Whether the student gained every mark: the only time the app's no-areas line
+ * is true. A student with no paper, or a paper offering no marks, has no marks
+ * to have gained every one of.
+ */
 export function droppedNoMarks(figures: StudentReportFigures): boolean {
-	return figures.total >= figures.available;
+	return figures.available > 0 && figures.total >= figures.available;
 }
 
 /** One entry's figures on a report: what the student gained, and its band. */
@@ -52,7 +56,7 @@ function toRow(totals: RollupTotals): RollupRow {
 /** The description of the assessment objective a roll-up row is named for, if it has one. */
 function descriptionOf(document: MarksheetDocument, name: string): string | null {
 	const ao = assessmentObjectiveOf(name);
-	return (ao && document.breakdown.aoDescriptions[ao]) || null;
+	return (ao && document.aoDescriptions[ao]) || null;
 }
 
 /** Every figure on one student's report, calculated locally from the document. */
@@ -65,19 +69,21 @@ export interface StudentReportFigures {
 	entries: ReportEntryFigures[];
 }
 
-/** Every figure on one student's report, from the document as it stands. */
+/** Every figure on one student's report, from the document as it stands: their own tier's entries only. */
 export function reportFiguresFor(
 	document: MarksheetDocument,
 	studentId: string
 ): StudentReportFigures {
+	const student = document.students.find((candidate) => candidate.id === studentId);
+	const entries = student ? entriesOfStudent(document, student) : [];
 	const marks = document.marks[studentId] ?? {};
-	const rows = document.breakdown.entries.map((entry) => ({
+	const rows = entries.map((entry) => ({
 		entry,
 		gained: marks[entry.id] ?? 0,
 		available: entry.marks ?? 0
 	}));
 
-	const available = totalMarks(document.breakdown.entries);
+	const available = totalMarks(entries);
 	const total = studentTotal(document, studentId);
 	return {
 		total,

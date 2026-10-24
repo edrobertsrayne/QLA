@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { confirmed, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { marksheetStore } from '$lib/marksheet/index.js';
 import { openPage } from '../spec-helpers.js';
-import { rowNames } from './marksheet.spec-helpers.js';
+import { rowNames, twoTier } from './marksheet.spec-helpers.js';
 import MarksheetPage from './+page.svelte';
 
 function csvFile(text: string): File {
@@ -57,6 +58,35 @@ describe('uploading a class list', () => {
 
 		await page.getByTestId('paste-notice').getByRole('button', { name: 'Undo' }).click();
 		expect(rowNames(screen)).toEqual(['Ada Lovelace']);
+	});
+
+	it('uploads onto the open tier on a two-tier assessment', async () => {
+		seed(
+			twoTier({
+				students: [student('student-1', 'Ada', 'Lovelace', false, 0)]
+			})
+		);
+		const screen = openPage(MarksheetPage);
+
+		await page.getByRole('radio', { name: /Tier 2 · Foundation/ }).click();
+		await page.getByRole('button', { name: 'Upload CSV' }).first().click();
+		await page.getByLabelText('CSV file').upload(csvFile('First name,Last name\nGrace,Hopper\n'));
+		await page.getByRole('button', { name: 'Add 1 student' }).click();
+
+		await vi.waitFor(() => expect(marksheetStore().document?.students[1].tier).toBe(1));
+		expect(rowNames(screen)).toEqual(['Grace Hopper']);
+	});
+
+	it('uploads onto Tier not set while no tier is open', async () => {
+		seed(twoTier());
+		const screen = openPage(MarksheetPage);
+
+		await page.getByRole('button', { name: 'Upload CSV' }).first().click();
+		await page.getByLabelText('CSV file').upload(csvFile('First name,Last name\nGrace,Hopper\n'));
+		await page.getByRole('button', { name: 'Add 1 student' }).click();
+
+		await vi.waitFor(() => expect(marksheetStore().document?.students[0].tier).toBeNull());
+		expect(rowNames(screen)).toEqual(['Grace Hopper']);
 	});
 
 	it('rejects a file whole, naming the first bad row, and changes nothing', async () => {
