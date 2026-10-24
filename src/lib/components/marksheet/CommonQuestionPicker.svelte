@@ -6,13 +6,13 @@
 -->
 <script lang="ts">
 	import { entryName } from '$lib/marksheet/breakdown.js';
-	import type { BreakdownEntry, TierIndex } from '$lib/marksheet/document.js';
+	import { otherTier, type BreakdownEntry, type TierIndex } from '$lib/marksheet/document.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 
 	let { tier, entry }: { tier: TierIndex; entry: BreakdownEntry } = $props();
 
 	const store = marksheetStore();
-	const other: TierIndex = $derived(tier === 0 ? 1 : 0);
+	const other = $derived(otherTier(tier));
 	const partnerId = $derived(store.partnerOf(tier, entry.id));
 	const partner = $derived(
 		partnerId === null

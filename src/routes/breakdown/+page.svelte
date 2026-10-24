@@ -15,6 +15,7 @@
 	import AoDescriptionsCard from '$lib/components/marksheet/AoDescriptionsCard.svelte';
 	import BreakdownTable from '$lib/components/marksheet/BreakdownTable.svelte';
 	import BackupControl from '$lib/components/marksheet/BackupControl.svelte';
+	import { tierLabel } from '$lib/components/marksheet/tier-label.js';
 	import PaperLabelInput from '$lib/components/shell/PaperLabelInput.svelte';
 	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
@@ -22,13 +23,22 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
-	import { entryName, runWarnings, type AttentionItem } from '$lib/marksheet/breakdown.js';
+	import {
+		confirmationMessages,
+		entryName,
+		noPairsNotice,
+		pairedMarks,
+		runWarnings,
+		tierHasBlocker,
+		type AttentionItem
+	} from '$lib/marksheet/breakdown.js';
 	import { totalMarks, type TierIndex } from '$lib/marksheet/document.js';
 	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 	import { agree, count } from '$lib/prose.js';
 
 	// The route's load guard has read storage by the time this renders.
 	const store = marksheetStore();
+	const document = $derived(store.document);
 
 	let table = $state<ReturnType<typeof BreakdownTable>>();
 
@@ -43,21 +53,8 @@
 	const runLevelWarnings = $derived(openTier ? runWarnings(openTier.breakdown.warnings) : []);
 	const blockers = $derived(store.blockers);
 	const usage = $derived(store.runUsage);
-	/**
-	 * What to say when no pairs are offered. Only a run speaks for the matching:
-	 * a sheet whose pairs were cleared by hand says nothing about what was
-	 * proposed, so it asks for a pair rather than claiming there was none.
-	 */
-	const noPairs = $derived.by(() => {
-		if (!twoTiers || store.commonQuestions.length > 0) return null;
-		const notice = store.matchNotice;
-		return notice === null
-			? { title: 'No common questions yet', description: 'Pair them by hand below.' }
-			: { title: 'No common questions proposed', description: notice };
-	});
 	/** Whether the breakdown was unlocked after marks were entered: the stakes, before an edit. */
 	const studentsWithMarks = $derived.by(() => {
-		const document = store.document;
 		if (document === null) return 0;
 		return store.students.filter(
 			(student) => Object.keys(document.marks[student.id] ?? {}).length > 0
@@ -67,46 +64,22 @@
 		store.document !== null && store.document.breakdownConfirmedAt === null && studentsWithMarks > 0
 	);
 	/** What confirming builds, in one line, so the whole thing is visible as it is confirmed. */
-	const summary = $derived(
-		twoTiers
-			? `${count(entries.length, 'column')} across both tiers · ${count(
-					store.commonQuestions.length,
-					'common question'
-				)} (${count(pairedMarks(), 'mark')})`
-			: `${count(entries.length, 'column')} · ${count(totalMarks(entries), 'mark')}`
-	);
+	const summary = $derived.by(() => {
+		if (document === null) return '';
+		if (twoTiers) {
+			return `${count(entries.length, 'column')} across both tiers · ${count(
+				store.commonQuestions.length,
+				'common question'
+			)} (${count(pairedMarks(document), 'mark')})`;
+		}
+		return `${count(entries.length, 'column')} · ${count(totalMarks(entries), 'mark')}`;
+	});
 
 	/** Whether the table groups its rows under their question (a bound checkbox needs `let`). */
 	let banded = $state(true);
 
 	const title = $derived(store.label ? `${store.label} · Breakdown · QLA` : 'Breakdown · QLA');
 	const heading = $derived(twoTiers ? 'Check the breakdowns' : 'Check the breakdown');
-
-	/** Every pair's marks on Tier 1's side: each pair counts once, whatever its tiers are called. */
-	function pairedMarks(): number {
-		return store.commonQuestions.reduce((sum, pair) => {
-			const entry = store.tiers[0]?.breakdown.entries.find(
-				(candidate) => candidate.id === pair.tier1EntryId
-			);
-			return sum + (entry?.marks ?? 0);
-		}, 0);
-	}
-
-	/** A tier as its tab and its panel name it. */
-	function tierLabel(tier: TierIndex): string {
-		const name = store.tiers[tier]?.tierName?.trim();
-		return name ? `Tier ${tier + 1} · ${name}` : `Tier ${tier + 1}`;
-	}
-
-	/** Whether a red dot on this tab points at something that stops confirmation. */
-	function tierHasBlocker(tier: TierIndex): boolean {
-		return (
-			(blockers.tiers[tier]?.blocked ?? false) ||
-			blockers.blankTierNames.includes(tier) ||
-			blockers.sameTierNames ||
-			blockers.unequalPairs.length > 0
-		);
-	}
 
 	/** Why an entry is on the list, in the words a teacher would use. */
 	function attentionReasons(item: AttentionItem): string {
@@ -132,59 +105,6 @@
 		);
 	}
 
-	/**
-	 * What stops confirmation, said once: each reason is a sentence of its own.
-	 * A blocker on one tier names it, since the sentence may be read from the
-	 * other tab.
-	 */
-	const blockerMessages = $derived.by(() => {
-		const messages: string[] = [];
-		blockers.tiers.forEach((tierBlockers, index) => {
-			const who = twoTiers ? `Tier ${index + 1}: ` : '';
-			const missing = tierBlockers.noAvailableMarks.map(entryName);
-			if (missing.length > 0) {
-				messages.push(
-					twoTiers
-						? `${who}available marks are not yet known for ${missing.join(', ')} — every column needs them before the marksheet can be built.`
-						: `Available marks are not yet known for ${missing.join(', ')} — every column needs them before the marksheet can be built.`
-				);
-			}
-			if (tierBlockers.emptyLabels.length > 0) {
-				const n = tierBlockers.emptyLabels.length;
-				messages.push(
-					`${who}${count(n, 'entry', 'entries')} ${agree(n, 'has', 'have')} no label, so ${agree(n, 'its column would have', 'their columns would have')} no ${agree(n, 'heading', 'headings')}.`
-				);
-			}
-			const repeated = [
-				...new Set(tierBlockers.duplicateLabels.map((entry) => entry.label.trim()))
-			];
-			if (repeated.length > 0) {
-				messages.push(
-					`${who}${repeated.join(', ')} ${agree(repeated.length, 'is', 'are each')} used more than once — every column needs its own label.`
-				);
-			}
-		});
-		for (const tier of blockers.blankTierNames) {
-			messages.push(`Tier ${tier + 1} needs a tier name.`);
-		}
-		if (blockers.sameTierNames && blockers.blankTierNames.length === 0) {
-			messages.push('The two tiers need different names.');
-		}
-		for (const pair of blockers.unequalPairs) {
-			const tier1 = store.tiers[0]?.breakdown.entries.find(
-				(entry) => entry.id === pair.tier1EntryId
-			);
-			const tier2 = store.tiers[1]?.breakdown.entries.find(
-				(entry) => entry.id === pair.tier2EntryId
-			);
-			if (tier1 === undefined || tier2 === undefined) continue;
-			messages.push(
-				`${entryName(tier1)} (${tier1.marks ?? '?'}) and ${entryName(tier2)} (${tier2.marks ?? '?'}) are paired but have different available marks.`
-			);
-		}
-		return messages;
-	});
-
 	function confirmBreakdown(): void {
 		if (store.confirmBreakdown()) goToSurface();
 	}
@@ -199,11 +119,14 @@
 		<PaperLabelInput />
 	</div>
 
-	{#if noPairs !== null}
-		<Alert data-testid="match-notice">
-			<AlertTitle>{noPairs.title}</AlertTitle>
-			<AlertDescription>{noPairs.description}</AlertDescription>
-		</Alert>
+	{#if document !== null}
+		{@const notice = noPairsNotice(document, store.matchNotice)}
+		{#if notice !== null}
+			<Alert data-testid="match-notice">
+				<AlertTitle>{notice.title}</AlertTitle>
+				<AlertDescription>{notice.description}</AlertDescription>
+			</Alert>
+		{/if}
 	{/if}
 
 	{#if unlocked}
@@ -254,8 +177,8 @@
 				>
 					{#each [0, 1] as const as tier (tier)}
 						<ToggleGroup.Item value={String(tier)} class="relative px-4" data-tier={tier}>
-							{tierLabel(tier)}
-							{#if tierHasBlocker(tier)}
+							{tierLabel(document, tier)}
+							{#if tierHasBlocker(blockers, tier)}
 								<span
 									class="absolute top-1 right-1 size-2 rounded-full bg-destructive"
 									title="Stops confirmation"
@@ -275,12 +198,15 @@
 			</Button>
 		</div>
 
-		{#if blockerMessages.length > 0}
-			<div class="space-y-1 text-xs text-destructive" data-testid="blockers" role="status">
-				{#each blockerMessages as message, index (index)}
-					<p>{message}</p>
-				{/each}
-			</div>
+		{#if document !== null}
+			{@const messages = confirmationMessages(document, blockers)}
+			{#if messages.length > 0}
+				<div class="space-y-1 text-xs text-destructive" data-testid="blockers" role="status">
+					{#each messages as message, index (index)}
+						<p>{message}</p>
+					{/each}
+				</div>
+			{/if}
 		{/if}
 	</header>
 
@@ -292,7 +218,7 @@
 				Needs attention ({attention.length}){#if twoTiers}<span
 						class="font-normal text-muted-foreground"
 					>
-						{` · ${tierLabel(current)}`}</span
+						{` · ${tierLabel(document, current)}`}</span
 					>{/if}
 			</h2>
 			<ul class="space-y-0.5">

@@ -17,7 +17,7 @@
 		type RagBand
 	} from '$lib/marksheet/analysis.js';
 	import { entryName } from '$lib/marksheet/breakdown.js';
-	import type { TierIndex } from '$lib/marksheet/document.js';
+	import { otherTier, type TierIndex } from '$lib/marksheet/document.js';
 	import { cn } from '$lib/utils.js';
 	import { ANALYSIS_TICKS, BAND_TEXT } from './analysis-style.js';
 	import AnalysisTrack from './AnalysisTrack.svelte';
@@ -118,7 +118,7 @@
 					tier1={tier === 0 ? row : (pair?.tier1.analysis ?? null)}
 					tier2={tier === 1 ? row : (pair?.tier2.analysis ?? null)}
 					pooled={pair?.pooled.facility ?? null}
-					dimmed={pair === null ? null : tier === 0 ? 1 : 0}
+					dimmed={pair === null ? null : otherTier(tier)}
 					empty={notScoredLabel(row)}
 				/>
 			</div>

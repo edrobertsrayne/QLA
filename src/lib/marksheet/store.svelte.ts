@@ -41,11 +41,14 @@ import {
 	localId,
 	marksOnEntry,
 	marksOverMax,
+	otherTier,
 	pairOfEntry,
 	partnerIdOf,
 	putMark,
 	removeMark,
+	restingTier,
 	tierEntries,
+	tierNameProblem,
 	type AoDescriptions,
 	type BreakdownEntry,
 	type CommonQuestion,
@@ -259,11 +262,7 @@ export class MarksheetStore {
 
 		const trimmed = trimOrNull(name);
 		if (stored.tierName === trimmed) return;
-		if (document.tiers.length === 2) {
-			if (trimmed === null) return;
-			const other = trimOrNull(document.tiers[tier === 0 ? 1 : 0]?.tierName ?? '');
-			if (other !== null && other.toLowerCase() === trimmed.toLowerCase()) return;
-		}
+		if (tierNameProblem(document, tier, trimmed) !== null) return;
 		stored.tierName = trimmed;
 		this.#mutated();
 	}
@@ -449,13 +448,13 @@ export class MarksheetStore {
 			return;
 		}
 
-		const otherTier: TierIndex = tier === 0 ? 1 : 0;
-		const partner = tierEntries(document, otherTier).find((entry) => entry.id === partnerId);
+		const other = otherTier(tier);
+		const partner = tierEntries(document, other).find((entry) => entry.id === partnerId);
 		const entry = tierEntries(document, tier).find((candidate) => candidate.id === entryId);
 		if (entry === undefined || partner === undefined) return;
 		if (entry.marks === null || partner.marks === null) return;
 		if (entry.marks !== partner.marks) return;
-		const partnerPair = pairOfEntry(document, otherTier, partnerId);
+		const partnerPair = pairOfEntry(document, other, partnerId);
 		if (partnerPair !== null && partnerPair !== current) return;
 
 		const pairedId =
@@ -523,7 +522,7 @@ export class MarksheetStore {
 		const document = this.document;
 		if (!document) return null;
 
-		const student = newStudent(name, document.tiers.length === 1 ? 0 : null);
+		const student = newStudent(name, restingTier(document));
 		document.students.push(student);
 		this.#mutated();
 		return student.id;
@@ -645,7 +644,7 @@ export class MarksheetStore {
 	pasteNames(names: string, tier: TierIndex | null): number {
 		const document = this.document;
 		if (!document) return 0;
-		const target = tier ?? (document.tiers.length === 1 ? 0 : null);
+		const target = tier ?? restingTier(document);
 		if (target === null) {
 			const rows = trimPasteGrid(textGrid(names));
 			if (rows.some((row) => row.length > 1)) {
@@ -691,7 +690,7 @@ export class MarksheetStore {
 	addStudentsFromUpload(names: readonly StudentName[], tier: TierIndex | null): void {
 		const document = this.document;
 		if (!document) return;
-		const target = tier ?? (document.tiers.length === 1 ? 0 : null);
+		const target = tier ?? restingTier(document);
 		if (target !== null && document.tiers[target] === undefined) return;
 
 		let result = emptyPasteResult();

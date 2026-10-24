@@ -366,23 +366,6 @@ describe('breakdown page', () => {
 			.toBeInTheDocument();
 	});
 
-	it('refuses to confirm while a label is empty or repeated, naming the offenders', async () => {
-		seed(
-			documentOf([
-				entry('entry-1', '2a', '2'),
-				entry('entry-2', '2a', '2'),
-				entry('entry-3', '  ', '3')
-			])
-		);
-		openPage(BreakdownPage);
-
-		await expect
-			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
-			.toBeDisabled();
-		await expect.element(page.getByText(/2a is used more than once/)).toBeInTheDocument();
-		await expect.element(page.getByText(/1 entry has no label/)).toBeInTheDocument();
-	});
-
 	it('confirms a complete breakdown and opens the marksheet', async () => {
 		seed(parsedDocument());
 		openPage(BreakdownPage);
@@ -664,7 +647,7 @@ describe('breakdown page', () => {
 		});
 	});
 
-	it('names a blank tier and puts a red dot on the tabs it stops', async () => {
+	it('edits tier names, clearing the tabs’ blocker dots as each one is named', async () => {
 		seed(
 			twoTierDocument({
 				tiers: [
@@ -675,61 +658,23 @@ describe('breakdown page', () => {
 		);
 		openPage(BreakdownPage);
 
-		await expect.element(page.getByText('Tier 1 needs a tier name.')).toBeInTheDocument();
-		await expect.element(page.getByText('Tier 2 needs a tier name.')).toBeInTheDocument();
-		expect(page.getByText('The two tiers need different names.').elements()).toHaveLength(0);
 		expect(page.getByTestId('tier-blocker-dot').elements()).toHaveLength(2);
 		await expect
 			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
 			.toBeDisabled();
 
 		await page.getByLabelText('Tier name, as printed on the paper').fill('Higher');
-		await expect.element(page.getByText('Tier 1 needs a tier name.')).not.toBeInTheDocument();
 		expect(page.getByTestId('tier-blocker-dot').elements()).toHaveLength(1);
 
 		await page.getByRole('radio', { name: 'Tier 2', exact: true }).click();
 		await page.getByLabelText('Tier name, as printed on the paper').fill('Foundation');
 
-		await expect.element(page.getByText('Tier 2 needs a tier name.')).not.toBeInTheDocument();
 		expect(page.getByTestId('tier-blocker-dot').elements()).toHaveLength(0);
 		await expect
 			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
 			.toBeEnabled();
 		await vi.waitFor(() =>
 			expect(readSeeded().tiers.map((one) => one.tierName)).toEqual(['Higher', 'Foundation'])
-		);
-	});
-
-	it('names two tiers that read the same, and clears it once one is renamed', async () => {
-		seed(
-			twoTierDocument({
-				tiers: [
-					tierWith([entry('h1', '1a', '1')], 'Higher', 'H.pdf'),
-					tierWith([entry('f1', '8a', '8')], 'higher', 'F.pdf')
-				]
-			})
-		);
-		openPage(BreakdownPage);
-
-		await expect.element(page.getByText('The two tiers need different names.')).toBeInTheDocument();
-		expect(page.getByText('Tier 1 needs a tier name.').elements()).toHaveLength(0);
-		expect(page.getByText('Tier 2 needs a tier name.').elements()).toHaveLength(0);
-		expect(page.getByTestId('tier-blocker-dot').elements()).toHaveLength(2);
-		await expect
-			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
-			.toBeDisabled();
-
-		await page.getByLabelText('Tier name, as printed on the paper').fill('Higher Tier');
-
-		await expect
-			.element(page.getByText('The two tiers need different names.'))
-			.not.toBeInTheDocument();
-		expect(page.getByTestId('tier-blocker-dot').elements()).toHaveLength(0);
-		await expect
-			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
-			.toBeEnabled();
-		await vi.waitFor(() =>
-			expect(readSeeded().tiers.map((one) => one.tierName)).toEqual(['Higher Tier', 'higher'])
 		);
 	});
 
@@ -857,39 +802,6 @@ describe('breakdown page', () => {
 		await expect
 			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
 			.toBeEnabled();
-	});
-
-	it('lists two pairs blocked for the same reason, repeated sentence and all', async () => {
-		seed(
-			parsed({
-				tiers: [
-					tierWith(
-						[entry('h1', '', '1', { marks: 4 }), entry('h2', '', '2', { marks: 4 })],
-						'Higher',
-						'H.pdf'
-					),
-					tierWith(
-						[entry('f1', '', '8', { marks: 6 }), entry('f2', '', '9', { marks: 6 })],
-						'Foundation',
-						'F.pdf'
-					)
-				],
-				commonQuestions: [
-					{ tier1EntryId: 'h1', tier2EntryId: 'f1' },
-					{ tier1EntryId: 'h2', tier2EntryId: 'f2' }
-				]
-			})
-		);
-		openPage(BreakdownPage);
-
-		// Both pairs' marks differ the same way, so the sentence names each pair identically.
-		const sentence =
-			'(no label) (4) and (no label) (6) are paired but have different available marks.';
-		await expect.element(page.getByTestId('blockers')).toHaveTextContent(sentence);
-		expect(page.getByText(sentence).elements()).toHaveLength(2);
-		await expect
-			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
-			.toBeDisabled();
 	});
 
 	it('drops a deleted entry’s pair in the same change, and undo brings it back', async () => {

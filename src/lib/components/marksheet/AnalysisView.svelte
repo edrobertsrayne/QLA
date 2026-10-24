@@ -16,7 +16,7 @@
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import { analyseCommonQuestions, sortCommonQuestions } from '$lib/marksheet/analysis.js';
 	import type { AnalysisTab } from './analysis-tab.js';
-	import type { TierIndex } from '$lib/marksheet/document.js';
+	import { otherTier, type TierIndex } from '$lib/marksheet/document.js';
 	import { exportAnalysisNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { toastPdfFailure } from '$lib/print-pdf.js';
 	import { count, agree } from '$lib/prose.js';
@@ -24,6 +24,7 @@
 	import CommonQuestions from './CommonQuestions.svelte';
 	import TierAnalysis from './TierAnalysis.svelte';
 	import { downloadAnalysisPdf } from './analysis-pdf.js';
+	import { tierLabel, tierNameLabel, tierNameOf } from './tier-label.js';
 
 	interface Props {
 		/** The tab the URL asked for; the document decides whether it can be opened. */
@@ -109,25 +110,9 @@
 		)
 	);
 
-	/** The tier name as printed, or null when there is none to show. */
-	function printedName(tier: TierIndex): string | null {
-		const name = store.tiers[tier]?.tierName?.trim() ?? '';
-		return name === '' ? null : name;
-	}
-
-	/** A tier named the way the marksheet names it, falling back to its number. */
-	function tierTitle(tier: TierIndex): string {
-		return printedName(tier) ?? `Tier ${tier + 1}`;
-	}
-
-	function tierTabLabel(tier: TierIndex): string {
-		const name = printedName(tier);
-		return name === null ? `Tier ${tier + 1}` : `Tier ${tier + 1} · ${name}`;
-	}
-
 	/** A tier's initial, as coverage and the partner chip shorten it. */
 	function tierShort(tier: TierIndex): string {
-		return printedName(tier)?.charAt(0).toUpperCase() ?? `T${tier + 1}`;
+		return tierNameOf(store.document, tier)?.charAt(0).toUpperCase() ?? `T${tier + 1}`;
 	}
 
 	/** Initials that cannot collide: two names sharing one letter fall back to T1/T2. */
@@ -145,8 +130,9 @@
 	);
 
 	const headingText = $derived.by(() => {
-		if (openTier === null) return `Common questions — ${tierTitle(0)} and ${tierTitle(1)}`;
-		if (twoTiers) return `Question analysis — ${tierTabLabel(openTier)}`;
+		if (openTier === null)
+			return `Common questions — ${tierNameLabel(store.document, 0)} and ${tierNameLabel(store.document, 1)}`;
+		if (twoTiers) return `Question analysis — ${tierLabel(store.document, openTier)}`;
 		return 'Question analysis';
 	});
 
@@ -179,7 +165,7 @@
 		const facts = [
 			count(allCommon.length, 'common question'),
 			`${marks} marks available`,
-			`${tier1Present} ${tierTitle(0)} + ${tier2Present} ${tierTitle(1)} students counted`,
+			`${tier1Present} ${tierNameLabel(store.document, 0)} + ${tier2Present} ${tierNameLabel(store.document, 1)} students counted`,
 			`${absentExcluded} absent excluded`
 		];
 		// A student on no tier belongs to neither side of any pair, so the figures leave them out.
@@ -261,7 +247,7 @@
 			>
 				{#each [0, 1] as const as tier (tier)}
 					<ToggleGroup.Item value={String(tier)} class="px-4">
-						{tierTabLabel(tier)}
+						{tierLabel(store.document, tier)}
 					</ToggleGroup.Item>
 				{/each}
 				{#if hasPairs}
@@ -310,16 +296,18 @@
 		>
 			{#if openTier === null}
 				<span class="inline-flex items-center gap-1.5">
-					<span class="size-3 rounded-full bg-foreground"></span>{tierTitle(0)}
+					<span class="size-3 rounded-full bg-foreground"></span>{tierNameLabel(store.document, 0)}
 				</span>
 				<span class="inline-flex items-center gap-1.5">
 					<span class="size-3 rounded-full border-2 border-foreground bg-background"></span>
-					{tierTitle(1)}
+					{tierNameLabel(store.document, 1)}
 				</span>
 				<span class="inline-flex items-center gap-1.5">
 					<span class="h-3.5 w-1 rounded-sm bg-primary"></span>Pooled (both tiers' students)
 				</span>
-				<span>Gap = {tierTitle(0)} − {tierTitle(1)}, points.</span>
+				<span
+					>Gap = {tierNameLabel(store.document, 0)} − {tierNameLabel(store.document, 1)}, points.</span
+				>
 			{:else if twoTiers}
 				<!-- The dot is the tier's, not the tab's: filled is always Tier 1's figure. -->
 				<span
@@ -327,7 +315,7 @@
 					data-testid="legend-tier"
 					data-tier="0"
 				>
-					<span class="size-3 rounded-full bg-foreground"></span>{tierTitle(0)}
+					<span class="size-3 rounded-full bg-foreground"></span>{tierNameLabel(store.document, 0)}
 				</span>
 				<span
 					class={cn('inline-flex items-center gap-1.5', openTier !== 1 && 'opacity-40')}
@@ -335,7 +323,7 @@
 					data-tier="1"
 				>
 					<span class="size-3 rounded-full border-2 border-foreground bg-background"></span>
-					{tierTitle(1)}
+					{tierNameLabel(store.document, 1)}
 				</span>
 				{#if hasPairs}
 					<span class="inline-flex items-center gap-1.5">
@@ -361,8 +349,8 @@
 			{highlight}
 			tier={openTier}
 			tierShort={twoTiers ? initials[openTier] : null}
-			otherShort={twoTiers ? initials[openTier === 0 ? 1 : 0] : ''}
-			otherTierName={twoTiers ? tierTitle(openTier === 0 ? 1 : 0) : ''}
+			otherShort={twoTiers ? initials[otherTier(openTier)] : ''}
+			otherTierName={twoTiers ? tierNameLabel(store.document, otherTier(openTier)) : ''}
 			pairs={allCommon}
 		/>
 	{/if}

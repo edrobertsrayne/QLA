@@ -521,6 +521,39 @@ export function totalMarks(entries: readonly BreakdownEntry[]): number {
 	return entries.reduce((sum, entry) => sum + (entry.marks ?? 0), 0);
 }
 
+/** The other tier of a two-tier assessment: 0 ↔ 1. */
+export function otherTier(tier: TierIndex): TierIndex {
+	return tier === 0 ? 1 : 0;
+}
+
+/** Whether this assessment has two papers. An assessment holds at most two. */
+export function hasTwoTiers(document: MarksheetDocument): boolean {
+	return document.tiers.length === 2;
+}
+
+/** Where a new student rests: tier 0 on a single tier, no tier on two. */
+export function restingTier(document: MarksheetDocument): TierIndex | null {
+	return hasTwoTiers(document) ? null : 0;
+}
+
+/** Why a tier name cannot be saved on this document, or null when it can. */
+export function tierNameProblem(
+	document: MarksheetDocument,
+	tier: TierIndex,
+	name: string | null
+): 'blank' | 'shared' | null {
+	if (!hasTwoTiers(document)) return null;
+	const trimmed = (name ?? '').trim();
+	if (trimmed === '') return 'blank';
+	const other = (document.tiers[otherTier(tier)]?.tierName ?? '').trim();
+	return other.toLowerCase() === trimmed.toLowerCase() ? 'shared' : null;
+}
+
+/** Whether both tiers carry the same non-blank name, trimmed and ignoring case. */
+export function tierNamesCollide(document: MarksheetDocument): boolean {
+	return tierNameProblem(document, 0, document.tiers[0]?.tierName ?? null) === 'shared';
+}
+
 /** One tier's entries in paper order: a tier the assessment does not have holds none. */
 export function tierEntries(document: MarksheetDocument, tier: TierIndex): BreakdownEntry[] {
 	const stored = document.tiers[tier];

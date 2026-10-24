@@ -18,6 +18,7 @@
 	import { entryName, type QuestionBand } from '$lib/marksheet/breakdown.js';
 	import {
 		isOverMax,
+		otherTier,
 		readMarkText,
 		type BreakdownEntry,
 		type StoredStudent,
@@ -387,7 +388,7 @@
 	function moveStudent(student: StoredStudent): void {
 		const from = student.tier;
 		if (from === null) return;
-		const to: TierIndex = from === 0 ? 1 : 0;
+		const to: TierIndex = otherTier(from);
 		if (!store.setStudentTier(student.id, to)) return;
 		toast(`${studentName(student)} moved to ${tierLabel(document, to)}`, {
 			description: 'Their marks on the tier they left are kept, not counted.'
@@ -498,7 +499,7 @@
 							onSelect={() => selectCell(student.id, null)}
 							onMove={(move) => moveTo(activeCell && step(activeCell, shape, move))}
 							onMoveTier={tiered ? () => moveStudent(student) : undefined}
-							moveLabel={tiered ? tierLabel(document, tier === 0 ? 1 : 0) : undefined}
+							moveLabel={tiered ? tierLabel(document, otherTier(tier)) : undefined}
 						/>
 						<Table.Cell
 							data-testid="progress-cell"
@@ -608,7 +609,7 @@
 									No students on {tierLabel(document, tier)} yet. Set tiers on the Tier not set tab.
 								{:else}
 									No students on {tierLabel(document, tier)} yet. Move a student here from
-									{tierLabel(document, tier === 0 ? 1 : 0)} with the ⇄ button.
+									{tierLabel(document, otherTier(tier))} with the ⇄ button.
 								{/if}
 							</Table.Cell>
 						</Table.Row>

@@ -15,12 +15,19 @@ import type {
 	StoredWarning,
 	TierIndex
 } from './document.js';
-import { EDITABLE_FIELDS, tierEntries } from './document.js';
+import {
+	EDITABLE_FIELDS,
+	hasTwoTiers,
+	tierEntries,
+	tierNameProblem,
+	tierNamesCollide
+} from './document.js';
 import {
 	ASSESSMENT_OBJECTIVES,
 	type AssessmentObjective
 } from '$lib/parse/assessment-objectives.js';
 import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
+import { agree, count } from '$lib/prose.js';
 
 /** A contiguous run of entries belonging to one question: one band of the table. */
 export interface QuestionBand {
@@ -134,17 +141,15 @@ export interface AssessmentBlockers {
 export function assessmentBlockers(document: MarksheetDocument): AssessmentBlockers {
 	const tiers = document.tiers.map((stored) => confirmationBlockers(stored.breakdown.entries));
 
-	const twoTiers = document.tiers.length === 2;
-	const firstName = (document.tiers[0]?.tierName ?? '').trim();
-	const secondName = (document.tiers[1]?.tierName ?? '').trim();
-
 	const blankTierNames: TierIndex[] = [];
-	if (twoTiers) {
-		if (firstName === '') blankTierNames.push(0);
-		if (secondName === '') blankTierNames.push(1);
+	if (tierNameProblem(document, 0, document.tiers[0]?.tierName ?? null) === 'blank') {
+		blankTierNames.push(0);
+	}
+	if (tierNameProblem(document, 1, document.tiers[1]?.tierName ?? null) === 'blank') {
+		blankTierNames.push(1);
 	}
 
-	const sameTierNames = twoTiers && firstName.toLowerCase() === secondName.toLowerCase();
+	const sameTierNames = hasTwoTiers(document) && tierNamesCollide(document);
 
 	const unequalPairs = document.commonQuestions.filter((pair) => {
 		const tier1 = tierEntries(document, 0).find((entry) => entry.id === pair.tier1EntryId);
@@ -169,6 +174,86 @@ export function assessmentBlockers(document: MarksheetDocument): AssessmentBlock
 		sameTierNames,
 		unequalPairs
 	};
+}
+
+/**
+ * Every reason confirmation is blocked, as one sentence each, in tier order.
+ * A blocker on one tier names it, since the sentence may be read from the
+ * other tab.
+ */
+export function confirmationMessages(
+	document: MarksheetDocument,
+	blockers: AssessmentBlockers
+): string[] {
+	const messages: string[] = [];
+	const twoTiers = blockers.tiers.length === 2;
+	blockers.tiers.forEach((tierBlockers, index) => {
+		const who = twoTiers ? `Tier ${index + 1}: ` : '';
+		const missing = tierBlockers.noAvailableMarks.map(entryName);
+		if (missing.length > 0) {
+			messages.push(
+				twoTiers
+					? `${who}available marks are not yet known for ${missing.join(', ')} — every column needs them before the marksheet can be built.`
+					: `Available marks are not yet known for ${missing.join(', ')} — every column needs them before the marksheet can be built.`
+			);
+		}
+		if (tierBlockers.emptyLabels.length > 0) {
+			const n = tierBlockers.emptyLabels.length;
+			messages.push(
+				`${who}${count(n, 'entry', 'entries')} ${agree(n, 'has', 'have')} no label, so ${agree(n, 'its column would have', 'their columns would have')} no ${agree(n, 'heading', 'headings')}.`
+			);
+		}
+		const repeated = [...new Set(tierBlockers.duplicateLabels.map((entry) => entry.label.trim()))];
+		if (repeated.length > 0) {
+			messages.push(
+				`${who}${repeated.join(', ')} ${agree(repeated.length, 'is', 'are each')} used more than once — every column needs its own label.`
+			);
+		}
+	});
+	for (const tier of blockers.blankTierNames) {
+		messages.push(`Tier ${tier + 1} needs a tier name.`);
+	}
+	if (blockers.sameTierNames) {
+		messages.push('The two tiers need different names.');
+	}
+	for (const pair of blockers.unequalPairs) {
+		const tier1 = tierEntries(document, 0).find((entry) => entry.id === pair.tier1EntryId);
+		const tier2 = tierEntries(document, 1).find((entry) => entry.id === pair.tier2EntryId);
+		if (tier1 === undefined || tier2 === undefined) continue;
+		messages.push(
+			`${entryName(tier1)} (${tier1.marks ?? '?'}) and ${entryName(tier2)} (${tier2.marks ?? '?'}) are paired but have different available marks.`
+		);
+	}
+	return messages;
+}
+
+/** The marks a common-question pair carries on Tier 1: each pair counts once. */
+export function pairedMarks(document: MarksheetDocument): number {
+	return document.commonQuestions.reduce((sum, pair) => {
+		const entry = tierEntries(document, 0).find((candidate) => candidate.id === pair.tier1EntryId);
+		return sum + (entry?.marks ?? 0);
+	}, 0);
+}
+
+/** The notice to show when no pairs are offered, or null when there is nothing to say. */
+export function noPairsNotice(
+	document: MarksheetDocument,
+	matchNotice: string | null
+): { title: string; description: string } | null {
+	if (!hasTwoTiers(document) || document.commonQuestions.length > 0) return null;
+	return matchNotice === null
+		? { title: 'No common questions yet', description: 'Pair them by hand below.' }
+		: { title: 'No common questions proposed', description: matchNotice };
+}
+
+/** Whether a tier's tab should show the blocker dot. */
+export function tierHasBlocker(blockers: AssessmentBlockers, tier: TierIndex): boolean {
+	return (
+		(blockers.tiers[tier]?.blocked ?? false) ||
+		blockers.blankTierNames.includes(tier) ||
+		blockers.sameTierNames ||
+		blockers.unequalPairs.length > 0
+	);
 }
 
 /** What an entry is missing, in the order worth fixing it. */

@@ -9,13 +9,18 @@ import {
 	entriesOfStudent,
 	entryTierOf,
 	entryValuesOf,
+	hasTwoTiers,
 	marksOnEntry,
+	otherTier,
 	parseStoredDocument,
 	partnerIdOf,
+	restingTier,
 	storedMarkCount,
 	studentTierName,
 	studentTotal,
 	tierEntries,
+	tierNameProblem,
+	tierNamesCollide,
 	topicCodesOf,
 	type EntryValues,
 	type MarksheetDocument,
@@ -826,5 +831,61 @@ describe('document helpers', () => {
 
 		expect(reread.tiers[0].tierName).toBe('   ');
 		expect(studentTierName(reread, reread.students[0])).toBeNull();
+	});
+});
+
+describe('tier rules', () => {
+	function named(first: string | null, second: string | null): MarksheetDocument {
+		return twoTier({
+			tiers: [tier({ tierName: first }), tier({ tierName: second })]
+		});
+	}
+
+	it('gives the other tier of a two-tier assessment', () => {
+		expect(otherTier(0)).toBe(1);
+		expect(otherTier(1)).toBe(0);
+	});
+
+	it('knows an assessment with two papers from one with a single paper', () => {
+		expect(hasTwoTiers(confirmed())).toBe(false);
+		expect(hasTwoTiers(twoTier())).toBe(true);
+	});
+
+	it('rests a new student on tier 0 alone, and on no tier when there are two', () => {
+		expect(restingTier(confirmed())).toBe(0);
+		expect(restingTier(twoTier())).toBeNull();
+	});
+
+	it('collides only when both tiers carry the same non-blank name, trimmed and ignoring case', () => {
+		expect(tierNamesCollide(named('Higher', '  higher '))).toBe(true);
+		expect(tierNamesCollide(named('Higher', 'Foundation'))).toBe(false);
+		expect(tierNamesCollide(named('Higher', '   '))).toBe(false);
+		expect(tierNamesCollide(named('   ', 'Foundation'))).toBe(false);
+		expect(tierNamesCollide(named('   ', '  '))).toBe(false);
+		expect(tierNamesCollide(confirmed())).toBe(false);
+	});
+
+	it('allows any name, blank included, on a single tier', () => {
+		expect(tierNameProblem(confirmed(), 0, null)).toBeNull();
+		expect(tierNameProblem(confirmed(), 0, '   ')).toBeNull();
+		expect(tierNameProblem(confirmed(), 0, 'Higher')).toBeNull();
+	});
+
+	it('asks a two-tier assessment for a non-blank name', () => {
+		expect(tierNameProblem(twoTier(), 0, null)).toBe('blank');
+		expect(tierNameProblem(twoTier(), 1, '   ')).toBe('blank');
+	});
+
+	it('refuses a two-tier name the other tier already carries, trimmed and ignoring case', () => {
+		for (const name of ['Higher', ' higher ', 'HIGHER']) {
+			expect(tierNameProblem(named('Higher', 'Foundation'), 1, name)).toBe('shared');
+			expect(tierNameProblem(named('Foundation', 'Higher'), 0, name)).toBe('shared');
+		}
+	});
+
+	it('accepts a distinct two-tier name, and one beside a blank name', () => {
+		expect(tierNameProblem(named('Higher', 'Foundation'), 0, 'Higher Tier')).toBeNull();
+		expect(tierNameProblem(named('Higher', null), 1, 'Foundation')).toBeNull();
+		expect(tierNameProblem(named(null, 'Foundation'), 0, 'Higher')).toBeNull();
 	});
 });
