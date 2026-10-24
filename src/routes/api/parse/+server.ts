@@ -3,18 +3,19 @@
 // Multipart in, `{ breakdown, warnings, usage }` out. Accepts an assessment
 // paper and/or a markscheme PDF (at least one required), plus an optional
 // exam specification URL fetched server-side per run (no cache). The live
-// model (GPT-6 Luna default, per-run override) with max_tokens 4000, a 120s timeout,
-// usage on every response, one silent retry on malformed JSON, and
-// 429/5xx → 502 mapping. Spec failures fail the run (400) before any model
-// spend; the spec never changes the verbatim specPoint rule.
+// model (GPT-6 Luna default, per-run override) with max_tokens 4000, the
+// shared OpenRouter transport's timeout, usage on every response, one silent
+// retry on malformed JSON, and the shared status map for transport failures
+// (401/402/408/429/5xx). Every failure body says explicitly whether it is
+// retryable. Spec failures fail the run (400) before any model spend; the
+// spec never changes the verbatim specPoint rule.
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
 	ASSESSMENT_PAPER_FIELD,
 	MARKSCHEME_FIELD,
-	MAX_FILE_BYTES,
-	MAX_TOTAL_PAGES,
+	MODEL_ERROR_CODE,
 	MODEL_OVERRIDE_FIELD,
 	SPEC_URL_FIELD,
 	INVALID_SPEC_URL_CODE,
@@ -26,20 +27,26 @@ import {
 	applyTierNameCheck,
 	validateBreakdown
 } from '$lib/server/parse/validate';
-import {
-	MODEL_ERROR_CODE,
-	MODEL_RETRYABLE_CODE,
-	ModelRetryableError,
-	callModel,
-	type IngestedDocument
-} from '$lib/server/parse/model';
+import { callModel, type IngestedDocument } from '$lib/server/parse/model';
+import { StructuredModelError } from '$lib/server/openrouter';
+import { modelErrorResponse } from '$lib/server/structured-route';
 import {
 	buildDiagramUnverifiedWarning,
-	countPdfPages,
 	parsePdfBytes,
 	resolveModelId,
 	supportsNativePdf
 } from '$lib/server/parse/pdf';
+import {
+	FILE_TOO_BIG_CODE,
+	INVALID_FILE_TYPE_CODE,
+	MAX_FILE_BYTES,
+	MAX_TOTAL_PAGES,
+	PDF_UPLOAD_MESSAGES,
+	PDF_UNREADABLE_CODE,
+	checkPdfUploads,
+	readPdfUploads,
+	type PdfUploadFailure
+} from '$lib/server/pdf-upload';
 import {
 	fetchSpecPdf,
 	parseSpecUrl,
@@ -48,8 +55,17 @@ import {
 } from '$lib/server/parse/spec';
 import { getServerEnv } from '$lib/server/parse/env';
 
+/** The only failures the client may retry; every other code fails the run. */
+const RETRYABLE_CODES: Record<string, true> = {
+	[MODEL_ERROR_CODE]: true,
+	MALFORMED_MODEL_OUTPUT: true
+};
+
 function error(code: string, message: string, extra: Record<string, unknown> = {}): Response {
-	return json({ error: { code, message, ...extra } }, { status: statusFor(code) });
+	return json(
+		{ error: { code, message, ...extra, retryable: RETRYABLE_CODES[code] === true } },
+		{ status: statusFor(code) }
+	);
 }
 
 function statusFor(code: string): number {
@@ -62,19 +78,37 @@ function statusFor(code: string): number {
 			return 400;
 		case 'FILE_TOO_BIG':
 			return 413;
-		case MODEL_RETRYABLE_CODE:
-			return 502;
 		case 'MISSING_API_KEY':
 		case 'MALFORMED_MODEL_OUTPUT':
-		case MODEL_ERROR_CODE:
 			return 500;
 		default:
 			return 500;
 	}
 }
 
-function isPdf(file: File): boolean {
-	return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+function uploadFailure(pdfFailure: PdfUploadFailure): Response {
+	switch (pdfFailure.kind) {
+		case 'missing':
+			return error('MISSING_INPUT', 'Attach an assessment paper and/or its markscheme PDF.', {
+				missing: pdfFailure.fields
+			});
+		case 'not-pdf':
+			return error(INVALID_FILE_TYPE_CODE, PDF_UPLOAD_MESSAGES.notPdf);
+		case 'too-big':
+			return error(FILE_TOO_BIG_CODE, PDF_UPLOAD_MESSAGES.tooBig(pdfFailure.filename), {
+				file: pdfFailure.filename,
+				size: pdfFailure.size,
+				limit: MAX_FILE_BYTES
+			});
+		case 'too-many-pages':
+			return error(
+				FILE_TOO_BIG_CODE,
+				`The PDFs total ${pdfFailure.totalPages} pages, above the ${MAX_TOTAL_PAGES}-page ceiling. Split or compress them and try again.`,
+				{ totalPages: pdfFailure.totalPages, limit: MAX_TOTAL_PAGES }
+			);
+		case 'unreadable':
+			return error(PDF_UNREADABLE_CODE, PDF_UPLOAD_MESSAGES.unreadable);
+	}
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -92,35 +126,11 @@ export const POST: RequestHandler = async ({ request }) => {
 		return error('MISSING_INPUT', 'Expected a multipart form with at least one PDF.');
 	}
 
-	const paper = form.get(ASSESSMENT_PAPER_FIELD);
-	const markscheme = form.get(MARKSCHEME_FIELD);
 	const modelOverride = form.get(MODEL_OVERRIDE_FIELD);
 	const specUrlRaw = form.get(SPEC_URL_FIELD);
 
-	const hasPaper = paper instanceof File && paper.size > 0;
-	const hasMarkscheme = markscheme instanceof File && markscheme.size > 0;
-	if (!hasPaper && !hasMarkscheme) {
-		return error('MISSING_INPUT', 'Attach an assessment paper and/or its markscheme PDF.', {
-			missing: [ASSESSMENT_PAPER_FIELD, MARKSCHEME_FIELD]
-		});
-	}
-
-	const paperFile = hasPaper ? (paper as File) : null;
-	const markschemeFile = hasMarkscheme ? (markscheme as File) : null;
-
-	for (const file of [paperFile, markschemeFile]) {
-		if (!file) continue;
-		if (!isPdf(file)) {
-			return error('INVALID_FILE_TYPE', 'Assessment paper and markscheme must be PDF files.');
-		}
-		if (file.size > MAX_FILE_BYTES) {
-			return error('FILE_TOO_BIG', `File '${file.name}' exceeds the 15MB per-file limit.`, {
-				file: file.name,
-				size: file.size,
-				limit: MAX_FILE_BYTES
-			});
-		}
-	}
+	const checked = checkPdfUploads(form, [ASSESSMENT_PAPER_FIELD, MARKSCHEME_FIELD], 'any');
+	if (!Array.isArray(checked)) return uploadFailure(checked);
 
 	const override =
 		typeof modelOverride === 'string' && modelOverride.trim() !== ''
@@ -132,89 +142,31 @@ export const POST: RequestHandler = async ({ request }) => {
 	// `useNativePdf`, so there is no silent paid-OCR fallback).
 	const useNativePdf = supportsNativePdf(modelId);
 
-	// Read each PDF's bytes and count its pages before extracting any text, so
-	// the page ceiling refuses an oversize upload without doing the work it
-	// exists to bound. Both caps are per call.
-	async function readBytes(file: File): Promise<Uint8Array> {
-		try {
-			return new Uint8Array(await file.arrayBuffer());
-		} catch {
-			throw new Error('unreadable');
-		}
-	}
-
-	async function countPages(bytes: Uint8Array): Promise<number> {
-		try {
-			return await countPdfPages(bytes);
-		} catch {
-			throw new Error('unreadable');
-		}
-	}
-
-	async function extract(file: File, bytes: Uint8Array, pages: number): Promise<IngestedDocument> {
-		// pdf.js detaches the buffer it reads, so encode the native copy first.
-		const pdfBase64 = useNativePdf ? Buffer.from(bytes).toString('base64') : null;
-		let parsed;
-		try {
-			parsed = await parsePdfBytes(bytes);
-		} catch {
-			throw new Error('unreadable');
-		}
-		return {
-			filename: file.name,
-			pageCount: pages,
-			text: parsed.textWithMarkers,
-			pdfBase64
-		};
-	}
-
-	let paperBytes: Uint8Array | undefined;
-	let markschemeBytes: Uint8Array | undefined;
-	let paperPages = 0;
-	let markschemePages = 0;
-	let totalPages = 0;
-	try {
-		if (paperFile) {
-			paperBytes = await readBytes(paperFile);
-			// countPdfPages copies its input, so paperBytes stays whole for extraction.
-			paperPages = await countPages(paperBytes);
-			totalPages += paperPages;
-		}
-		if (markschemeFile) {
-			markschemeBytes = await readBytes(markschemeFile);
-			markschemePages = await countPages(markschemeBytes);
-			totalPages += markschemePages;
-		}
-	} catch {
-		return error(
-			'PDF_UNREADABLE',
-			'The PDFs could not be read. Re-export them without password protection and try again.'
-		);
-	}
-
-	if (totalPages > MAX_TOTAL_PAGES) {
-		return error(
-			'FILE_TOO_BIG',
-			`The PDFs total ${totalPages} pages, above the ${MAX_TOTAL_PAGES}-page ceiling. Split or compress them and try again.`,
-			{ totalPages, limit: MAX_TOTAL_PAGES }
-		);
-	}
+	// Bytes and page counts come from the shared intake, which refuses the page
+	// ceiling before any text is extracted or the spec is fetched.
+	const uploads = await readPdfUploads(checked);
+	if (!Array.isArray(uploads)) return uploadFailure(uploads);
 
 	let paperDoc: IngestedDocument | undefined;
 	let markschemeDoc: IngestedDocument | undefined;
 	let specDoc: IngestedDocument | undefined;
-	try {
-		if (paperFile && paperBytes !== undefined) {
-			paperDoc = await extract(paperFile, paperBytes, paperPages);
+	for (const upload of uploads) {
+		// pdf.js detaches the buffer it reads, so encode the native copy first.
+		const pdfBase64 = useNativePdf ? Buffer.from(upload.bytes).toString('base64') : null;
+		let parsed;
+		try {
+			parsed = await parsePdfBytes(upload.bytes);
+		} catch {
+			return error(PDF_UNREADABLE_CODE, PDF_UPLOAD_MESSAGES.unreadable);
 		}
-		if (markschemeFile && markschemeBytes !== undefined) {
-			markschemeDoc = await extract(markschemeFile, markschemeBytes, markschemePages);
-		}
-	} catch {
-		return error(
-			'PDF_UNREADABLE',
-			'The PDFs could not be read. Re-export them without password protection and try again.'
-		);
+		const document: IngestedDocument = {
+			filename: upload.filename,
+			pageCount: upload.pageCount,
+			text: parsed.textWithMarkers,
+			pdfBase64
+		};
+		if (upload.field === ASSESSMENT_PAPER_FIELD) paperDoc = document;
+		if (upload.field === MARKSCHEME_FIELD) markschemeDoc = document;
 	}
 
 	// Optional specification link: fetched fresh per run (no cache) and
@@ -255,23 +207,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		try {
 			result = await callModel(modelBase);
 		} catch (transportError) {
-			if (
-				transportError instanceof ModelRetryableError ||
-				(transportError !== null &&
-					typeof transportError === 'object' &&
-					(transportError as { retryable?: unknown }).retryable === true) ||
-				(transportError !== null &&
-					typeof transportError === 'object' &&
-					(transportError as { code?: unknown }).code === MODEL_RETRYABLE_CODE)
-			) {
-				const status =
-					transportError instanceof ModelRetryableError ? transportError.status : undefined;
-				return error(
-					MODEL_RETRYABLE_CODE,
-					'The model provider is temporarily unavailable. Please try again.',
-					{ retryable: true, ...(status !== undefined ? { status } : {}) }
-				);
-			}
+			if (transportError instanceof StructuredModelError) return modelErrorResponse(transportError);
 			return error(MODEL_ERROR_CODE, 'The model call failed. Please try again.');
 		}
 		try {

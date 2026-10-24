@@ -16,6 +16,7 @@
 import { extractText, getDocumentProxy } from 'unpdf';
 import type { PDFDocumentProxy } from 'unpdf/pdfjs';
 import { fenceDocuments } from '../fence';
+import { pdfFilePart, type PdfFilePart } from '../openrouter';
 import { AO_DESCRIPTION_TARGET_WORDS, type ParseWarning } from './schema';
 import { getServerEnv } from './env';
 
@@ -24,9 +25,6 @@ export const DEFAULT_MODEL_ID = 'openai/gpt-6-luna';
 
 /** Guardrail: cap completion so a full GCSE paper completes in one run. */
 export const OPENROUTER_MAX_TOKENS = 4000;
-
-/** Guardrail: server timeout so a full GCSE paper completes in one run. */
-export const OPENROUTER_TIMEOUT_MS = 120_000;
 
 /** Warning code for the text-only degradation path. */
 export const DIAGRAM_UNVERIFIED_CODE = 'DIAGRAM_UNVERIFIED';
@@ -135,11 +133,6 @@ export function buildDiagramUnverifiedWarning(): ParseWarning {
 	};
 }
 
-/** Encode raw PDF bytes as an OpenRouter `file_data` data URL. */
-export function toPdfDataUrl(base64: string): string {
-	return `data:application/pdf;base64,${base64}`;
-}
-
 export interface HybridPayloadInput {
 	modelId: string;
 	useNativePdf: boolean;
@@ -155,12 +148,13 @@ export interface HybridPayloadInput {
 	specPdfBase64?: string | null;
 }
 
-export interface HybridPayload {
+/** Parse's chat payload; an object type (not an interface) so the transport can take it as a full OpenRouter body. */
+export type HybridPayload = {
 	model: string;
 	max_tokens: number;
 	messages: unknown[];
 	plugins?: Array<{ id: string; pdf: { engine: string } }>;
-}
+};
 
 /**
  * Prompt wording is builder detail derived from the locked v1 schema
@@ -241,30 +235,15 @@ export function buildHybridPayload(input: HybridPayloadInput): HybridPayload {
 		};
 	}
 
-	const files: Array<{ type: string; file: { filename: string; file_data: string } }> = [];
+	const files: PdfFilePart[] = [];
 	if (input.paperFilename && input.paperPdfBase64) {
-		files.push({
-			type: 'file',
-			file: { filename: input.paperFilename, file_data: toPdfDataUrl(input.paperPdfBase64) }
-		});
+		files.push(pdfFilePart(input.paperFilename, input.paperPdfBase64));
 	}
 	if (input.markschemeFilename && input.markschemePdfBase64) {
-		files.push({
-			type: 'file',
-			file: {
-				filename: input.markschemeFilename,
-				file_data: toPdfDataUrl(input.markschemePdfBase64)
-			}
-		});
+		files.push(pdfFilePart(input.markschemeFilename, input.markschemePdfBase64));
 	}
 	if (input.specFilename && input.specPdfBase64) {
-		files.push({
-			type: 'file',
-			file: {
-				filename: input.specFilename,
-				file_data: toPdfDataUrl(input.specPdfBase64)
-			}
-		});
+		files.push(pdfFilePart(input.specFilename, input.specPdfBase64));
 	}
 
 	return {

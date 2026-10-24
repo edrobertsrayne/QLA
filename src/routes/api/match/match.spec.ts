@@ -22,7 +22,7 @@ import {
 import { clearEnvForTests, setEnvForTests } from '$lib/server/parse/env';
 import { DEFAULT_MODEL_ID } from '$lib/server/parse/pdf';
 import { buildPdfBytes } from '$lib/server/parse/pdf.spec-helpers';
-import { MAX_FILE_BYTES, MAX_TOTAL_PAGES } from '$lib/server/parse/schema';
+import { MAX_FILE_BYTES, MAX_TOTAL_PAGES } from '$lib/server/pdf-upload';
 
 const API_KEY = 'test-key';
 const USAGE = { promptTokens: 10, completionTokens: 5, totalTokens: 15, estCost: 0 };

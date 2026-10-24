@@ -10,43 +10,34 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
-	MAX_MATCH_ENTRIES,
-	MAX_MATCH_LABEL_LENGTH,
-	MAX_MATCH_SUMMARY_LENGTH
-} from '$lib/match/limits';
-import {
 	MATCH_SCHEMA,
 	MATCH_SCHEMA_NAME,
 	MATCH_SYSTEM_PROMPT,
+	TIER1_DOCUMENT_FIELD,
+	TIER2_DOCUMENT_FIELD,
 	localMatchPairs,
 	readMatchPairs,
-	type MatchEntry
+	validateMatchRequest,
+	type MatchRequest
 } from '$lib/server/match';
 import { MISSING_API_KEY_CODE } from '$lib/server/openrouter';
 import { getServerEnv } from '$lib/server/parse/env';
-import { MAX_FILE_BYTES, MAX_TOTAL_PAGES, type ParseUsage } from '$lib/server/parse/schema';
-import { countPdfPages, resolveModelId, supportsNativePdf } from '$lib/server/parse/pdf';
+import { resolveModelId, supportsNativePdf } from '$lib/server/parse/pdf';
+import type { ParseUsage } from '$lib/server/parse/schema';
 import {
-	InputError,
-	fail,
-	readList,
-	readNullableString,
-	readRecord,
-	readString,
-	rejectUnknownKeys
-} from '$lib/server/request-fields';
+	FILE_TOO_BIG_CODE,
+	INVALID_FILE_TYPE_CODE,
+	MAX_TOTAL_PAGES,
+	PDF_UPLOAD_MESSAGES,
+	PDF_UNREADABLE_CODE,
+	checkPdfUploads,
+	readPdfUploads,
+	type PdfUploadFailure
+} from '$lib/server/pdf-upload';
+import { InputError } from '$lib/server/request-fields';
 import { askModel, failure, invalidOutput } from '$lib/server/structured-route';
 
-const TIER1_DOCUMENT_FIELD = 'tier1Document';
-const TIER2_DOCUMENT_FIELD = 'tier2Document';
-const TIER1_ENTRIES_FIELD = 'tier1Entries';
-const TIER2_ENTRIES_FIELD = 'tier2Entries';
-const MODEL_FIELD = 'model';
-
 const INVALID_REQUEST_CODE = 'INVALID_MATCH_REQUEST';
-const INVALID_FILE_TYPE_CODE = 'INVALID_FILE_TYPE';
-const FILE_TOO_BIG_CODE = 'FILE_TOO_BIG';
-const PDF_UNREADABLE_CODE = 'PDF_UNREADABLE';
 const MATCH_NEEDS_NATIVE_PDF_CODE = 'MATCH_NEEDS_NATIVE_PDF';
 
 const MATCH_MAX_TOKENS = 16_000;
@@ -61,36 +52,6 @@ const ZERO_USAGE: ParseUsage = {
 	totalTokens: 0,
 	estCost: 0
 };
-
-const ENTRY_KEYS = new Set([
-	'id',
-	'questionNumber',
-	'marks',
-	'summary',
-	'specPoint',
-	'commandWord'
-]);
-
-interface MatchRequest {
-	tier1Document: File;
-	tier2Document: File;
-	tier1Entries: MatchEntry[];
-	tier2Entries: MatchEntry[];
-	model?: string;
-}
-
-interface IngestedDocument {
-	filename: string;
-	pdfBase64: string;
-	pageCount: number;
-}
-
-class UnreadablePdfError extends Error {
-	constructor(filename: string, options: { cause: unknown }) {
-		super(`PDF '${filename}' could not be read.`, options);
-		this.name = 'UnreadablePdfError';
-	}
-}
 
 function invalidRequest(field: string, message: string): Response {
 	return failure(400, { code: INVALID_REQUEST_CODE, message, retryable: false, field });
@@ -117,86 +78,6 @@ async function readForm(request: Request): Promise<FormData | Response> {
 	}
 }
 
-function readDocument(form: FormData, field: string): File {
-	const value = form.get(field);
-	if (value instanceof File && value.size > 0) return value;
-	fail(field, 'Must be a PDF file.');
-}
-
-function readJson(text: string, field: string): unknown {
-	try {
-		return JSON.parse(text);
-	} catch {
-		fail(field, 'Must be valid JSON.');
-	}
-}
-
-function readMarks(value: unknown, field: string): number | null {
-	if (value === null) return null;
-	if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
-	fail(field, 'Must be a positive whole number of marks or null.');
-}
-
-function readEntries(form: FormData, field: string): MatchEntry[] {
-	const raw = form.get(field);
-	if (typeof raw !== 'string') fail(field, 'Must be a JSON list of entries.');
-	const list = readList(readJson(raw, field), field, {
-		min: 0,
-		max: MAX_MATCH_ENTRIES,
-		notList: 'Must be a list of entries.',
-		size: `Must hold at most ${MAX_MATCH_ENTRIES} entries.`
-	});
-
-	return list.map((item, index) => {
-		const entryField = `${field}[${index}]`;
-		const record = readRecord(item, entryField);
-		rejectUnknownKeys(record, ENTRY_KEYS, entryField);
-		return {
-			id: readString(record['id'], `${entryField}.id`, {
-				nonBlank: 'Must be a non-blank id.',
-				max: MAX_MATCH_LABEL_LENGTH
-			}),
-			questionNumber: readString(record['questionNumber'], `${entryField}.questionNumber`, {
-				nonBlank: 'Must be a non-blank question number.',
-				max: MAX_MATCH_LABEL_LENGTH
-			}),
-			marks: readMarks(record['marks'], `${entryField}.marks`),
-			summary: readString(record['summary'], `${entryField}.summary`, {
-				max: MAX_MATCH_SUMMARY_LENGTH
-			}),
-			specPoint: readNullableString(
-				record['specPoint'],
-				`${entryField}.specPoint`,
-				MAX_MATCH_LABEL_LENGTH
-			),
-			commandWord: readNullableString(
-				record['commandWord'],
-				`${entryField}.commandWord`,
-				MAX_MATCH_LABEL_LENGTH
-			)
-		};
-	});
-}
-
-function readModel(form: FormData): string | undefined {
-	const value = form.get(MODEL_FIELD);
-	if (value === null) return undefined;
-	if (value instanceof File) fail(MODEL_FIELD, 'Must be a string.');
-	const model = readString(value, MODEL_FIELD, { max: MAX_MATCH_LABEL_LENGTH }).trim();
-	return model === '' ? undefined : model;
-}
-
-function validateMatchRequest(form: FormData): MatchRequest {
-	const model = readModel(form);
-	return {
-		tier1Document: readDocument(form, TIER1_DOCUMENT_FIELD),
-		tier2Document: readDocument(form, TIER2_DOCUMENT_FIELD),
-		tier1Entries: readEntries(form, TIER1_ENTRIES_FIELD),
-		tier2Entries: readEntries(form, TIER2_ENTRIES_FIELD),
-		...(model === undefined ? {} : { model })
-	};
-}
-
 function validRequest(form: FormData): MatchRequest | Response {
 	try {
 		return validateMatchRequest(form);
@@ -206,49 +87,39 @@ function validRequest(form: FormData): MatchRequest | Response {
 	}
 }
 
-function isPdf(file: File): boolean {
-	return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-}
-
-async function ingestDocument(file: File): Promise<IngestedDocument> {
-	let bytes: Uint8Array;
-	try {
-		bytes = new Uint8Array(await file.arrayBuffer());
-	} catch (error) {
-		throw new UnreadablePdfError(file.name, { cause: error });
-	}
-	let pageCount: number;
-	try {
-		pageCount = await countPdfPages(bytes);
-	} catch (error) {
-		throw new UnreadablePdfError(file.name, { cause: error });
-	}
-	return {
-		filename: file.name,
-		pdfBase64: Buffer.from(bytes).toString('base64'),
-		pageCount
-	};
-}
-
-async function readDocuments(
-	request: MatchRequest
-): Promise<{ tier1: IngestedDocument; tier2: IngestedDocument } | Response> {
-	try {
-		const [tier1, tier2] = await Promise.all([
-			ingestDocument(request.tier1Document),
-			ingestDocument(request.tier2Document)
-		]);
-		return { tier1, tier2 };
-	} catch (error) {
-		if (error instanceof UnreadablePdfError) {
+function uploadFailure(pdfFailure: PdfUploadFailure): Response {
+	switch (pdfFailure.kind) {
+		case 'missing':
+			return invalidRequest(
+				pdfFailure.fields[0],
+				'Expected a multipart form with both tier documents and their entry lists.'
+			);
+		case 'not-pdf':
 			return failure(400, {
-				code: PDF_UNREADABLE_CODE,
-				message:
-					'The PDFs could not be read. Re-export them without password protection and try again.',
+				code: INVALID_FILE_TYPE_CODE,
+				message: PDF_UPLOAD_MESSAGES.notPdf,
+				retryable: false,
+				field: pdfFailure.field
+			});
+		case 'too-big':
+			return failure(413, {
+				code: FILE_TOO_BIG_CODE,
+				message: PDF_UPLOAD_MESSAGES.tooBig(pdfFailure.filename),
+				retryable: false,
+				field: pdfFailure.field
+			});
+		case 'too-many-pages':
+			return failure(413, {
+				code: FILE_TOO_BIG_CODE,
+				message: `The PDFs total ${pdfFailure.totalPages} pages, above the ${MAX_TOTAL_PAGES}-page ceiling for matching. The run continues without proposed pairs; pair the common questions by hand at review.`,
 				retryable: false
 			});
-		}
-		throw error;
+		case 'unreadable':
+			return failure(400, {
+				code: PDF_UNREADABLE_CODE,
+				message: PDF_UPLOAD_MESSAGES.unreadable,
+				retryable: false
+			});
 	}
 }
 
@@ -267,28 +138,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	const valid = validRequest(form);
 	if (valid instanceof Response) return valid;
 
-	const documents = [
-		{ field: TIER1_DOCUMENT_FIELD, file: valid.tier1Document },
-		{ field: TIER2_DOCUMENT_FIELD, file: valid.tier2Document }
-	];
-	for (const { field, file } of documents) {
-		if (!isPdf(file)) {
-			return failure(400, {
-				code: INVALID_FILE_TYPE_CODE,
-				message: 'Both tier documents must be PDF files.',
-				retryable: false,
-				field
-			});
-		}
-		if (file.size > MAX_FILE_BYTES) {
-			return failure(413, {
-				code: FILE_TOO_BIG_CODE,
-				message: `File '${file.name}' exceeds the 15MB per-file limit.`,
-				retryable: false,
-				field
-			});
-		}
-	}
+	const checked = checkPdfUploads(form, [TIER1_DOCUMENT_FIELD, TIER2_DOCUMENT_FIELD], 'all');
+	if (!Array.isArray(checked)) return uploadFailure(checked);
 
 	// An empty tier can produce no pair, and the model cannot change that:
 	// answer without reading or sending either PDF.
@@ -308,25 +159,17 @@ export const POST: RequestHandler = async ({ request }) => {
 		});
 	}
 
-	const ingested = await readDocuments(valid);
-	if (ingested instanceof Response) return ingested;
+	const uploads = await readPdfUploads(checked);
+	if (!Array.isArray(uploads)) return uploadFailure(uploads);
 
-	const totalPages = ingested.tier1.pageCount + ingested.tier2.pageCount;
-	if (totalPages > MAX_TOTAL_PAGES) {
-		return failure(413, {
-			code: FILE_TOO_BIG_CODE,
-			message: `The PDFs total ${totalPages} pages, above the ${MAX_TOTAL_PAGES}-page ceiling for matching. The run continues without proposed pairs; pair the common questions by hand at review.`,
-			retryable: false
-		});
-	}
-
+	const [tier1, tier2] = uploads;
 	const asked = await askModel(
 		{
 			modelId,
 			systemPrompt: MATCH_SYSTEM_PROMPT,
 			data: {
-				tier1: { documents: [ingested.tier1.filename], entries: valid.tier1Entries },
-				tier2: { documents: [ingested.tier2.filename], entries: valid.tier2Entries }
+				tier1: { documents: [tier1.filename], entries: valid.tier1Entries },
+				tier2: { documents: [tier2.filename], entries: valid.tier2Entries }
 			},
 			schemaName: MATCH_SCHEMA_NAME,
 			schema: MATCH_SCHEMA,
@@ -334,8 +177,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			maxTokens: MATCH_MAX_TOKENS,
 			timeoutMs: MATCH_TIMEOUT_MS,
 			files: [
-				{ filename: ingested.tier1.filename, pdfBase64: ingested.tier1.pdfBase64 },
-				{ filename: ingested.tier2.filename, pdfBase64: ingested.tier2.pdfBase64 }
+				{ filename: tier1.filename, pdfBase64: Buffer.from(tier1.bytes).toString('base64') },
+				{ filename: tier2.filename, pdfBase64: Buffer.from(tier2.bytes).toString('base64') }
 			]
 		},
 		UNUSABLE_ANSWER_MESSAGE

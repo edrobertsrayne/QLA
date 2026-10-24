@@ -1,30 +1,36 @@
-// Shared OpenRouter structured-output transport for `/api/report`,
-// `/api/topic-names` and `/api/match` (issue #60).
+// One OpenRouter HTTP transport for every model call: the strict
+// structured-output routes (`/api/report`, `/api/topic-names`, `/api/match`,
+// issue #60) and parse's own prompt (`/api/parse`, issue #122).
 //
 // One call is one upstream request inside one timeout — the transport never
 // retries internally; retry policy belongs to the caller (the browser run
-// loop for reports). The system message carries the instructions; the user
-// message carries only the fenced JSON data (plus, when the route asks for
-// them, native file parts), built by the route, so the route can never be
-// used as a general model proxy. Every usage object is logged server-side
-// (info); request bodies and model text never are.
+// loop for reports, the parse route's malformed-JSON retry). Each caller
+// builds its own payload from its own prompt/schema; the structured routes
+// put the instructions in the system message and only fenced JSON data
+// (plus, when the route asks for them, native file parts) in the user
+// message, so a route can never be used as a general model proxy. There is
+// one status map, one timeout and one usage log for every caller; every
+// usage object is logged server-side (info), request bodies and model text
+// never are.
 //
 // Tests inject behaviour via `setStructuredTransport` (route-level, same
 // pattern as parse's `setModelTransport`) or, one level down, via
 // `setStructuredFetch`; production uses the live OpenRouter call.
 
 import { getServerEnv } from './parse/env';
-import {
-	contentToText,
-	extractJsonText,
-	MODEL_RETRYABLE_CODE as STRUCTURED_RETRYABLE_CODE,
-	OPENROUTER_URL,
-	usageFrom
-} from './parse/model';
-import { OPENROUTER_TIMEOUT_MS, toPdfDataUrl } from './parse/pdf';
+import { CURATED_PRICING } from './parse/models';
 import type { RunStoppingCode } from '$lib/marksheet/report-errors';
 import type { ParseUsage } from './parse/schema';
 import { fenceDocuments } from './fence';
+
+/** OpenRouter chat-completions endpoint (server-side only). */
+export const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+/** Guardrail: server timeout so a full GCSE paper completes in one run. */
+export const OPENROUTER_TIMEOUT_MS = 120_000;
+
+/** Fatal-but-retryable code when OpenRouter is transiently unavailable (408/429/5xx, timeout, network blip). */
+export const MODEL_RETRYABLE_CODE = 'MODEL_RETRYABLE';
 
 /** Structured-call completion cap (~8000 tokens per the spec). */
 export const STRUCTURED_DEFAULT_MAX_TOKENS = 8000;
@@ -38,7 +44,7 @@ export const STRUCTURED_CREDIT_CODE: RunStoppingCode = 'MODEL_CREDIT';
 /** Any other upstream 4xx → caller stops the run. */
 export const STRUCTURED_REJECTED_CODE: RunStoppingCode = 'MODEL_REJECTED';
 
-/** Structured model failure: carries the spec code, `retryable` for the run loop, and `retryAfter` when upstream sent one. */
+/** Model failure: carries the spec code, `retryable` for the run loop, and `retryAfter` when upstream sent one. */
 export class StructuredModelError extends Error {
 	readonly code: string;
 	readonly retryable: boolean;
@@ -61,6 +67,95 @@ export class StructuredModelError extends Error {
 		this.status = options.status;
 		this.retryAfter = options.retryAfter;
 	}
+}
+
+/** Token counts from an OpenRouter `usage` block, with the estimated cost for the model. */
+export function usageFrom(
+	raw: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined,
+	modelId: string
+): ParseUsage {
+	const promptTokens = Math.max(0, Math.trunc(raw?.prompt_tokens ?? 0));
+	const completionTokens = Math.max(0, Math.trunc(raw?.completion_tokens ?? 0));
+	const totalTokens =
+		Math.max(0, Math.trunc(raw?.total_tokens ?? promptTokens + completionTokens)) ||
+		promptTokens + completionTokens;
+	return {
+		promptTokens,
+		completionTokens,
+		totalTokens,
+		estCost: estimateCost(promptTokens, completionTokens, modelId)
+	};
+}
+
+/**
+ * Per-1M-token prices (USD) used for the `estCost` hint shown on every
+ * response. Curated model ids resolve to `CURATED_PRICING` in `models.ts` —
+ * the same table the model picker's catalogue entry comes from, so the
+ * estimate can never drift from that source (issue #17). Anything else
+ * (a custom model id typed into the picker) gets one documented generic
+ * rate — a mid-range guess, not real billing, just enough to keep a cost
+ * hint present.
+ */
+const GENERIC_PRICE = { input: 0.3, output: 1.2 };
+
+function priceFor(modelId: string): { input: number; output: number } {
+	const curated = CURATED_PRICING[modelId];
+	if (curated) return { input: curated.promptPrice, output: curated.completionPrice };
+	return GENERIC_PRICE;
+}
+
+/** Estimate run cost from token counts (display hint only, 4dp in the UI). */
+export function estimateCost(
+	promptTokens: number,
+	completionTokens: number,
+	modelId: string
+): number {
+	const { input, output } = priceFor(modelId);
+	return (promptTokens * input + completionTokens * output) / 1_000_000;
+}
+
+/**
+ * Strip markdown fences the model sometimes wraps around JSON
+ * (```json ... ``` or ``` ... ```), leaving the raw JSON object text.
+ */
+export function extractJsonText(content: string): string {
+	const trimmed = content.trim();
+	const fenced = /^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/.exec(trimmed);
+	return (fenced?.[1] ?? trimmed).trim();
+}
+
+/** Coerce an OpenRouter message `content` part (string or parts array) to plain text. */
+export function contentToText(content: unknown): string {
+	if (typeof content === 'string') return content;
+	if (Array.isArray(content)) {
+		return content
+			.map((part) => {
+				if (typeof part === 'string') return part;
+				if (part !== null && typeof part === 'object' && 'text' in part) {
+					const text = part.text;
+					if (typeof text === 'string') return text;
+				}
+				return '';
+			})
+			.join('');
+	}
+	return '';
+}
+
+/** Encode raw PDF bytes as an OpenRouter `file_data` data URL. */
+export function toPdfDataUrl(base64: string): string {
+	return `data:application/pdf;base64,${base64}`;
+}
+
+/** One native PDF attachment in a chat-completions `content` parts array. */
+export interface PdfFilePart {
+	type: 'file';
+	file: { filename: string; file_data: string };
+}
+
+/** Build the one native-PDF message part every payload uses. */
+export function pdfFilePart(filename: string, pdfBase64: string): PdfFilePart {
+	return { type: 'file', file: { filename, file_data: toPdfDataUrl(pdfBase64) } };
 }
 
 /** Inputs a route forwards to the structured transport. */
@@ -97,7 +192,7 @@ export type StructuredFetch = (url: string, init?: RequestInit) => Promise<Respo
 
 let structuredFetch: StructuredFetch = (url, init) => fetch(url, init);
 
-/** Test seam: replace the structured fetch implementation. */
+/** Test seam: replace the one OpenRouter fetch implementation. */
 export function setStructuredFetch(fn: StructuredFetch): void {
 	structuredFetch = fn;
 }
@@ -131,13 +226,11 @@ function isInFlightBudget(bodyText: string): boolean {
 	try {
 		const parsed: unknown = JSON.parse(bodyText);
 		if (parsed !== null && typeof parsed === 'object' && 'error' in parsed) {
-			const errorBody = (parsed as { error?: unknown }).error;
+			const errorBody = parsed.error;
 			if (errorBody !== null && typeof errorBody === 'object' && 'metadata' in errorBody) {
-				const metadata = (errorBody as { metadata?: unknown }).metadata;
+				const metadata = errorBody.metadata;
 				if (metadata !== null && typeof metadata === 'object' && 'limit_source' in metadata) {
-					return (
-						(metadata as { limit_source?: unknown }).limit_source === 'openrouter_in_flight_budget'
-					);
+					return metadata.limit_source === 'openrouter_in_flight_budget';
 				}
 			}
 			return false;
@@ -159,7 +252,7 @@ function statusError(status: number, bodyText: string, response: Response): Stru
 	if (status === 402) {
 		if (isInFlightBudget(bodyText)) {
 			return new StructuredModelError('The model provider is busy. Please try again.', {
-				code: STRUCTURED_RETRYABLE_CODE,
+				code: MODEL_RETRYABLE_CODE,
 				retryable: true,
 				status,
 				retryAfter: retryAfterSeconds(response)
@@ -175,7 +268,7 @@ function statusError(status: number, bodyText: string, response: Response): Stru
 		return new StructuredModelError(
 			`The model provider is temporarily unavailable (status ${status}). Please try again.`,
 			{
-				code: STRUCTURED_RETRYABLE_CODE,
+				code: MODEL_RETRYABLE_CODE,
 				retryable: true,
 				status,
 				retryAfter: retryAfterSeconds(response)
@@ -197,25 +290,14 @@ const ATTACHED_FILES_DIRECTIVE =
  * Live structured-output transport: one strict-`json_schema` OpenRouter call
  * with `provider.require_parameters: true`, `stream: false`, the model's
  * default reasoning (no `reasoning` override sent), and one timeout. Never
- * retries internally.
+ * retries internally; the HTTP call itself is `postOpenRouter`.
  */
 export async function liveStructuredTransport(
 	input: StructuredModelInput
 ): Promise<StructuredModelResult> {
-	const apiKey = getServerEnv('OPENROUTER_API_KEY');
-	if (!apiKey) {
-		throw new StructuredModelError('Server is missing its OpenRouter API key.', {
-			code: MISSING_API_KEY_CODE,
-			retryable: false
-		});
-	}
-
 	const dataJson = JSON.stringify(input.data);
 	const { open, close, directive } = fenceDocuments(dataJson);
-	const fileParts = (input.files ?? []).map((file) => ({
-		type: 'file',
-		file: { filename: file.filename, file_data: toPdfDataUrl(file.pdfBase64) }
-	}));
+	const fileParts = (input.files ?? []).map((file) => pdfFilePart(file.filename, file.pdfBase64));
 	// Attached files sit outside the fence, so they need their own warning.
 	const systemParts = [input.systemPrompt, directive];
 	if (fileParts.length > 0) systemParts.push(ATTACHED_FILES_DIRECTIVE);
@@ -240,6 +322,37 @@ export async function liveStructuredTransport(
 		]
 	};
 
+	return postOpenRouter({
+		payload,
+		caller: input.caller,
+		...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs })
+	});
+}
+
+/** One OpenRouter chat-completions request: the caller's payload, its dashboard identity, and one timeout. */
+export interface OpenRouterCall {
+	/** Full chat-completions body, built by the caller from its own prompt/schema. */
+	payload: { model: string } & Record<string, unknown>;
+	caller: { referer: string; title: string };
+	timeoutMs?: number;
+}
+
+/**
+ * The one OpenRouter HTTP call: key check, request, status map, body read,
+ * fence stripping, usage and its log. Throws only `StructuredModelError`;
+ * retry decisions belong to the caller.
+ */
+export async function postOpenRouter(
+	call: OpenRouterCall
+): Promise<{ content: string; usage: ParseUsage }> {
+	const apiKey = getServerEnv('OPENROUTER_API_KEY');
+	if (!apiKey) {
+		throw new StructuredModelError('Server is missing its OpenRouter API key.', {
+			code: MISSING_API_KEY_CODE,
+			retryable: false
+		});
+	}
+
 	let response: Response;
 	try {
 		response = await structuredFetch(OPENROUTER_URL, {
@@ -247,15 +360,15 @@ export async function liveStructuredTransport(
 			headers: {
 				'Content-Type': 'application/json',
 				Authorization: `Bearer ${apiKey}`,
-				'HTTP-Referer': input.caller.referer,
-				'X-Title': input.caller.title
+				'HTTP-Referer': call.caller.referer,
+				'X-Title': call.caller.title
 			},
-			body: JSON.stringify(payload),
-			signal: AbortSignal.timeout(input.timeoutMs ?? OPENROUTER_TIMEOUT_MS)
+			body: JSON.stringify(call.payload),
+			signal: AbortSignal.timeout(call.timeoutMs ?? OPENROUTER_TIMEOUT_MS)
 		});
 	} catch (error) {
 		throw new StructuredModelError('The model call failed. Please try again.', {
-			code: STRUCTURED_RETRYABLE_CODE,
+			code: MODEL_RETRYABLE_CODE,
 			retryable: true,
 			cause: error
 		});
@@ -276,10 +389,10 @@ export async function liveStructuredTransport(
 		usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 	};
 	try {
-		body = (await response.json()) as typeof body;
+		body = await response.json();
 	} catch (error) {
 		throw new StructuredModelError('The model returned an unreadable response. Please try again.', {
-			code: STRUCTURED_RETRYABLE_CODE,
+			code: MODEL_RETRYABLE_CODE,
 			retryable: true,
 			cause: error
 		});
@@ -288,20 +401,20 @@ export async function liveStructuredTransport(
 	const [choice] = body.choices ?? [];
 	if (choice?.finish_reason === 'length') {
 		throw new StructuredModelError('The model response was cut off. Please try again.', {
-			code: STRUCTURED_RETRYABLE_CODE,
+			code: MODEL_RETRYABLE_CODE,
 			retryable: true
 		});
 	}
 	const content = extractJsonText(contentToText(choice?.message?.content ?? '')).trim();
 	if (content === '') {
 		throw new StructuredModelError('The model returned an empty response. Please try again.', {
-			code: STRUCTURED_RETRYABLE_CODE,
+			code: MODEL_RETRYABLE_CODE,
 			retryable: true
 		});
 	}
 
-	const usage = usageFrom(body.usage, input.modelId);
-	console.info(JSON.stringify({ scope: 'structured-model', model: input.modelId, usage }));
+	const usage = usageFrom(body.usage, call.payload.model);
+	console.info(JSON.stringify({ scope: 'openrouter', model: call.payload.model, usage }));
 
 	return { content, usage };
 }

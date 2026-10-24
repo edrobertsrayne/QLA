@@ -9,13 +9,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { POST } from './+server';
 import {
-	MAX_FILE_BYTES,
 	MAX_SPEC_BYTES,
 	MAX_SPEC_PAGES,
-	MAX_TOTAL_PAGES,
+	MODEL_ERROR_CODE,
 	SPEC_URL_FIELD,
 	type Breakdown
 } from '$lib/server/parse/schema';
+import { MAX_FILE_BYTES, MAX_TOTAL_PAGES } from '$lib/server/pdf-upload';
 import {
 	applyQuestionNumberFallback,
 	isBreakdown,
@@ -27,13 +27,12 @@ import {
 	DIAGRAM_UNVERIFIED_CODE
 } from '$lib/server/parse/pdf';
 import {
-	MODEL_RETRYABLE_CODE,
-	ModelRetryableError,
 	setModelTransport,
 	resetModelTransport,
 	type ModelInput,
 	type ModelResult
 } from '$lib/server/parse/model';
+import { MODEL_RETRYABLE_CODE, StructuredModelError } from '$lib/server/openrouter';
 import { setStubTransport, stubBreakdown, stubUsage } from '$lib/server/parse/model.spec-helpers';
 import { buildPdfBytes } from '$lib/server/parse/pdf.spec-helpers';
 import { clearEnvForTests, setEnvForTests } from '$lib/server/parse/env';
@@ -62,6 +61,7 @@ interface SeamBody {
 		code?: string;
 		message?: string;
 		retryable?: boolean;
+		retryAfter?: number;
 	};
 }
 
@@ -189,7 +189,7 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		const { status, body } = await post(new FormData());
 
 		expect(status).toBe(400);
-		expect(body.error?.code).toBe('MISSING_INPUT');
+		expect(body.error).toMatchObject({ code: 'MISSING_INPUT', retryable: false });
 		expect(calls).toBe(0);
 	});
 
@@ -214,11 +214,11 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		const { status, body } = await post(paperOnlyForm());
 
 		expect(status).toBe(500);
-		expect(body.error?.code).toBe('MISSING_API_KEY');
+		expect(body.error).toMatchObject({ code: 'MISSING_API_KEY', retryable: false });
 		expect(calls).toBe(0);
 	});
 
-	it('unparseable model output retries once then fails with 500', async () => {
+	it('unparseable model output retries once then fails with 500, retryable', async () => {
 		let calls = 0;
 		setModelTransport(async () => {
 			calls += 1;
@@ -228,19 +228,68 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		const { status, body } = await post(paperOnlyForm());
 
 		expect(status).toBe(500);
-		expect(body.error?.code).toBe('MALFORMED_MODEL_OUTPUT');
+		expect(body.error).toMatchObject({ code: 'MALFORMED_MODEL_OUTPUT', retryable: true });
 		expect(calls).toBe(2);
 	});
 
-	it('retryable transport errors map to 502', async () => {
+	it.each([
+		{ code: 'MODEL_AUTH', status: 500 },
+		{ code: 'MODEL_CREDIT', status: 502 },
+		{ code: 'MODEL_REJECTED', status: 502 }
+	])('$code maps to $status, non-retryable', async ({ code, status }) => {
 		setModelTransport(async () => {
-			throw new ModelRetryableError('busy');
+			throw new StructuredModelError(`${code} upstream`, { code, retryable: false });
+		});
+
+		const { status: actual, body } = await post(paperOnlyForm());
+
+		expect(actual).toBe(status);
+		expect(body.error).toMatchObject({ code, retryable: false });
+	});
+
+	it('MODEL_RETRYABLE maps to 502, retryable', async () => {
+		setModelTransport(async () => {
+			throw new StructuredModelError('The model provider is busy.', {
+				code: MODEL_RETRYABLE_CODE,
+				retryable: true
+			});
 		});
 
 		const { status, body } = await post(paperOnlyForm());
 
 		expect(status).toBe(502);
-		expect(body.error?.code).toBe(MODEL_RETRYABLE_CODE);
+		expect(body.error).toMatchObject({ code: MODEL_RETRYABLE_CODE, retryable: true });
+		expect(body.error).not.toHaveProperty('retryAfter');
+	});
+
+	it('MODEL_RETRYABLE keeps the upstream Retry-After', async () => {
+		setModelTransport(async () => {
+			throw new StructuredModelError('The model provider is busy.', {
+				code: MODEL_RETRYABLE_CODE,
+				retryable: true,
+				retryAfter: 7
+			});
+		});
+
+		const { status, body } = await post(paperOnlyForm());
+
+		expect(status).toBe(502);
+		expect(body.error).toMatchObject({
+			code: MODEL_RETRYABLE_CODE,
+			retryable: true,
+			retryAfter: 7
+		});
+	});
+
+	it('an unclassified model failure is MODEL_ERROR, retryable', async () => {
+		setModelTransport(async () => {
+			throw new Error('boom');
+		});
+
+		const { status, body } = await post(paperOnlyForm());
+
+		expect(status).toBe(500);
+		expect(body.error).toMatchObject({ code: MODEL_ERROR_CODE, retryable: true });
 	});
 
 	it('total page ceiling fails with 413 before any model call', async () => {

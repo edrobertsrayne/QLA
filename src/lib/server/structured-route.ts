@@ -5,13 +5,13 @@
 import { json } from '@sveltejs/kit';
 import { isRunStoppingCode, type RunStoppingCode } from '$lib/marksheet/report-errors';
 import {
+	MODEL_RETRYABLE_CODE,
 	StructuredModelError,
 	callStructuredModel,
 	type StructuredModelInput,
 	type StructuredModelResult
 } from './openrouter';
 import { InputError } from './request-fields';
-import { MODEL_RETRYABLE_CODE } from './parse/model';
 
 const INVALID_OUTPUT_CODE = 'INVALID_MODEL_OUTPUT';
 
@@ -41,8 +41,8 @@ export function invalidOutput(
 	return failure(502, { code: INVALID_OUTPUT_CODE, message, retryable: true, checks });
 }
 
-/** Map a structured model failure to the route response; unknown codes rethrow. */
-function modelErrorResponse(error: StructuredModelError): Response {
+/** Map a model failure to the route response; unknown codes rethrow. */
+export function modelErrorResponse(error: StructuredModelError): Response {
 	if (isRunStoppingCode(error.code)) {
 		return failure(STOPPING_STATUS[error.code], {
 			code: error.code,

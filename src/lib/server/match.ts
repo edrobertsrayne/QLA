@@ -1,12 +1,25 @@
 // `POST /api/match`'s shared shape: the locked common-question matching
-// prompt (issue #109 prototype), the strict output schema and the local pair
-// checks. Pure: no I/O, no model calls.
+// prompt (issue #109 prototype), the strict output schema, the request shape
+// and the local pair checks. Pure: no I/O, no model calls.
 //
 // The prompt is the prototype's `RULES` array verbatim, plus one sentence
 // saying the PDFs are untrusted documents. The transport appends the shared
 // fence directive to the system message and fences the user data.
 
+import {
+	MAX_MATCH_ENTRIES,
+	MAX_MATCH_LABEL_LENGTH,
+	MAX_MATCH_SUMMARY_LENGTH
+} from '$lib/match/limits';
 import { isRecord } from '$lib/parse/is-breakdown.js';
+import {
+	fail,
+	readList,
+	readNullableString,
+	readRecord,
+	readString,
+	rejectUnknownKeys
+} from './request-fields.js';
 
 /** One breakdown entry as the matching call sees it: the parse label plus what the model compares. */
 export interface MatchEntry {
@@ -137,4 +150,112 @@ export function localMatchPairs(
 	}
 
 	return kept;
+}
+
+export const TIER1_DOCUMENT_FIELD = 'tier1Document';
+export const TIER2_DOCUMENT_FIELD = 'tier2Document';
+const TIER1_ENTRIES_FIELD = 'tier1Entries';
+const TIER2_ENTRIES_FIELD = 'tier2Entries';
+const MODEL_FIELD = 'model';
+
+const ENTRY_KEYS = new Set([
+	'id',
+	'questionNumber',
+	'marks',
+	'summary',
+	'specPoint',
+	'commandWord'
+]);
+
+/** The validated matching request: the two PDFs, their entry lists and an optional model id. */
+export interface MatchRequest {
+	tier1Document: File;
+	tier2Document: File;
+	tier1Entries: MatchEntry[];
+	tier2Entries: MatchEntry[];
+	model?: string;
+}
+
+function readDocument(form: FormData, field: string): File {
+	const value = form.get(field);
+	if (value instanceof File && value.size > 0) return value;
+	fail(field, 'Must be a PDF file.');
+}
+
+function readJson(text: string, field: string): unknown {
+	try {
+		return JSON.parse(text);
+	} catch {
+		fail(field, 'Must be valid JSON.');
+	}
+}
+
+function readMarks(value: unknown, field: string): number | null {
+	if (value === null) return null;
+	if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+	fail(field, 'Must be a positive whole number of marks or null.');
+}
+
+function readEntries(form: FormData, field: string): MatchEntry[] {
+	const raw = form.get(field);
+	if (typeof raw !== 'string') fail(field, 'Must be a JSON list of entries.');
+	const list = readList(readJson(raw, field), field, {
+		min: 0,
+		max: MAX_MATCH_ENTRIES,
+		notList: 'Must be a list of entries.',
+		size: `Must hold at most ${MAX_MATCH_ENTRIES} entries.`
+	});
+
+	return list.map((item, index) => {
+		const entryField = `${field}[${index}]`;
+		const record = readRecord(item, entryField);
+		rejectUnknownKeys(record, ENTRY_KEYS, entryField);
+		return {
+			id: readString(record['id'], `${entryField}.id`, {
+				nonBlank: 'Must be a non-blank id.',
+				max: MAX_MATCH_LABEL_LENGTH
+			}),
+			questionNumber: readString(record['questionNumber'], `${entryField}.questionNumber`, {
+				nonBlank: 'Must be a non-blank question number.',
+				max: MAX_MATCH_LABEL_LENGTH
+			}),
+			marks: readMarks(record['marks'], `${entryField}.marks`),
+			summary: readString(record['summary'], `${entryField}.summary`, {
+				max: MAX_MATCH_SUMMARY_LENGTH
+			}),
+			specPoint: readNullableString(
+				record['specPoint'],
+				`${entryField}.specPoint`,
+				MAX_MATCH_LABEL_LENGTH
+			),
+			commandWord: readNullableString(
+				record['commandWord'],
+				`${entryField}.commandWord`,
+				MAX_MATCH_LABEL_LENGTH
+			)
+		};
+	});
+}
+
+function readModel(form: FormData): string | undefined {
+	const value = form.get(MODEL_FIELD);
+	if (value === null) return undefined;
+	if (value instanceof File) fail(MODEL_FIELD, 'Must be a string.');
+	const model = readString(value, MODEL_FIELD, { max: MAX_MATCH_LABEL_LENGTH }).trim();
+	return model === '' ? undefined : model;
+}
+
+/**
+ * Read a matching request from its multipart form, or throw the first
+ * `InputError` naming its field. The route maps that to its own 400 envelope.
+ */
+export function validateMatchRequest(form: FormData): MatchRequest {
+	const model = readModel(form);
+	return {
+		tier1Document: readDocument(form, TIER1_DOCUMENT_FIELD),
+		tier2Document: readDocument(form, TIER2_DOCUMENT_FIELD),
+		tier1Entries: readEntries(form, TIER1_ENTRIES_FIELD),
+		tier2Entries: readEntries(form, TIER2_ENTRIES_FIELD),
+		...(model === undefined ? {} : { model })
+	};
 }

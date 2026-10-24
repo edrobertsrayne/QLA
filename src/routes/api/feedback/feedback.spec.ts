@@ -3,11 +3,11 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GET, POST } from './+server';
-import { MODEL_RETRYABLE_CODE } from '$lib/server/parse/model';
 import { clearEnvForTests, setEnvForTests } from '$lib/server/parse/env';
 import { DEFAULT_MODEL_ID } from '$lib/server/parse/pdf';
 import { resetFeedbackFetch, setFeedbackFetch } from '$lib/server/feedback';
 import {
+	MODEL_RETRYABLE_CODE,
 	resetStructuredTransport,
 	setStructuredTransport,
 	StructuredModelError,

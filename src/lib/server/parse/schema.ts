@@ -83,9 +83,14 @@ export interface ParseErrorBody {
 	error: {
 		code: string;
 		message: string;
+		/** Explicit retry hint: true only for a transient model failure. */
+		retryable: boolean;
 		[key: string]: unknown;
 	};
 }
+
+/** Catch-all code when the model call fails for a reason the transport did not classify. */
+export const MODEL_ERROR_CODE = 'MODEL_ERROR';
 
 // --- Multipart field names (client and route must agree) ---
 
@@ -100,18 +105,12 @@ export const INVALID_SPEC_URL_CODE = 'INVALID_SPEC_URL';
 /** Spec fetch failed, non-OK status, or not a readable PDF. Fatal (400). */
 export const SPEC_UNREADABLE_CODE = 'SPEC_UNREADABLE';
 
-// --- Limits (client pre-checks these; the route re-enforces them) ---
-
-/** Per-file cap for assessment paper / markscheme PDFs, applied to each parse call. Fatal (413) when exceeded. */
-export const MAX_FILE_BYTES = 15 * 1024 * 1024;
-
-/** Page ceiling per parse call, across that call's uploaded PDFs (paper + markscheme; the spec has its own cap). Fatal (413) when exceeded. */
-export const MAX_TOTAL_PAGES = 100;
+// --- Spec limits (the route re-enforces them) ---
 
 /** Byte cap for the fetched specification PDF (OCR H556 Physics A is 16.6MB). Fatal (413) when exceeded. */
 export const MAX_SPEC_BYTES = 30 * 1024 * 1024;
 
-/** Page cap for the fetched specification PDF, independent of MAX_TOTAL_PAGES. Fatal (413) when exceeded. */
+/** Page cap for the fetched specification PDF, independent of the upload page ceiling. Fatal (413) when exceeded. */
 export const MAX_SPEC_PAGES = 200;
 
 /** Server timeout for fetching the optional spec URL. Fatal (400) on timeout. */
