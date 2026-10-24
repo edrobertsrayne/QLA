@@ -210,7 +210,7 @@ export function facilityDescription(row: EntryAnalysis): string {
 	return lines.join('\n');
 }
 
-/** One entry's figures over one tier's class, and what they add up to. */
+/** One tier's entries' figures over that tier's class, and what they add up to. */
 export function analyseTier(
 	document: MarksheetDocument | null,
 	tier: TierIndex
@@ -252,7 +252,7 @@ export function analyseTier(
 
 /** The pooled figure for a pair: both tiers' marks over both tiers' students. */
 export interface PooledAnalysis {
-	/** Both tiers' counted marks over both tiers' students × available marks; null until each tier has one. */
+	/** Both tiers' counted marks over both tiers' students × available marks; null until each tier has a counted mark and both entries offer the same available marks. */
 	facility: number | null;
 	/** The band the pooled facility falls in, or null when there is no figure. */
 	band: RagBand | null;
@@ -296,12 +296,15 @@ export function analyseCommonQuestions(document: MarksheetDocument): CommonQuest
 		const available = row.entry.marks;
 		const counted = row.counted + other.counted;
 		const sum = (row.mean ?? 0) * row.counted + (other.mean ?? 0) * other.counted;
-		// Both sides need a counted mark before the pooled figure stands for a
-		// comparison rather than one tier dressed up as two.
-		const facility =
-			row.counted > 0 && other.counted > 0 && available !== null && available > 0
-				? sum / counted / available
-				: null;
+		// Both sides need a counted mark and the same available marks: otherwise
+		// the pooled figure would compare two different questions.
+		const comparable =
+			row.counted > 0 &&
+			other.counted > 0 &&
+			available !== null &&
+			available > 0 &&
+			other.entry.marks === available;
+		const facility = comparable ? sum / counted / available : null;
 		const marked = row.coverage.marked + other.coverage.marked;
 		const of = row.coverage.of + other.coverage.of;
 

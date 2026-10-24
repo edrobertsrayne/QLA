@@ -42,6 +42,11 @@ function slugOr(value: string | null, fallback: string): string {
 	return slug(value ?? '') || fallback;
 }
 
+/** A tier's part of a filename: its printed name, or its position when it has none. */
+function tierSlug(document: MarksheetDocument, tier: TierIndex): string {
+	return slug(document.tiers[tier]?.tierName ?? '') || `tier-${tier + 1}`;
+}
+
 /** The local day a file was made, as `2026-01-01`. */
 function dayStamp(at: Date): string {
 	const month = String(at.getMonth() + 1).padStart(2, '0');
@@ -112,13 +117,12 @@ export function marksCsvFile(document: MarksheetDocument, tier: TierIndex): QlaF
 		];
 	});
 	const maxima = entries.map((entry) => (entry.marks === null ? '' : String(entry.marks)));
-	const tierSlug = slug(document.tiers[tier]?.tierName ?? '');
 
 	return {
 		filename: [
 			slugOr(document.label, 'marksheet'),
 			slugOr(document.className, 'class'),
-			...(tierSlug === '' ? [] : [tierSlug]),
+			tierSlug(document, tier),
 			'marks.csv'
 		].join('-'),
 		text:
@@ -157,7 +161,7 @@ export function analysisCsvFile(document: MarksheetDocument, tier: TierIndex, no
 		row.notScored === null ? '' : notScoredLabel(row)
 	]);
 	return {
-		filename: exportFilename('analysis', document, now, 'csv'),
+		filename: exportFilename('analysis', document, now, 'csv', tierSlug(document, tier)),
 		text:
 			[
 				[
@@ -253,6 +257,17 @@ export function commonQuestionsCsvFile(document: MarksheetDocument, now: Date): 
 				.join('\r\n') + '\r\n',
 		type: 'text/csv'
 	};
+}
+
+/** The name of the analysis view's PDF: one tier's chart, or the common-questions comparison. */
+export function analysisPdfFilename(
+	document: MarksheetDocument,
+	tab: TierIndex | 'common',
+	now: Date
+): string {
+	return tab === 'common'
+		? exportFilename('common-questions', document, now, 'pdf')
+		: exportFilename('analysis', document, now, 'pdf', tierSlug(document, tab));
 }
 
 /** The name of one student's report PDF. */

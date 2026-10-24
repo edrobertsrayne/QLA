@@ -296,11 +296,13 @@ export function setBoundaries(
 /**
  * Drop one tier's every boundary, back to marks only. The below-lowest label
  * stays where it was, so re-adding grades finds it as the teacher left it.
- * False when the tier already had none.
+ * False when the tier already had none, empty list included.
  */
 export function clearBoundaries(document: MarksheetDocument, tier: TierIndex): boolean {
 	const stored = document.tiers[tier];
-	if (stored === undefined || stored.boundaries === null) return false;
+	if (stored === undefined || stored.boundaries === null || stored.boundaries.length === 0) {
+		return false;
+	}
 	stored.boundaries = null;
 	return true;
 }

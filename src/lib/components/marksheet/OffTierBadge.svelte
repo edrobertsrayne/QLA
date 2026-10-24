@@ -6,7 +6,8 @@
 <script lang="ts">
 	import type { StoredStudent, TierIndex } from '$lib/marksheet/document.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
-	import { tierLabel } from './tier-label.js';
+	import { agree, count } from '$lib/prose.js';
+	import { tierLabel, tierNameOf } from './tier-label.js';
 
 	let { student }: { student: StoredStudent } = $props();
 
@@ -22,7 +23,6 @@
 		const marks = document.marks[student.id] ?? {};
 		const badges: {
 			tier: TierIndex;
-			label: string;
 			short: string;
 			count: number;
 			title: string;
@@ -31,11 +31,11 @@
 			if (tier === student.tier) continue;
 			const stored = document.tiers[tier];
 			if (stored === undefined) continue;
-			const count = stored.breakdown.entries.filter(
+			const heldMarks = stored.breakdown.entries.filter(
 				(entry) => marks[entry.id] !== undefined
 			).length;
-			if (count === 0) continue;
-			const name = stored.tierName;
+			if (heldMarks === 0) continue;
+			const name = tierNameOf(document, tier);
 			const label = tierLabel(document, tier);
 			const where =
 				student.tier === null
@@ -43,10 +43,9 @@
 					: `they are on ${tierLabel(document, student.tier)}`;
 			badges.push({
 				tier,
-				label,
-				short: name ? name.trim().charAt(0).toUpperCase() : `T${tier + 1}`,
-				count,
-				title: `${count} ${count === 1 ? 'mark' : 'marks'} on ${label} are kept but not counted while ${where}. ${count === 1 ? 'It counts' : 'They count'} again if the student moves back.`
+				short: name === null ? `T${tier + 1}` : name.charAt(0).toUpperCase(),
+				count: heldMarks,
+				title: `${count(heldMarks, 'mark')} on ${label} ${agree(heldMarks, 'is kept', 'are kept')} but not counted while ${where}. ${agree(heldMarks, 'It counts', 'They count')} again if the student moves back.`
 			});
 		}
 		return badges;
@@ -59,6 +58,7 @@
 		data-testid="off-tier-badge"
 		data-tier={badge.tier}
 		title={badge.title}
+		aria-label={badge.title}
 	>
 		+{badge.count}
 		{badge.short}

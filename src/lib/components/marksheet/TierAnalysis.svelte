@@ -84,8 +84,11 @@
 			current && 'outline-2 -outline-offset-2 outline-primary'
 		)}
 	>
-		<div class="grid grid-cols-[minmax(0,1fr)_minmax(8rem,1fr)_5.5rem] items-center gap-3">
-			<div class="min-w-0">
+		<div
+			class="grid grid-cols-[minmax(0,1fr)_minmax(8rem,1fr)_5.5rem] items-center gap-3"
+			role="row"
+		>
+			<div class="min-w-0" role="cell">
 				<div class="text-sm font-semibold tabular-nums">
 					{entryName(row.entry)}
 					<span class="font-normal text-muted-foreground">
@@ -110,15 +113,17 @@
 				</div>
 			</div>
 
-			<AnalysisTrack
-				tier1={tier === 0 ? row : (pair?.tier1.analysis ?? null)}
-				tier2={tier === 1 ? row : (pair?.tier2.analysis ?? null)}
-				pooled={pair?.pooled.facility ?? null}
-				dimmed={pair === null ? null : tier === 0 ? 1 : 0}
-				empty={notScoredLabel(row)}
-			/>
+			<div role="cell">
+				<AnalysisTrack
+					tier1={tier === 0 ? row : (pair?.tier1.analysis ?? null)}
+					tier2={tier === 1 ? row : (pair?.tier2.analysis ?? null)}
+					pooled={pair?.pooled.facility ?? null}
+					dimmed={pair === null ? null : tier === 0 ? 1 : 0}
+					empty={notScoredLabel(row)}
+				/>
+			</div>
 
-			<div class="text-right tabular-nums">
+			<div class="text-right tabular-nums" role="cell">
 				{#if row.facility !== null && row.band !== null}
 					<span
 						class={cn('font-semibold', BAND_TEXT[row.band], row.coverage.partMarked && 'italic')}
@@ -146,21 +151,23 @@
 	</div>
 {/snippet}
 
-{#snippet sectionRows(list: EntryAnalysis[])}
+{#snippet sectionRows(list: EntryAnalysis[], label: string)}
 	{#if list.length > 0}
-		<div class="overflow-hidden rounded-lg border">
+		<div class="overflow-hidden rounded-lg border" role="table" aria-label={label}>
 			<div
 				class="grid grid-cols-[minmax(0,1fr)_minmax(8rem,1fr)_5.5rem] items-center gap-3 border-b px-3 py-1.5 text-xs text-muted-foreground"
+				role="row"
 			>
-				<span>Question</span>
-				<div class="relative h-4">
+				<span role="columnheader">Question</span>
+				<div class="relative h-4" role="columnheader">
+					<span class="sr-only">Facility</span>
 					{#each ANALYSIS_TICKS as tick (tick)}
 						<span class="absolute -translate-x-1/2 tabular-nums" style:left={`${tick}%`}>
 							{tick}%
 						</span>
 					{/each}
 				</div>
-				<span class="text-right">Facility</span>
+				<span class="text-right" role="columnheader">Facility</span>
 			</div>
 			{#each list as row (row.entry.id)}
 				{@render chartRow(row)}
@@ -177,7 +184,7 @@
 			Red — below {redBelow}%
 			<span class="text-sm font-normal text-muted-foreground">({sections.red.length})</span>
 		</h3>
-		{@render sectionRows(sections.red)}
+		{@render sectionRows(sections.red, 'Red questions')}
 	</section>
 
 	<section>
@@ -185,7 +192,7 @@
 			Amber — {redBelow}% to below {greenFrom}%
 			<span class="text-sm font-normal text-muted-foreground">({sections.amber.length})</span>
 		</h3>
-		{@render sectionRows(sections.amber)}
+		{@render sectionRows(sections.amber, 'Amber questions')}
 	</section>
 
 	<section>
@@ -199,9 +206,10 @@
 			Green — {greenFrom}% and above
 			<span class="text-sm font-normal text-muted-foreground">({sections.green.length})</span>
 		</Button>
-		{#if greenOpen}
-			{@render sectionRows(sections.green)}
-		{/if}
+		<!-- Folded on screen only: print styles reveal it, so a print holds every band. -->
+		<div class={greenOpen ? undefined : 'hidden print:block'}>
+			{@render sectionRows(sections.green, 'Green questions')}
+		</div>
 	</section>
 
 	<section>
@@ -209,6 +217,6 @@
 			Not scored
 			<span class="text-sm font-normal text-muted-foreground">({sections.notScored.length})</span>
 		</h3>
-		{@render sectionRows(sections.notScored)}
+		{@render sectionRows(sections.notScored, 'Not-scored questions')}
 	</section>
 </div>

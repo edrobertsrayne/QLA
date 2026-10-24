@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { markCount } from './document.js';
+import { storedMarkCount } from './document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredTier } from './document.js';
 import { entry, student, tier } from './fixtures.spec-helpers.js';
 import {
@@ -22,7 +22,7 @@ function tierWith(entries: BreakdownEntry[], tierName: string | null = null): St
 	});
 }
 
-/** Two four-entry tiers, with every entry worth four marks. */
+/** Two two-entry tiers (four entries in all), with every entry worth four marks. */
 function twoTierBreakdown(): Partial<MarksheetDocument> {
 	return {
 		tiers: [
@@ -102,6 +102,16 @@ describe('class', () => {
 		expect(store.document?.students).toEqual([student('student-1', 'Ada', 'Lovelace')]);
 	});
 
+	it('uploads a class list onto the tier named', () => {
+		const { store } = openMarksheet(twoTierBreakdown());
+
+		store.addStudentsFromUpload([{ firstName: 'Ada', surname: 'Lovelace' }], 1);
+
+		expect(store.document?.students).toEqual([
+			{ id: expect.any(String), firstName: 'Ada', surname: 'Lovelace', absent: false, tier: 1 }
+		]);
+	});
+
 	it('uploads a class list with no tier on a two-tier assessment', () => {
 		const { store } = openMarksheet(twoTierBreakdown());
 
@@ -179,6 +189,35 @@ describe('class', () => {
 			[ada.id]: { [entryId]: 3 },
 			[grace.id]: { [entryId]: 4 }
 		});
+	});
+
+	it('puts a class list and its marks on the second tier', () => {
+		const { store } = openMarksheet(twoTierBreakdown());
+
+		expect(store.pasteNames('Ada Lovelace\t3\r\nHopper, Grace\t4\r\n', 1)).toBe(2);
+
+		const [ada, grace] = store.document?.students ?? [];
+		expect(ada).toMatchObject({ firstName: 'Ada', surname: 'Lovelace', tier: 1 });
+		expect(grace).toMatchObject({ firstName: 'Grace', surname: 'Hopper', tier: 1 });
+		// f1 is Tier 2's first entry: the marks went with the students.
+		expect(store.document?.marks).toEqual({
+			[ada.id]: { f1: 3 },
+			[grace.id]: { f1: 4 }
+		});
+	});
+
+	it('refuses a class list with marks while there is no tier to put them on', () => {
+		const { store } = openMarksheet(twoTierBreakdown());
+
+		expect(store.pasteNames('Ada Lovelace\t3\r\n', null)).toBe(0);
+
+		expect(store.document?.students).toEqual([]);
+		expect(store.pasteRefusal).toContain('marks need a tier');
+		expect(store.undoable).toBeNull();
+
+		// Names alone still wait on Tier not set, where the placing happens.
+		expect(store.pasteNames('Grace Hopper', null)).toBe(1);
+		expect(store.pasteRefusal).toBeNull();
 	});
 
 	it('removes a student with their marks, and offers it back with undo', () => {
@@ -314,7 +353,7 @@ describe('student tiers', () => {
 		expect(studentOf(store, 'student-1')?.tier).toBe(0);
 	});
 
-	it('counts only the marks on the student’s own tier', () => {
+	it('keeps every stored mark when a student changes tier', () => {
 		const { store } = openTwoTierMarksheet({
 			students: [student('student-1', 'Ada', 'Lovelace', false, 0)],
 			marks: { 'student-1': { h1: 3, f1: 2 } }
@@ -322,57 +361,86 @@ describe('student tiers', () => {
 
 		const document = store.document;
 		if (document === null) throw new Error('expected a document');
-		expect(markCount(document)).toBe(1);
+		// The wipe account counts every kept mark, whether or not it is on the
+		// student's own paper: a move never loses one.
+		expect(storedMarkCount(document)).toBe(2);
 
 		store.setStudentTier('student-1', 1);
 
-		expect(markCount(document)).toBe(1);
+		expect(storedMarkCount(document)).toBe(2);
 
-		// A student with no tier has every mark counted.
 		store.setStudentTier('student-1', null);
 
-		expect(markCount(document)).toBe(2);
+		expect(storedMarkCount(document)).toBe(2);
 	});
 
-	it('refuses a tier the assessment does not have', () => {
+	it('refuses a tier the assessment does not have, leaving the undo on offer alone', () => {
 		const { store } = openTwoTierMarksheet({
 			tiers: [tierWith([entry('entry-1', '1a', '1')])],
-			students: [student('student-1', 'Ada', 'Lovelace', false, 0)]
+			students: [
+				student('student-1', 'Ada', 'Lovelace', false, 0),
+				student('student-2', 'Grace', 'Hopper', false, 0)
+			]
 		});
+		store.removeStudent('student-2');
 
 		store.setStudentTier('student-1', 1);
 
 		expect(studentOf(store, 'student-1')?.tier).toBe(0);
-		expect(store.undoable).toBeNull();
+		// A refused move changed nothing, so the removal is still there to take back.
+		expect(store.undoable).toMatchObject({ kind: 'student-removal' });
+		expect(store.undo()).toBe(true);
+		expect(store.document?.students.map(({ id }) => id)).toEqual(['student-1', 'student-2']);
 	});
 
-	it('refuses to clear the tier on a single-tier assessment', () => {
+	it('refuses to clear the tier on a single-tier assessment, leaving the undo alone', () => {
 		const { store } = openStore({
 			breakdownConfirmedAt: NOW.toISOString(),
-			students: [student('student-1', 'Ada', 'Lovelace', false, 0)]
+			students: [
+				student('student-1', 'Ada', 'Lovelace', false, 0),
+				student('student-2', 'Grace', 'Hopper', false, 0)
+			]
 		});
+		store.removeStudent('student-2');
 
 		store.setStudentTier('student-1', null);
 
 		expect(studentOf(store, 'student-1')?.tier).toBe(0);
+		expect(store.undoable).toMatchObject({ kind: 'student-removal' });
+		expect(store.undo()).toBe(true);
+		expect(store.document?.students).toHaveLength(2);
 	});
 
 	it('spends no undo when the tier is the one already set', () => {
 		const { store } = openTwoTierMarksheet({
-			students: [student('student-1', 'Ada', 'Lovelace', false, 0)]
+			students: [
+				student('student-1', 'Ada', 'Lovelace', false, 0),
+				student('student-2', 'Grace', 'Hopper', false, 0)
+			]
 		});
+		store.removeStudent('student-2');
 
 		store.setStudentTier('student-1', 0);
 
-		expect(store.undoable).toBeNull();
+		expect(store.undoable).toMatchObject({ kind: 'student-removal' });
+		expect(store.undo()).toBe(true);
+		expect(store.document?.students).toHaveLength(2);
 	});
 
-	it('ignores a student who is not there', () => {
-		const { store } = openTwoTierMarksheet();
+	it('ignores a student who is not there, leaving the undo alone', () => {
+		const { store } = openTwoTierMarksheet({
+			students: [
+				student('student-1', 'Ada', 'Lovelace', false, 0),
+				student('student-2', 'Grace', 'Hopper', false, 0)
+			]
+		});
+		store.removeStudent('student-2');
 
 		store.setStudentTier('student-gone', 1);
 
-		expect(store.undoable).toBeNull();
+		expect(store.undoable).toMatchObject({ kind: 'student-removal' });
+		expect(store.undo()).toBe(true);
+		expect(store.document?.students).toHaveLength(2);
 	});
 
 	it('moves several students as one undoable change', () => {
@@ -740,17 +808,35 @@ describe('pasting a block', () => {
 		expect(store.pasteNotice).toBeNull();
 	});
 
-	it('pastes against the entries and students of the tier named', () => {
+	it('pastes marks against the entries and students of the tier named', () => {
 		const { store } = openStore({
 			...twoTierBreakdown(),
 			breakdownConfirmedAt: NOW.toISOString(),
-			students: [student('student-1', 'Ada', 'Lovelace', false, 0)]
+			students: [
+				student('student-1', 'Ada', 'Lovelace', false, 0),
+				student('student-2', 'Grace', 'Hopper', false, 1)
+			]
 		});
 
-		store.pasteMarks([['2']], { kind: 'marks', studentId: 'student-1', entryId: 'f1' }, 1);
+		const pasted = store.pasteMarks(
+			[['2', '3']],
+			{ kind: 'marks', studentId: 'student-2', entryId: 'f1' },
+			1
+		);
 
-		// f1 belongs to Tier 2, and the student is not on it: the block has no row.
-		expect(store.document?.marks).toEqual({});
+		// Grace is on Tier 2, so the block lands on f1 and f2 there.
+		expect(pasted).toMatchObject({ marksStored: 2 });
+		expect(store.document?.marks).toEqual({ 'student-2': { f1: 2, f2: 3 } });
+
+		// The same cell aimed at Tier 1 has no row for Grace and no f1 column.
+		const refused = store.pasteMarks(
+			[['4']],
+			{ kind: 'marks', studentId: 'student-2', entryId: 'f1' },
+			0
+		);
+
+		expect(refused).toMatchObject({ changed: false });
+		expect(store.document?.marks).toEqual({ 'student-2': { f1: 2, f2: 3 } });
 	});
 
 	it('does nothing when there is no marksheet, the tier is absent, or the anchor is gone', () => {

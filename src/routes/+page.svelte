@@ -38,6 +38,12 @@
 		tierTab = index;
 	}
 
+	/** A stopped run leaves the form as it was: files kept, options unlocked. */
+	function backToUpload(): void {
+		run.abandon();
+		dialogOpen = false;
+	}
+
 	function openBreakdown(): void {
 		if (run.phase !== 'done') return;
 		const tiers = run.tierResults();
@@ -83,14 +89,21 @@
 	<div>
 		{#if retryIndex !== null}
 			{@const index = retryIndex}
-			<Button
-				type="button"
-				size="lg"
-				disabled={!run.canRetry(index)}
-				onclick={() => retryRun(index)}
-			>
-				Retry Tier {index + 1}
-			</Button>
+			{@const error = run.tiers[index].error}
+			<div class="space-y-2">
+				<Button
+					type="button"
+					size="lg"
+					disabled={!run.canRetry(index)}
+					onclick={() => retryRun(index)}
+				>
+					Retry Tier {index + 1}
+				</Button>
+				{#if error}
+					<!-- The dialog closed on the failed file; the reason stays where the retry is. -->
+					<p class="text-sm text-destructive" role="status">{error.message}</p>
+				{/if}
+			</div>
 		{:else}
 			<Button type="button" size="lg" disabled={!canRun} onclick={startRun}>Run</Button>
 		{/if}
@@ -104,7 +117,7 @@
 		{run}
 		open={dialogOpen}
 		onReplaceFile={replaceFile}
-		onBackToUpload={() => (dialogOpen = false)}
+		onBackToUpload={backToUpload}
 		onOpenBreakdown={openBreakdown}
 	/>
 </main>

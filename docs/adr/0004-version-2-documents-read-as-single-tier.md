@@ -7,9 +7,10 @@ Accepted
 ## Context
 
 The stored document (browser storage and backup files alike) has had no
-migration machinery: any `schemaVersion` other than the current one is
-unreadable. That was harmless when version 1 gave way to version 2, because
-nothing was in live use yet.
+shape-conversion machinery. Version 1 was simply declared unreadable when
+version 2 arrived; that cost nothing because nothing was in live use yet.
+Version 2 and the flat version 3 that followed it stored the same shape, so
+one reader accepted both — neither needed a conversion.
 
 Tiered assessments change the stored shape: one paper becomes an
 **assessment** holding one or two **tiers**, each with its own breakdown and

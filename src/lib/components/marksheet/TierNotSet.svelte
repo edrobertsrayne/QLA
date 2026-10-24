@@ -31,7 +31,7 @@
 	}
 
 	function assign(studentId: string, tier: TierIndex): void {
-		store.setStudentTier(studentId, tier);
+		if (!store.setStudentTier(studentId, tier)) return;
 		selected = chosen.filter((id) => id !== studentId);
 	}
 
@@ -107,7 +107,12 @@
 							</Table.Cell>
 							{#each [0, 1] as const as tier (tier)}
 								<Table.Cell class="px-1 py-1">
-									<Button size="xs" variant="outline" onclick={() => assign(student.id, tier)}>
+									<Button
+										size="xs"
+										variant="outline"
+										aria-label={`Put ${name} on ${tierLabel(document, tier)}`}
+										onclick={() => assign(student.id, tier)}
+									>
 										{tierLabel(document, tier)}
 									</Button>
 								</Table.Cell>

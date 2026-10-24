@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { goto } from '$app/navigation';
-import { markCount } from '$lib/marksheet/document.js';
+import { storedMarkCount } from '$lib/marksheet/document.js';
 import type { MarksheetDocument } from '$lib/marksheet/document.js';
 import {
 	NOW,
@@ -117,7 +117,7 @@ describe('editing the breakdown after confirming it', () => {
 			// The class survives whole, and so do the marks the deleted entry never
 			// held: only what was entered against it went with it.
 			expect(reconfirmed.students.map(({ firstName }) => firstName)).toEqual(['Ada', 'Grace']);
-			expect(markCount(reconfirmed)).toBe(1);
+			expect(storedMarkCount(reconfirmed)).toBe(1);
 			expect(reconfirmed.marks['student-1']).toEqual({ 'entry-2': 1 });
 		});
 

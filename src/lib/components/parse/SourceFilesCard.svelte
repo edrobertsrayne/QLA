@@ -6,7 +6,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
-	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import PdfPicker from './PdfPicker.svelte';
 	import type { UploadRun } from './run.svelte.js';
@@ -58,14 +57,16 @@
 	<Card.Content class="space-y-5">
 		{#if run.twoTiers}
 			<div class="flex items-center justify-between gap-2">
-				<ToggleGroup.Root
-					type="single"
-					variant="outline"
-					value={String(current)}
-					onValueChange={(value) => onTabChange(Number(value))}
-				>
+				<!-- Plain buttons, not a toggle group: pressing the open tier again must not clear it. -->
+				<div class="flex flex-wrap items-center gap-2" role="group" aria-label="Tier">
 					{#each run.tiers as slot, index (slot)}
-						<ToggleGroup.Item value={String(index)} class="relative px-4">
+						<Button
+							size="sm"
+							variant={current === index ? 'default' : 'outline'}
+							aria-pressed={current === index}
+							class="relative"
+							onclick={() => onTabChange(index)}
+						>
 							Tier {index + 1}{slot.tierName ? ` · ${slot.tierName}` : ''}
 							{#if run.mismatch.some((mismatch) => mismatch.tier === index) || slot.parse === 'failed'}
 								<span
@@ -73,10 +74,11 @@
 									data-testid="tier-problem-{index}"
 									aria-hidden="true"
 								></span>
+								<span class="sr-only">has a problem</span>
 							{/if}
-						</ToggleGroup.Item>
+						</Button>
 					{/each}
-				</ToggleGroup.Root>
+				</div>
 				{#if current === 1 && run.phase === 'form'}
 					<Button variant="ghost" size="sm" onclick={removeTier}>Remove Tier 2</Button>
 				{/if}

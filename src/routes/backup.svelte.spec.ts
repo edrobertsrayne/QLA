@@ -451,7 +451,7 @@ describe('restoring a backup on the upload surface', () => {
 		expect(restored.reports).toEqual(source['reports']);
 	});
 
-	it('counts only marks on the tier a student sits in the summary', async () => {
+	it('counts every stored mark, including off-tier marks, in the summary', async () => {
 		openPage(UploadPage);
 
 		await page.getByLabelText('Backup file').upload(
@@ -463,9 +463,9 @@ describe('restoring a backup on the upload surface', () => {
 			)
 		);
 
-		// The off-tier mark is stored, but it is not a mark the teacher has entered
-		// towards a figure, so the summary does not count it.
-		await expect.element(page.getByRole('dialog')).toHaveTextContent('1 student and 1 mark');
+		// The off-tier mark counts towards no figure, but restoring the file
+		// brings it back: the summary names both stored marks.
+		await expect.element(page.getByRole('dialog')).toHaveTextContent('1 student and 2 marks');
 	});
 
 	it('refuses a backup from an unknown version, leaving everything as it was', async () => {

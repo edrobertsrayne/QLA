@@ -113,6 +113,11 @@ async function addTierWithPaper(name: string): Promise<void> {
 	await uploadPaper(name);
 }
 
+/** The source card's tier control, scoped so "Retry Tier 1" and "Remove Tier 2" never match. */
+function sourceTier(name: RegExp) {
+	return page.getByRole('group', { name: 'Tier' }).getByRole('button', { name });
+}
+
 describe('upload page run', () => {
 	beforeEach(() => {
 		stubApi({ parse: () => json(parseBody(null, [question('1a')])) });
@@ -120,6 +125,30 @@ describe('upload page run', () => {
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+	});
+
+	it('links a picker problem to its file input', async () => {
+		render(Page);
+		const input = page.getByLabelText('Assessment paper (PDF)');
+		await input.upload(new File(['not a pdf'], 'notes.txt', { type: 'text/plain' }));
+
+		const describedBy = input.element().getAttribute('aria-describedby');
+		expect(describedBy).toBe('paper-0-problem');
+		expect(document.getElementById(describedBy ?? '')?.textContent).toContain(
+			'Only PDF files are accepted.'
+		);
+	});
+
+	it('keeps the open source tier selected when its tab is clicked again', async () => {
+		render(Page);
+		await uploadPaper('higher.pdf');
+		await addTierWithPaper('foundation.pdf');
+
+		const tab = sourceTier(/^Tier 2/);
+		await expect.element(tab).toHaveAttribute('aria-pressed', 'true');
+		await tab.click();
+
+		await expect.element(tab).toHaveAttribute('aria-pressed', 'true');
 	});
 
 	it('runs one tier, offering Open breakdown before anything is stored', async () => {
@@ -131,7 +160,7 @@ describe('upload page run', () => {
 
 		await expect.element(page.getByRole('dialog')).toBeInTheDocument();
 		await expect.element(page.getByText('Parse', { exact: true })).toBeInTheDocument();
-		await expect.element(page.getByText('Higher Tier · 1 entries')).toBeInTheDocument();
+		await expect.element(page.getByText('Higher Tier · 1 entry')).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: 'Open breakdown' })).toBeVisible();
 		expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
 
@@ -157,8 +186,8 @@ describe('upload page run', () => {
 		await expect.element(page.getByRole('button', { name: 'Add tier' })).toBeVisible();
 		await page.getByRole('button', { name: 'Add tier' }).click();
 
-		await expect.element(page.getByRole('radio', { name: /Tier 1/ })).toBeVisible();
-		await expect.element(page.getByRole('radio', { name: /Tier 2/ })).toBeVisible();
+		await expect.element(sourceTier(/^Tier 1/)).toBeVisible();
+		await expect.element(sourceTier(/^Tier 2/)).toBeVisible();
 		expect(page.getByLabelText('Assessment paper (PDF)').elements()).toHaveLength(1);
 		expect(page.getByLabelText('Markscheme (PDF)').elements()).toHaveLength(1);
 		await expect.element(page.getByText(/Used for both tiers/)).toBeInTheDocument();
@@ -166,7 +195,7 @@ describe('upload page run', () => {
 
 		await page.getByRole('button', { name: 'Remove Tier 2' }).click();
 
-		await expect.element(page.getByRole('radio', { name: /Tier 2/ })).not.toBeInTheDocument();
+		await expect.element(sourceTier(/^Tier 2/)).not.toBeInTheDocument();
 		await expect.element(page.getByText('higher.pdf')).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: 'Add tier' })).toBeVisible();
 	});
@@ -219,11 +248,9 @@ describe('upload page run', () => {
 		await expect.element(page.getByText('Find common questions')).toBeInTheDocument();
 		await expect.element(page.getByText('Higher · 2 entries')).toBeInTheDocument();
 		await expect.element(page.getByText('Foundation · 2 entries')).toBeInTheDocument();
-		await expect.element(page.getByText('1 pairs proposed')).toBeInTheDocument();
-		await expect.element(page.getByRole('radio', { name: /Tier 1 · Higher/ })).toBeInTheDocument();
-		await expect
-			.element(page.getByRole('radio', { name: /Tier 2 · Foundation/ }))
-			.toBeInTheDocument();
+		await expect.element(page.getByText('1 pair proposed')).toBeInTheDocument();
+		await expect.element(sourceTier(/^Tier 1 · Higher/)).toBeInTheDocument();
+		await expect.element(sourceTier(/^Tier 2 · Foundation/)).toBeInTheDocument();
 
 		// Each parse is its own call with only that tier's files: the caps are per call.
 		expect(api.parseCalls).toHaveLength(2);
@@ -327,7 +354,7 @@ describe('upload page run', () => {
 
 		await page.getByRole('button', { name: 'Run' }).click();
 
-		await expect.element(page.getByText('1 pairs proposed')).toBeInTheDocument();
+		await expect.element(page.getByText('1 pair proposed')).toBeInTheDocument();
 		expect(api.parseCalls).toHaveLength(2);
 		for (const form of api.parseCalls) {
 			expect(form.get('assessmentPaper')).toBeNull();
@@ -367,16 +394,17 @@ describe('upload page run', () => {
 		await addTierWithPaper('foundation.pdf');
 		await page.getByRole('button', { name: 'Run' }).click();
 
-		await expect.element(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
-		await expect.element(page.getByText('Higher · 1 entries')).toBeInTheDocument();
+		const retryTier = page.getByRole('dialog').getByRole('button', { name: 'Retry Tier 2' });
+		await expect.element(retryTier).toBeVisible();
+		await expect.element(page.getByText('Higher · 1 entry')).toBeInTheDocument();
 		await expect.element(page.getByText('Provider busy (MODEL_RETRYABLE)')).toBeInTheDocument();
 		await expect
 			.element(page.getByRole('button', { name: /Replace Tier/ }))
 			.not.toBeInTheDocument();
 
-		await page.getByRole('button', { name: 'Retry', exact: true }).click();
+		await retryTier.click();
 
-		await expect.element(page.getByText('Foundation · 1 entries')).toBeInTheDocument();
+		await expect.element(page.getByText('Foundation · 1 entry')).toBeInTheDocument();
 		await expect.element(page.getByText('0 pairs proposed')).toBeInTheDocument();
 		expect(
 			api.parseCalls.filter((form) => fileIn(form, 'assessmentPaper').name === 'higher.pdf')
@@ -409,9 +437,9 @@ describe('upload page run', () => {
 
 		await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: 'Retry Tier 1' })).toBeVisible();
-		await expect
-			.element(page.getByRole('radio', { name: /Tier 1/ }))
-			.toHaveAttribute('aria-checked', 'true');
+		// The reason the dialog closed with stays beside the retry.
+		await expect.element(page.getByText('The paper could not be read.')).toBeVisible();
+		await expect.element(sourceTier(/^Tier 1/)).toHaveAttribute('aria-pressed', 'true');
 		await expect.element(page.getByText('higher.pdf')).toBeInTheDocument();
 		// The rejected file is still in the slot, so retrying it would just fail again.
 		await expect.element(page.getByRole('button', { name: 'Retry Tier 1' })).toBeDisabled();
@@ -420,9 +448,9 @@ describe('upload page run', () => {
 		await expect.element(page.getByRole('button', { name: 'Retry Tier 1' })).toBeEnabled();
 		await page.getByRole('button', { name: 'Retry Tier 1' }).click();
 
-		await expect.element(page.getByText('Foundation · 1 entries')).toBeInTheDocument();
-		await expect.element(page.getByText('Higher · 1 entries')).toBeInTheDocument();
-		await expect.element(page.getByText('1 pairs proposed')).toBeInTheDocument();
+		await expect.element(page.getByText('Foundation · 1 entry')).toBeInTheDocument();
+		await expect.element(page.getByText('Higher · 1 entry')).toBeInTheDocument();
+		await expect.element(page.getByText('1 pair proposed')).toBeInTheDocument();
 		expect(
 			api.parseCalls.filter((form) => fileIn(form, 'assessmentPaper').name === 'higher.pdf')
 		).toHaveLength(1);
@@ -439,6 +467,80 @@ describe('upload page run', () => {
 		expect(stored.tiers[0].sourceFilenames).toEqual(['higher-fixed.pdf']);
 		expect(stored.tiers[1].sourceFilenames).toEqual(['foundation.pdf']);
 	});
+
+	it('abandons a persistent retryable failure back to the form, keeping the files', async () => {
+		const api = stubApi({
+			parse: () => apiError('MODEL_RETRYABLE', 'Provider busy', true, 502)
+		});
+
+		render(Page);
+		await uploadPaper('higher.pdf');
+		await page.getByRole('button', { name: 'Run' }).click();
+
+		await expect.element(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+		await page.getByRole('button', { name: 'Back to upload' }).click();
+
+		await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
+		await expect.element(page.getByText('higher.pdf')).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Run' })).toBeEnabled();
+		// The form is back: the options the stopped run locked are editable again.
+		await expect.element(page.getByRole('combobox', { name: 'Model override' })).toBeEnabled();
+		expect(api.parseCalls).toHaveLength(1);
+	});
+
+	it('lets Escape abandon a stopped run', async () => {
+		stubApi({ parse: () => apiError('MODEL_RETRYABLE', 'Provider busy', true, 502) });
+
+		render(Page);
+		await uploadPaper('higher.pdf');
+		await page.getByRole('button', { name: 'Run' }).click();
+		await expect.element(page.getByRole('button', { name: 'Back to upload' })).toBeVisible();
+
+		await userEvent.keyboard('{Escape}');
+
+		await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Run' })).toBeEnabled();
+	});
+
+	it.each(['MODEL_REJECTED', 'MODEL_CREDIT'] as const)(
+		'keeps both parses when matching stops the run with %s',
+		async (code) => {
+			const message = 'The matching call failed.';
+			stubApi({
+				parse: (form) =>
+					fileIn(form, 'assessmentPaper').name === 'higher.pdf'
+						? json(parseBody('Higher', [question('1a')]))
+						: json(parseBody('Foundation', [question('8a')])),
+				match: () => apiError(code, message, false, 502)
+			});
+
+			render(Page);
+			await uploadPaper('higher.pdf');
+			await addTierWithPaper('foundation.pdf');
+			await page.getByRole('button', { name: 'Run' }).click();
+
+			// A matching failure cannot cost a parse: both tiers are already in hand.
+			await expect.element(page.getByRole('button', { name: 'Open breakdown' })).toBeVisible();
+			await expect.element(page.getByText('Higher · 1 entry')).toBeInTheDocument();
+			await expect.element(page.getByText('Foundation · 1 entry')).toBeInTheDocument();
+			await expect
+				.element(page.getByText('None proposed: pair them by hand at review'))
+				.toBeVisible();
+			await expect.element(page.getByText(`${message} (${code})`)).toBeVisible();
+			await expect.element(page.getByTestId('fatal-panel')).not.toBeInTheDocument();
+			await expect.element(page.getByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+
+			await page.getByRole('button', { name: 'Open breakdown' }).click();
+
+			await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/breakdown'));
+			const stored = readSeeded();
+			expect(stored.tiers).toHaveLength(2);
+			expect(stored.commonQuestions).toEqual([]);
+			expect(marksheetStore().matchNotice).toBe(message);
+			// Both parses are kept, and the failed match added no usage.
+			expect(marksheetStore().runUsage?.totalTokens).toBe(60);
+		}
+	);
 
 	it('stops the whole run on a run-stopping error and keeps nothing', async () => {
 		stubApi({
@@ -479,14 +581,15 @@ describe('upload page run', () => {
 		await page.getByRole('button', { name: 'Run' }).click();
 
 		await expect.element(page.getByRole('button', { name: 'Try again' })).toBeVisible();
-		await expect.element(page.getByText('No tier printed · 1 entries')).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Back to upload' })).toBeVisible();
+		await expect.element(page.getByText('No tier printed · 1 entry')).toBeInTheDocument();
 		await expect.element(page.getByText('Matching is busy (MODEL_RETRYABLE)')).toBeInTheDocument();
 		// One silent retry: the failed first attempt never surfaced as an action.
 		expect(api.matchCalls).toHaveLength(2);
 
 		await page.getByRole('button', { name: 'Try again' }).click();
 
-		await expect.element(page.getByText('1 pairs proposed')).toBeInTheDocument();
+		await expect.element(page.getByText('1 pair proposed')).toBeInTheDocument();
 		expect(api.matchCalls).toHaveLength(3);
 		expect(
 			api.parseCalls.filter((form) => fileIn(form, 'assessmentPaper').name === 'higher.pdf')

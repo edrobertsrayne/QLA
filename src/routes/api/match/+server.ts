@@ -9,7 +9,11 @@
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { MAX_ENTRIES, MAX_LABEL_LENGTH, MAX_SUMMARY_LENGTH } from '$lib/marksheet/report-limits';
+import {
+	MAX_MATCH_ENTRIES,
+	MAX_MATCH_LABEL_LENGTH,
+	MAX_MATCH_SUMMARY_LENGTH
+} from '$lib/match/limits';
 import {
 	MATCH_SCHEMA,
 	MATCH_SCHEMA_NAME,
@@ -20,7 +24,7 @@ import {
 } from '$lib/server/match';
 import { MISSING_API_KEY_CODE } from '$lib/server/openrouter';
 import { getServerEnv } from '$lib/server/parse/env';
-import { MAX_FILE_BYTES, MAX_TOTAL_PAGES } from '$lib/server/parse/schema';
+import { MAX_FILE_BYTES, MAX_TOTAL_PAGES, type ParseUsage } from '$lib/server/parse/schema';
 import { countPdfPages, resolveModelId, supportsNativePdf } from '$lib/server/parse/pdf';
 import {
 	InputError,
@@ -50,6 +54,13 @@ const MATCH_TIMEOUT_MS = 120_000;
 
 const UNUSABLE_ANSWER_MESSAGE =
 	'The model answer was not a usable list of common-question pairs. Please try again.';
+
+const ZERO_USAGE: ParseUsage = {
+	promptTokens: 0,
+	completionTokens: 0,
+	totalTokens: 0,
+	estCost: 0
+};
 
 const ENTRY_KEYS = new Set([
 	'id',
@@ -131,9 +142,9 @@ function readEntries(form: FormData, field: string): MatchEntry[] {
 	if (typeof raw !== 'string') fail(field, 'Must be a JSON list of entries.');
 	const list = readList(readJson(raw, field), field, {
 		min: 0,
-		max: MAX_ENTRIES,
+		max: MAX_MATCH_ENTRIES,
 		notList: 'Must be a list of entries.',
-		size: `Must hold at most ${MAX_ENTRIES} entries.`
+		size: `Must hold at most ${MAX_MATCH_ENTRIES} entries.`
 	});
 
 	return list.map((item, index) => {
@@ -143,25 +154,25 @@ function readEntries(form: FormData, field: string): MatchEntry[] {
 		return {
 			id: readString(record['id'], `${entryField}.id`, {
 				nonBlank: 'Must be a non-blank id.',
-				max: MAX_LABEL_LENGTH
+				max: MAX_MATCH_LABEL_LENGTH
 			}),
 			questionNumber: readString(record['questionNumber'], `${entryField}.questionNumber`, {
 				nonBlank: 'Must be a non-blank question number.',
-				max: MAX_LABEL_LENGTH
+				max: MAX_MATCH_LABEL_LENGTH
 			}),
 			marks: readMarks(record['marks'], `${entryField}.marks`),
 			summary: readString(record['summary'], `${entryField}.summary`, {
-				max: MAX_SUMMARY_LENGTH
+				max: MAX_MATCH_SUMMARY_LENGTH
 			}),
 			specPoint: readNullableString(
 				record['specPoint'],
 				`${entryField}.specPoint`,
-				MAX_LABEL_LENGTH
+				MAX_MATCH_LABEL_LENGTH
 			),
 			commandWord: readNullableString(
 				record['commandWord'],
 				`${entryField}.commandWord`,
-				MAX_LABEL_LENGTH
+				MAX_MATCH_LABEL_LENGTH
 			)
 		};
 	});
@@ -171,7 +182,7 @@ function readModel(form: FormData): string | undefined {
 	const value = form.get(MODEL_FIELD);
 	if (value === null) return undefined;
 	if (value instanceof File) fail(MODEL_FIELD, 'Must be a string.');
-	const model = readString(value, MODEL_FIELD, { max: MAX_LABEL_LENGTH }).trim();
+	const model = readString(value, MODEL_FIELD, { max: MAX_MATCH_LABEL_LENGTH }).trim();
 	return model === '' ? undefined : model;
 }
 
@@ -206,15 +217,17 @@ async function ingestDocument(file: File): Promise<IngestedDocument> {
 	} catch (error) {
 		throw new UnreadablePdfError(file.name, { cause: error });
 	}
-	// Encode first: unpdf detaches the buffer while extracting text.
-	const pdfBase64 = Buffer.from(bytes).toString('base64');
 	let pageCount: number;
 	try {
 		pageCount = await countPdfPages(bytes);
 	} catch (error) {
 		throw new UnreadablePdfError(file.name, { cause: error });
 	}
-	return { filename: file.name, pdfBase64, pageCount };
+	return {
+		filename: file.name,
+		pdfBase64: Buffer.from(bytes).toString('base64'),
+		pageCount
+	};
 }
 
 async function readDocuments(
@@ -277,6 +290,24 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 	}
 
+	// An empty tier can produce no pair, and the model cannot change that:
+	// answer without reading or sending either PDF.
+	if (valid.tier1Entries.length === 0 || valid.tier2Entries.length === 0) {
+		return json({ pairs: [], usage: ZERO_USAGE });
+	}
+
+	// The model capability check depends only on the requested id, so it runs
+	// before either PDF is read: a text-only model never pays for ingestion.
+	const modelId = resolveModelId(valid.model);
+	if (!supportsNativePdf(modelId)) {
+		return failure(400, {
+			code: MATCH_NEEDS_NATIVE_PDF_CODE,
+			message:
+				'Common-question matching needs a model that reads PDFs natively. Choose another model.',
+			retryable: false
+		});
+	}
+
 	const ingested = await readDocuments(valid);
 	if (ingested instanceof Response) return ingested;
 
@@ -284,17 +315,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (totalPages > MAX_TOTAL_PAGES) {
 		return failure(413, {
 			code: FILE_TOO_BIG_CODE,
-			message: `The PDFs total ${totalPages} pages, above the ${MAX_TOTAL_PAGES}-page ceiling. Split or compress them and try again.`,
-			retryable: false
-		});
-	}
-
-	const modelId = resolveModelId(valid.model);
-	if (!supportsNativePdf(modelId)) {
-		return failure(400, {
-			code: MATCH_NEEDS_NATIVE_PDF_CODE,
-			message:
-				'Common-question matching needs a model that reads PDFs natively. Choose another model.',
+			message: `The PDFs total ${totalPages} pages, above the ${MAX_TOTAL_PAGES}-page ceiling for matching. The run continues without proposed pairs; pair the common questions by hand at review.`,
 			retryable: false
 		});
 	}

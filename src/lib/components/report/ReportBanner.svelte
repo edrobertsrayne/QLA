@@ -25,6 +25,9 @@
 	);
 	const total = $derived(document?.students.length ?? 0);
 	const notSet = $derived(document ? document.students.filter((s) => s.tier === null).length : 0);
+	const noTierLabel = $derived(
+		count(notSet, 'student has no tier yet', 'students have no tier yet')
+	);
 	const boundaryCount = $derived(
 		document !== null && tier !== null ? (boundariesOf(document, tier)?.length ?? 0) : 0
 	);
@@ -51,7 +54,7 @@
 				Reports are written from a fully marked marksheet
 			{/if}
 			{#if notSet > 0}
-				<span class="text-muted-foreground">· {notSet} have no tier yet</span>
+				<span class="text-muted-foreground">· {noTierLabel}</span>
 			{/if}
 		</p>
 		<div class="flex gap-2">

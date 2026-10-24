@@ -37,13 +37,17 @@
 	);
 
 	/**
-	 * The open tab, as a teacher left it. A two-tier sheet opens where the work
-	 * is: Tier not set while nobody has a tier, Tier 1 otherwise. A single-tier
-	 * sheet has one tier and no tabs, so the tab is always that tier.
+	 * The tab a two-tier sheet opens on: the first paper with students on it, so
+	 * an all-Foundation class does not open on an empty Tier 1. With nobody placed
+	 * yet it opens on Tier not set, where the placing happens.
 	 */
-	let tab = $state<MarksheetTab>(
-		store.tierCount === 2 && store.students.every((student) => student.tier === null) ? 'unset' : 0
-	);
+	function initialTab(): MarksheetTab {
+		if (store.tierCount !== 2) return 0;
+		if (store.studentsOf(0).length > 0) return 0;
+		return store.studentsOf(1).length > 0 ? 1 : 'unset';
+	}
+
+	let tab = $state<MarksheetTab>(initialTab());
 	const tier = $derived<TierIndex | null>(tierCount === 1 ? 0 : tab === 'unset' ? null : tab);
 
 	/** Open the analysis at one entry, on the tier whose figures the teacher clicked. */

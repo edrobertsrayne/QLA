@@ -112,11 +112,11 @@ export function commonOrder(container: HTMLElement): string[] {
 	);
 }
 
-/** The tier rows' entry ids, in the order the view shows them. */
+/** The tier rows on screen, in the order the view shows them: folded green rows are for print. */
 export function tierOrder(container: HTMLElement): string[] {
-	return [...container.querySelectorAll<HTMLElement>('[data-testid="analysis-row"]')].map(
-		(row) => row.dataset.entryId ?? ''
-	);
+	return [...container.querySelectorAll<HTMLElement>('[data-testid="analysis-row"]')]
+		.filter((row) => row.checkVisibility())
+		.map((row) => row.dataset.entryId ?? '');
 }
 
 /** A CSV body as cells, honouring the quotes a summary or header may carry. */

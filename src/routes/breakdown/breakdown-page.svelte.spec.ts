@@ -3,7 +3,7 @@ import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { goto } from '$app/navigation';
 import AppNav from '$lib/components/shell/AppNav.svelte';
-import { STORAGE_KEY, markCount } from '$lib/marksheet/document.js';
+import { STORAGE_KEY, storedMarkCount } from '$lib/marksheet/document.js';
 import type {
 	BreakdownEntry,
 	MarksheetDocument,
@@ -98,7 +98,7 @@ function pickerValues(entryLabel: string): string[] {
 /** How many marks the marksheet holds now, as the store has them. */
 function marksStored(): number {
 	const document = marksheetStore().document;
-	return document === null ? 0 : markCount(document);
+	return document === null ? 0 : storedMarkCount(document);
 }
 
 describe('breakdown page', () => {
@@ -184,7 +184,12 @@ describe('breakdown page', () => {
 	});
 
 	it('shares one skill-description set across both tiers, headed as such', async () => {
-		seed(twoTierDocument({ aoDescriptions: { AO2: 'Apply knowledge to new situations' } }));
+		const document = twoTierDocument({
+			aoDescriptions: { AO2: 'Apply knowledge to new situations', AO3: 'Compare methods' }
+		});
+		// AO3 is used only on Tier 2: the set is the assessment's, so it is editable from Tier 1.
+		document.tiers[1].breakdown.entries[2] = entry('f3', '10a', '10', { marks: 6, ao: 'AO3' });
+		seed(document);
 		openPage(BreakdownPage);
 
 		await expect
@@ -193,13 +198,24 @@ describe('breakdown page', () => {
 		await expect
 			.element(page.getByLabelText('AO2', { exact: true }))
 			.toHaveValue('Apply knowledge to new situations');
+		await expect
+			.element(page.getByLabelText('AO3', { exact: true }))
+			.toHaveValue('Compare methods');
 
 		// The set is the assessment's: changing it on one tab changes it for both.
 		await page.getByLabelText('AO2', { exact: true }).fill('Apply ideas');
 		await page.getByRole('radio', { name: 'Tier 2 · Foundation' }).click();
 
 		await expect.element(page.getByLabelText('AO2', { exact: true })).toHaveValue('Apply ideas');
-		await vi.waitFor(() => expect(readSeeded().aoDescriptions).toEqual({ AO2: 'Apply ideas' }));
+		await expect
+			.element(page.getByLabelText('AO3', { exact: true }))
+			.toHaveValue('Compare methods');
+		await vi.waitFor(() =>
+			expect(readSeeded().aoDescriptions).toEqual({
+				AO2: 'Apply ideas',
+				AO3: 'Compare methods'
+			})
+		);
 	});
 
 	it('renders a multi-code spec point one code per line, and saves a typed list', async () => {
@@ -632,6 +648,12 @@ describe('breakdown page', () => {
 			.element(page.getByLabelText('Tier name, as printed on the paper'))
 			.toHaveValue('Foundation');
 
+		// Clicking the open tab again leaves it open rather than falling back to Tier 1.
+		await page.getByRole('radio', { name: 'Tier 2 · Foundation' }).click();
+		await expect.element(page.getByRole('radio', { name: 'Tier 2 · Foundation' })).toBeChecked();
+		await expect.element(page.getByLabelText('Label for 8a')).toBeInTheDocument();
+		expect(page.getByLabelText('Label for 1a').elements()).toHaveLength(0);
+
 		await page.getByRole('button', { name: 'Confirm and build marksheet' }).click();
 
 		await vi.waitFor(() => {
@@ -642,7 +664,7 @@ describe('breakdown page', () => {
 		});
 	});
 
-	it('names a blank or identical tier name and puts a red dot on the tabs it stops', async () => {
+	it('names a blank tier and puts a red dot on the tabs it stops', async () => {
 		seed(
 			twoTierDocument({
 				tiers: [
@@ -662,14 +684,42 @@ describe('breakdown page', () => {
 			.toBeDisabled();
 
 		await page.getByLabelText('Tier name, as printed on the paper').fill('Higher');
-		await page.getByRole('radio', { name: 'Tier 2', exact: true }).click();
 		await expect.element(page.getByText('Tier 1 needs a tier name.')).not.toBeInTheDocument();
-		await page.getByLabelText('Tier name, as printed on the paper').fill('higher');
+		expect(page.getByTestId('tier-blocker-dot').elements()).toHaveLength(1);
+
+		await page.getByRole('radio', { name: 'Tier 2', exact: true }).click();
+		await page.getByLabelText('Tier name, as printed on the paper').fill('Foundation');
+
+		await expect.element(page.getByText('Tier 2 needs a tier name.')).not.toBeInTheDocument();
+		expect(page.getByTestId('tier-blocker-dot').elements()).toHaveLength(0);
+		await expect
+			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
+			.toBeEnabled();
+		await vi.waitFor(() =>
+			expect(readSeeded().tiers.map((one) => one.tierName)).toEqual(['Higher', 'Foundation'])
+		);
+	});
+
+	it('names two tiers that read the same, and clears it once one is renamed', async () => {
+		seed(
+			twoTierDocument({
+				tiers: [
+					tierWith([entry('h1', '1a', '1')], 'Higher', 'H.pdf'),
+					tierWith([entry('f1', '8a', '8')], 'higher', 'F.pdf')
+				]
+			})
+		);
+		openPage(BreakdownPage);
 
 		await expect.element(page.getByText('The two tiers need different names.')).toBeInTheDocument();
+		expect(page.getByText('Tier 1 needs a tier name.').elements()).toHaveLength(0);
+		expect(page.getByText('Tier 2 needs a tier name.').elements()).toHaveLength(0);
 		expect(page.getByTestId('tier-blocker-dot').elements()).toHaveLength(2);
+		await expect
+			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
+			.toBeDisabled();
 
-		await page.getByLabelText('Tier name, as printed on the paper').fill('Foundation');
+		await page.getByLabelText('Tier name, as printed on the paper').fill('Higher Tier');
 
 		await expect
 			.element(page.getByText('The two tiers need different names.'))
@@ -679,7 +729,7 @@ describe('breakdown page', () => {
 			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
 			.toBeEnabled();
 		await vi.waitFor(() =>
-			expect(readSeeded().tiers.map((one) => one.tierName)).toEqual(['Higher', 'Foundation'])
+			expect(readSeeded().tiers.map((one) => one.tierName)).toEqual(['Higher Tier', 'higher'])
 		);
 	});
 
@@ -702,6 +752,29 @@ describe('breakdown page', () => {
 		expect(pickerValues('8a')).toEqual(['', 'h1']);
 		expect(pickerValues('9a')).toEqual(['', 'h2']);
 		expect(pickerValues('10a')).toEqual(['', 'h2']);
+	});
+
+	it('says why a picker has nothing to offer', async () => {
+		const document = twoTierDocument();
+		document.tiers[0].breakdown.entries.push(
+			entry('h4', '4a', '4', { marks: 4 }),
+			entry('h5', '5a', '5', { marks: null })
+		);
+		seed(document);
+		openPage(BreakdownPage);
+
+		// 4a's only equal-mark peer is paired already.
+		expect(pickerValues('4a')).toEqual(['']);
+		await expect
+			.element(page.getByLabelText('Common question for 4a'))
+			.toHaveTextContent('Every equal-mark question is paired');
+
+		// 5a cannot be paired until its available marks are known.
+		expect(pickerValues('5a')).toEqual(['']);
+		await expect
+			.element(page.getByLabelText('Common question for 5a'))
+			.toHaveTextContent('Add available marks first');
+		await expect.element(page.getByLabelText('Common question for 5a')).toBeDisabled();
 	});
 
 	it('adds, changes and clears a pair from either tab, each one undoable', async () => {
@@ -786,6 +859,39 @@ describe('breakdown page', () => {
 			.toBeEnabled();
 	});
 
+	it('lists two pairs blocked for the same reason, repeated sentence and all', async () => {
+		seed(
+			parsed({
+				tiers: [
+					tierWith(
+						[entry('h1', '', '1', { marks: 4 }), entry('h2', '', '2', { marks: 4 })],
+						'Higher',
+						'H.pdf'
+					),
+					tierWith(
+						[entry('f1', '', '8', { marks: 6 }), entry('f2', '', '9', { marks: 6 })],
+						'Foundation',
+						'F.pdf'
+					)
+				],
+				commonQuestions: [
+					{ tier1EntryId: 'h1', tier2EntryId: 'f1' },
+					{ tier1EntryId: 'h2', tier2EntryId: 'f2' }
+				]
+			})
+		);
+		openPage(BreakdownPage);
+
+		// Both pairs' marks differ the same way, so the sentence names each pair identically.
+		const sentence =
+			'(no label) (4) and (no label) (6) are paired but have different available marks.';
+		await expect.element(page.getByTestId('blockers')).toHaveTextContent(sentence);
+		expect(page.getByText(sentence).elements()).toHaveLength(2);
+		await expect
+			.element(page.getByRole('button', { name: 'Confirm and build marksheet' }))
+			.toBeDisabled();
+	});
+
 	it('drops a deleted entry’s pair in the same change, and undo brings it back', async () => {
 		seed(twoTierDocument());
 		openPage(BreakdownPage);
@@ -815,14 +921,16 @@ describe('breakdown page', () => {
 		await expect.element(page.getByTestId('totals-row')).toHaveTextContent('16');
 	});
 
-	it('shows why matching proposed no common questions', async () => {
+	it('asks for pairs by hand when none are stored and the run did not say why', async () => {
 		seed(twoTierDocument({ commonQuestions: [] }));
 		openPage(BreakdownPage);
 
-		await expect.element(page.getByText('No common questions proposed')).toBeInTheDocument();
+		await expect.element(page.getByText('No common questions yet')).toBeInTheDocument();
 		await expect
 			.element(page.getByTestId('match-notice'))
-			.toHaveTextContent('None proposed: pair them by hand at review.');
+			.toHaveTextContent('Pair them by hand below.');
+		// Only a run can say the matching proposed none.
+		expect(page.getByText('No common questions proposed').elements()).toHaveLength(0);
 	});
 
 	it("shows the run's matching failure as the notice's reason", async () => {
@@ -835,6 +943,7 @@ describe('breakdown page', () => {
 			})
 		);
 
+		await expect.element(page.getByText('No common questions proposed')).toBeInTheDocument();
 		await expect
 			.element(page.getByTestId('match-notice'))
 			.toHaveTextContent('The model could not read the PDFs, so none are proposed.');

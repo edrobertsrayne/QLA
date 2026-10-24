@@ -486,6 +486,32 @@ describe('analyseCommonQuestions', () => {
 		expect(rows[2].gap).toBe(50);
 	});
 
+	it('leaves the pooled figure blank when the two entries offer different available marks', () => {
+		const document = twoTiers(
+			[entry('e1', '1', '1', { marks: 4 })],
+			[entry('e2', '8', '8', { marks: 8 })],
+			{
+				commonQuestions: [{ tier1EntryId: 'e1', tier2EntryId: 'e2' }],
+				students: [
+					student('h1', 'A', 'Higher', false, 0),
+					student('f1', 'B', 'Foundation', false, 1)
+				],
+				marks: { h1: { e1: 2 }, f1: { e2: 4 } }
+			}
+		);
+
+		const [row] = analyseCommonQuestions(document);
+
+		// Both tiers scored half their paper, but out of 4 and 8: pooling them
+		// would compare two different questions.
+		expect(row.tier1.analysis.facility).toBe(0.5);
+		expect(row.tier2.analysis.facility).toBe(0.5);
+		expect(row.pooled.facility).toBeNull();
+		expect(row.pooled.band).toBeNull();
+		// The gap still compares each tier's own facility.
+		expect(row.gap).toBe(0);
+	});
+
 	it('shows the gap signed, Tier 1 minus Tier 2, in whole percentage points', () => {
 		const rows = analyseCommonQuestions(commonDocument());
 
@@ -571,28 +597,31 @@ describe('sortCommonQuestions', () => {
 		return analyseCommonQuestions(
 			twoTiers(
 				[
-					entry('e1a', '1a', '1', { marks: 4 }),
-					entry('e1b', '1b', '1', { marks: 4 }),
-					entry('e1c', '1c', '1', { marks: 4 })
+					entry('e1a', '1a', '1', { marks: 5 }),
+					entry('e1b', '1b', '1', { marks: 5 }),
+					entry('e1c', '1c', '1', { marks: 5 }),
+					entry('e1d', '1d', '1', { marks: 5 })
 				],
 				[
-					entry('e2a', '8a', '8', { marks: 4 }),
-					entry('e2b', '8b', '8', { marks: 4 }),
-					entry('e2c', '8c', '8', { marks: 4 })
+					entry('e2a', '8a', '8', { marks: 5 }),
+					entry('e2b', '8b', '8', { marks: 5 }),
+					entry('e2c', '8c', '8', { marks: 5 }),
+					entry('e2d', '8d', '8', { marks: 5 })
 				],
 				{
 					commonQuestions: [
 						{ tier1EntryId: 'e1b', tier2EntryId: 'e2b' },
 						{ tier1EntryId: 'e1a', tier2EntryId: 'e2a' },
-						{ tier1EntryId: 'e1c', tier2EntryId: 'e2c' }
+						{ tier1EntryId: 'e1c', tier2EntryId: 'e2c' },
+						{ tier1EntryId: 'e1d', tier2EntryId: 'e2d' }
 					],
 					students: [
 						student('h1', 'Hana', 'Higher', false, 0),
 						student('f1', 'Flo', 'Foundation', false, 1)
 					],
 					marks: {
-						h1: { e1a: 0, e1b: 2, e1c: 4 },
-						f1: { e2a: 4, e2b: 0 }
+						h1: { e1a: 2, e1b: 0, e1c: 3, e1d: 2 },
+						f1: { e2a: 0, e2b: 5, e2c: 0 }
 					}
 				}
 			)
@@ -602,23 +631,53 @@ describe('sortCommonQuestions', () => {
 	it('puts the biggest absolute gap first and the pairs with no gap last', () => {
 		const sorted = sortCommonQuestions(rows(), 'gap');
 
-		expect(sorted.map((row) => row.tier1.entry.id)).toEqual(['e1a', 'e1b', 'e1c']);
-		expect(sorted.map((row) => row.gap)).toEqual([-100, 50, null]);
+		// Paper order is e1a (+40), e1b (−100), e1c (+60): absolute order is not
+		// paper order, and the pair with no Tier 2 mark goes last.
+		expect(sorted.map((row) => row.tier1.entry.id)).toEqual(['e1b', 'e1c', 'e1a', 'e1d']);
+		expect(sorted.map((row) => row.gap)).toEqual([-100, 60, 40, null]);
+	});
+
+	it('keeps paper order between pairs with the same absolute gap', () => {
+		const document = twoTiers(
+			[entry('e1a', '1a', '1', { marks: 4 }), entry('e1b', '1b', '1', { marks: 4 })],
+			[entry('e2a', '8a', '8', { marks: 4 }), entry('e2b', '8b', '8', { marks: 4 })],
+			{
+				commonQuestions: [
+					{ tier1EntryId: 'e1b', tier2EntryId: 'e2b' },
+					{ tier1EntryId: 'e1a', tier2EntryId: 'e2a' }
+				],
+				students: [
+					student('h1', 'Hana', 'Higher', false, 0),
+					student('f1', 'Flo', 'Foundation', false, 1)
+				],
+				marks: {
+					h1: { e1a: 2, e1b: 0 },
+					f1: { e2a: 0, e2b: 2 }
+				}
+			}
+		);
+
+		// e1a is +50 and e1b is −50: the same size of gap, so paper order decides.
+		const sorted = sortCommonQuestions(analyseCommonQuestions(document), 'gap');
+
+		expect(sorted.map((row) => row.gap)).toEqual([50, -50]);
+		expect(sorted.map((row) => row.tier1.entry.id)).toEqual(['e1a', 'e1b']);
 	});
 
 	it('puts the lowest pooled facility first and the unscored pairs last', () => {
 		const sorted = sortCommonQuestions(rows(), 'pooled');
 
-		// e1b pools 25%, e1a 50%, and e1c has no pooled figure.
-		expect(sorted.map((row) => row.tier1.entry.id)).toEqual(['e1b', 'e1a', 'e1c']);
-		expect(sorted.map((row) => row.pooled.facility)).toEqual([0.25, 0.5, null]);
+		// e1a pools 20%, e1c 30%, e1b 50%, and e1d has no pooled figure.
+		expect(sorted.map((row) => row.tier1.entry.id)).toEqual(['e1a', 'e1c', 'e1b', 'e1d']);
+		expect(sorted.map((row) => row.pooled.facility)).toEqual([0.2, 0.3, 0.5, null]);
 	});
 
 	it('keeps Tier 1’s paper order', () => {
 		expect(sortCommonQuestions(rows(), 'paper').map((row) => row.tier1.entry.id)).toEqual([
 			'e1a',
 			'e1b',
-			'e1c'
+			'e1c',
+			'e1d'
 		]);
 	});
 
@@ -627,6 +686,6 @@ describe('sortCommonQuestions', () => {
 		const sorted = sortCommonQuestions(input, 'pooled');
 
 		expect(sorted).not.toBe(input);
-		expect(input.map((row) => row.tier1.entry.id)).toEqual(['e1a', 'e1b', 'e1c']);
+		expect(input.map((row) => row.tier1.entry.id)).toEqual(['e1a', 'e1b', 'e1c', 'e1d']);
 	});
 });

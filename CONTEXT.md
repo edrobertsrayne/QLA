@@ -73,7 +73,7 @@ A run of contiguous breakdown entries sharing a stored question number, shown un
 _Avoid_: Group, section, bare "band" next to RAG colours
 
 **Facility index**:
-The proportion of a question or subquestion's available marks that a class actually gained (mean mark ÷ available marks) — the measure Phase 2's analysis ranks and RAG-colours to surface poorly answered questions. Computed per breakdown entry over marks entered, excluding absent students, unmarked cells and marks above the entry's available marks.
+The proportion of a question or subquestion's available marks that its students actually gained (mean mark ÷ available marks) — the measure Phase 2's analysis ranks and RAG-colours to surface poorly answered questions. Computed per breakdown entry over the students who sit its tier, excluding absent students, unmarked cells and marks above the entry's available marks. A **common question** also gets a pooled facility index over both tiers' students, shown beside each tier's own and the gap between them.
 _Avoid_: Difficulty, average score, success rate, % marks
 
 **RAG band**:
@@ -121,7 +121,7 @@ How much of one student's marksheet row is filled in: breakdown entries of their
 _Avoid_: Completion, count
 
 **Coverage**:
-How far one breakdown entry has been marked across the class: non-absent students with a mark, out of all non-absent students.
+How far one breakdown entry has been marked across its tier: non-absent students on that tier with a mark, out of all non-absent students on that tier. A student with no tier is on no tier's coverage.
 _Avoid_: Sample size, n
 
 **Backup**:
@@ -149,7 +149,7 @@ A report whose generated feedback was written from a different generation input 
 _Avoid_: Stale, expired, invalid
 
 **Roll-up**:
-One student's marks summed by specification point (marks gained out of available, across every breakdown entry carrying that specification point) and separately by assessment objective. An entry with no specification point counts only toward its assessment objective. Never class-wide.
+One student's marks summed by specification point (marks gained out of available, across every breakdown entry of the student's own tier carrying that specification point) and separately by assessment objective. An entry with no specification point counts only toward its assessment objective. A student with no tier has no roll-up. Never class-wide.
 _Avoid_: Topic summary, aggregate, spec breakdown
 
 **Topic name**:

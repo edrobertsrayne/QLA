@@ -47,6 +47,23 @@
 			: null
 	);
 
+	/** Whether the other tier has any equal-mark entry at all, paired or not. */
+	const hasEqualMarkEntry = $derived(
+		entry.marks !== null &&
+			store.entriesOf(other).some((candidate) => candidate.marks === entry.marks)
+	);
+
+	/** Why the picker has no partner to offer, said in place of a bare dash. */
+	const emptyLabel = $derived(
+		entry.marks === null
+			? 'Add available marks first'
+			: candidates.length === 0 && partner === null
+				? hasEqualMarkEntry
+					? 'Every equal-mark question is paired'
+					: '— (no equal-mark entry)'
+				: '—'
+	);
+
 	function choose(partnerId: string): void {
 		store.setCommonQuestion(tier, entry.id, partnerId === '' ? null : partnerId);
 	}
@@ -63,14 +80,15 @@
 				: 'border-violet-400 text-violet-800 dark:text-violet-300'
 	]}
 	value={partnerId ?? ''}
+	disabled={entry.marks === null && partner === null}
 	onchange={(event) => choose(event.currentTarget.value)}
 >
 	<option value="">
-		{candidates.length === 0 && partner === null ? '— (no equal-mark entry)' : '—'}
+		{emptyLabel}
 	</option>
 	{#if strayPartner}
 		<option value={strayPartner.id}>
-			{strayPartner.label} ({strayPartner.marks ?? '?'} marks{invalidPair ? ', unequal' : ''})
+			{entryName(strayPartner)} ({strayPartner.marks ?? '?'} marks{invalidPair ? ', unequal' : ''})
 		</option>
 	{/if}
 	{#each candidates as candidate (candidate.id)}

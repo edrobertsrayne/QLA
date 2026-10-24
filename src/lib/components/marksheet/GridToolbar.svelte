@@ -38,15 +38,11 @@
 	const store = marksheetStore();
 	const document = $derived(store.document);
 	const entries = $derived(tier === null ? [] : store.entriesOf(tier));
-	/** The open tier's findings, plus the run-level ones that belong to every tier. */
-	const warnings = $derived(
-		tier === null
-			? store.warnings
-			: store.warnings.filter(
-					(warning) =>
-						warning.questionId === null || entries.some((entry) => entry.id === warning.questionId)
-				)
-	);
+	/**
+	 * The open tier's findings. Tier not set has no paper, so it shows none: the
+	 * parse said nothing about students waiting for a tier.
+	 */
+	const warnings = $derived(tier === null ? [] : store.warningsOf(tier));
 	const bands = $derived<QuestionBand[]>(tier === null ? [] : store.bandsOf(tier));
 	const fallbacks = $derived(fallbackBands(bands, warnings));
 	const hardest = $derived(tier === null ? [] : store.analysisOf(tier).hardest);

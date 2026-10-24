@@ -13,24 +13,25 @@
 		isFallbackBand,
 		type QuestionBand
 	} from '$lib/marksheet/breakdown.js';
-	import { marksheetStore } from '$lib/marksheet/index.js';
+	import type { StoredWarning } from '$lib/marksheet/document.js';
 	import { cn } from '$lib/utils.js';
 	import { BAND_LABEL_PIN, FROZEN_PROGRESS, NAME_COLUMN, PROGRESS_PIN } from './grid-layout.js';
 
 	let {
 		bands,
+		warnings,
 		cursorEntryId,
 		onJump,
 		endColumns = 1
 	}: {
 		bands: QuestionBand[];
+		/** The open tier's parse findings: the ones its bands are flagged from. */
+		warnings: StoredWarning[];
 		cursorEntryId: string | null;
 		onJump: (band: QuestionBand) => void;
 		endColumns?: number;
 	} = $props();
 
-	const store = marksheetStore();
-	const warnings = $derived(store.warnings);
 	/** The band the cursor's column belongs to, which the band row highlights. */
 	const cursorBand = $derived(
 		bands.find((band) => band.entries.some((entry) => entry.id === cursorEntryId)) ?? null

@@ -30,9 +30,9 @@ export interface TierParse {
 	filenames: string[];
 }
 
-/** A finished upload: every tier's parse, the proposed pairs (parse labels) and what it spent. */
+/** A finished upload: one or two tiers' parses, the proposed pairs (parse labels) and what it spent. */
 export interface CreateFromAssessmentInput {
-	tiers: TierParse[];
+	tiers: [TierParse] | [TierParse, TierParse];
 	pairs: { tier1Id: string; tier2Id: string }[];
 	/** Shown for this session; never stored. */
 	usage: ParseUsage;

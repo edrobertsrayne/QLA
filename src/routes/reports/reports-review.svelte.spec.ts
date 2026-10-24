@@ -541,9 +541,9 @@ describe('review fixes', () => {
 });
 
 describe('tier name in the report header', () => {
-	/** The label line itself: the header's first paragraph, name line excluded. */
+	/** The label line itself: paper, then the student's tier name. */
 	function labelLine(id: string): Element | null | undefined {
-		return document.querySelector(`main [data-report-id="${id}"] header p`);
+		return document.querySelector(`main [data-report-id="${id}"] [data-testid="report-label"]`);
 	}
 
 	it("appends the student's own tier name, verbatim, in semibold black", async () => {

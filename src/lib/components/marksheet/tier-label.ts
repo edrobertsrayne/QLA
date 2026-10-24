@@ -7,13 +7,19 @@ import type { MarksheetDocument, TierIndex } from '$lib/marksheet/document.js';
 /** Which tab the marksheet has open: a tier, or the students still to be placed. */
 export type MarksheetTab = TierIndex | 'unset';
 
+/** The printed tier name, trimmed, or null when the paper carried none. */
+export function tierNameOf(document: MarksheetDocument | null, tier: TierIndex): string | null {
+	const name = document?.tiers[tier]?.tierName?.trim() ?? '';
+	return name === '' ? null : name;
+}
+
 /** The tab and toast wording: `Tier 1 · Higher`, or `Tier 1` when nothing was printed. */
 export function tierLabel(document: MarksheetDocument | null, tier: TierIndex): string {
-	const name = document?.tiers[tier]?.tierName ?? null;
+	const name = tierNameOf(document, tier);
 	return name === null ? `Tier ${tier + 1}` : `Tier ${tier + 1} · ${name}`;
 }
 
 /** The word for a button or a file: the printed name, or `Tier 1` when there is none. */
 export function tierNameLabel(document: MarksheetDocument | null, tier: TierIndex): string {
-	return document?.tiers[tier]?.tierName ?? `Tier ${tier + 1}`;
+	return tierNameOf(document, tier) ?? `Tier ${tier + 1}`;
 }

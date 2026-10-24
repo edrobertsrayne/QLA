@@ -1,6 +1,6 @@
-// Who gets a report: not absent, every entry marked, no mark over the
-// maximum. Shared by the browser (Who gets one names the blocked students)
-// and, through the generation-input builder, the shape the server checks.
+// Who gets a report: not without a tier, not absent, every entry marked, no
+// mark over the maximum. Shared by the browser (Who gets one names the blocked
+// students) and, through the generation-input builder, the shape the server checks.
 //
 // A blocked student carries the reason in words the teacher acts on.
 

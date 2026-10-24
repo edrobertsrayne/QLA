@@ -8,7 +8,8 @@
 	import {
 		facilityPercent,
 		notScoredLabel,
-		type CommonQuestionAnalysis
+		type CommonQuestionAnalysis,
+		type EntryAnalysis
 	} from '$lib/marksheet/analysis.js';
 	import { cn } from '$lib/utils.js';
 	import { ANALYSIS_TICKS, BAND_TEXT } from './analysis-style.js';
@@ -27,6 +28,18 @@
 
 	let { rows, highlight = null, tier1Short, tier2Short }: Props = $props();
 
+	/**
+	 * What one side of a pair leaves out of its figure, in the words its tier
+	 * tab uses: why nothing is scored, and any mark above the available marks.
+	 * The row names it here because a comparison can hide one side's problem.
+	 */
+	function sideNote(side: EntryAnalysis, short: string): string | null {
+		const notes: string[] = [];
+		if (side.facility === null) notes.push(`${short} ${notScoredLabel(side)}`);
+		if (side.overMax > 0) notes.push(`${short} ${side.overMax} above max — not counted`);
+		return notes.length === 0 ? null : notes.join(' · ');
+	}
+
 	/** The pair containing the entry the view was opened at; Tier 1's id wins. */
 	const highlighted = $derived.by((): string | null => {
 		if (highlight === null) return null;
@@ -36,34 +49,44 @@
 	});
 </script>
 
-<div class="overflow-hidden rounded-lg border" data-testid="common-questions">
+<div
+	class="overflow-hidden rounded-lg border"
+	data-testid="common-questions"
+	role="table"
+	aria-label="Common questions"
+>
 	<div
 		class="grid grid-cols-[minmax(0,1fr)_minmax(8rem,1fr)_5.5rem] items-center gap-3 border-b px-3 py-1.5 text-xs text-muted-foreground"
+		role="row"
 	>
-		<span>{tier1Short} ↔ {tier2Short}</span>
-		<div class="relative h-4">
+		<span role="columnheader">{tier1Short} ↔ {tier2Short}</span>
+		<div class="relative h-4" role="columnheader">
+			<span class="sr-only">Facility</span>
 			{#each ANALYSIS_TICKS as tick (tick)}
 				<span class="absolute -translate-x-1/2 tabular-nums" style:left={`${tick}%`}>{tick}%</span>
 			{/each}
 		</div>
-		<span class="text-right">Gap</span>
+		<span class="text-right" role="columnheader">Gap</span>
 	</div>
 
 	{#each rows as row (row.pair.tier1EntryId)}
 		{@const current = row.tier1.entry.id === highlighted}
 		{@const marks = row.tier1.entry.marks}
+		{@const tier1Note = sideNote(row.tier1.analysis, tier1Short)}
+		{@const tier2Note = sideNote(row.tier2.analysis, tier2Short)}
 		<div
 			id={`analysis-pair-${row.tier1.entry.id}`}
 			data-testid="common-row"
 			data-tier1-entry-id={row.tier1.entry.id}
 			data-tier2-entry-id={row.tier2.entry.id}
 			data-highlighted={current ? 'true' : undefined}
+			role="row"
 			class={cn(
 				'scroll-mt-24 grid grid-cols-[minmax(0,1fr)_minmax(8rem,1fr)_5.5rem] items-center gap-3 border-b px-3 py-2 last:border-0',
 				current && 'outline-2 -outline-offset-2 outline-primary'
 			)}
 		>
-			<div class="min-w-0">
+			<div class="min-w-0" role="cell">
 				<div class="text-sm font-semibold tabular-nums">
 					{row.tier1.entry.label} ↔ {row.tier2.entry.label}
 					<span class="font-normal text-muted-foreground">
@@ -78,16 +101,28 @@
 					{row.tier1.analysis.coverage.marked}/{row.tier1.analysis.coverage.of} · {tier2Short}
 					{row.tier2.analysis.coverage.marked}/{row.tier2.analysis.coverage.of}
 				</div>
+				{#if tier1Note !== null}
+					<div class="text-[11px] text-muted-foreground" data-testid="common-note-tier1">
+						{tier1Note}
+					</div>
+				{/if}
+				{#if tier2Note !== null}
+					<div class="text-[11px] text-muted-foreground" data-testid="common-note-tier2">
+						{tier2Note}
+					</div>
+				{/if}
 			</div>
 
-			<AnalysisTrack
-				tier1={row.tier1.analysis}
-				tier2={row.tier2.analysis}
-				pooled={row.pooled.facility}
-				empty={notScoredLabel(row.tier1.analysis)}
-			/>
+			<div role="cell">
+				<AnalysisTrack
+					tier1={row.tier1.analysis}
+					tier2={row.tier2.analysis}
+					pooled={row.pooled.facility}
+					empty={notScoredLabel(row.tier1.analysis)}
+				/>
+			</div>
 
-			<div class="text-right tabular-nums">
+			<div class="text-right tabular-nums" role="cell">
 				<span class="font-semibold" data-testid="common-gap">
 					{row.gap === null ? '—' : row.gap > 0 ? `+${row.gap}` : String(row.gap)}
 				</span>

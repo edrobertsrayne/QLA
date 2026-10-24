@@ -19,6 +19,9 @@
 
 	let { id, label, file, error, needed, disabled, onpick }: Props = $props();
 
+	/** One id for whichever problem is showing: a screen reader reads it with the input. */
+	const problemId = $derived(`${id}-problem`);
+
 	function onchange(event: Event): void {
 		const input = event.currentTarget as HTMLInputElement;
 		onpick(input.files?.[0] ?? null);
@@ -32,6 +35,7 @@
 		type="file"
 		accept="application/pdf"
 		aria-invalid={error !== null || needed !== null}
+		aria-describedby={error !== null || needed !== null ? problemId : undefined}
 		{disabled}
 		{onchange}
 	/>
@@ -43,11 +47,11 @@
 		</p>
 	{/if}
 	{#if error}
-		<p class="flex items-center gap-1.5 text-sm text-destructive">
+		<p id={problemId} class="flex items-center gap-1.5 text-sm text-destructive">
 			<TriangleAlertIcon class="size-4 shrink-0" />{error}
 		</p>
 	{:else if needed}
-		<p class="flex items-center gap-1.5 text-sm text-destructive">
+		<p id={problemId} class="flex items-center gap-1.5 text-sm text-destructive">
 			<TriangleAlertIcon class="size-4 shrink-0" />{needed}
 		</p>
 	{/if}

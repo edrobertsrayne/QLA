@@ -24,7 +24,7 @@ describe('marks export', () => {
 		await page.getByRole('button', { name: 'Export marks to spreadsheet (.csv)' }).click();
 
 		// Named for the two files to be told apart in a Downloads folder.
-		expect(file.filename()).toBe('10x-ph1-class-marks.csv');
+		expect(file.filename()).toBe('10x-ph1-class-tier-1-marks.csv');
 		expect(await file.text()).toContain('Lovelace,Ada,,3,3');
 		expect(await file.text()).toContain('Hopper,Grace,Y,,0');
 		// A marks export cannot be restored from, so the backup stands exactly as

@@ -29,6 +29,7 @@ import {
 	applyPaste,
 	emptyPasteResult,
 	textGrid,
+	trimPasteGrid,
 	type PasteAnchor,
 	type PasteResult
 } from './paste.js';
@@ -85,11 +86,6 @@ export interface MarksheetStoreDeps {
 /** The surface the stored state allows. */
 export type BootRoute = '/' | '/breakdown' | '/marksheet';
 
-/** A new student on the tier they are placed on, or with no tier on a two-tier assessment. */
-function studentOnTier(name: StudentName, tier: TierIndex | null): StoredStudent {
-	return { ...newStudent(name, 0), tier };
-}
-
 export class MarksheetStore {
 	readonly #now: () => Date;
 	readonly #persistence: DocumentPersistence;
@@ -118,6 +114,12 @@ export class MarksheetStore {
 	 * a stale account beside a sheet that has moved on is worse than none.
 	 */
 	pasteNotice = $state<PasteResult | null>(null);
+	/**
+	 * Why a paste was refused outright, when there is nowhere to put it: a
+	 * class list with marks has to wait for a tier. Session-only, cleared by the
+	 * next change like the paste notice.
+	 */
+	pasteRefusal = $state<string | null>(null);
 	/**
 	 * Whether this session's one backup nudge toast has been shown. It is about
 	 * the document in hand, so a new document asks again; a reload starts over.
@@ -200,6 +202,11 @@ export class MarksheetStore {
 		return this.students.filter((student) => student.tier === null);
 	}
 
+	/** One tier's parse findings, the ones beside its own breakdown. */
+	warningsOf(tier: TierIndex): StoredWarning[] {
+		return this.document?.tiers[tier]?.breakdown.warnings ?? [];
+	}
+
 	/** The pair one entry belongs to, or null when it is not a common question. */
 	pairOf(tier: TierIndex, entryId: string): CommonQuestion | null {
 		return this.document ? pairOfEntry(this.document, tier, entryId) : null;
@@ -240,17 +247,25 @@ export class MarksheetStore {
 
 	/**
 	 * Name one tier as it is printed on its paper. Display data, so a confirmed
-	 * breakdown does not lock it; a blank name clears it.
+	 * breakdown does not lock it; a blank name clears it on a single tier. Two
+	 * tiers need distinct names: a blank or the other tier's name would make the
+	 * tabs untellable apart, which is the rule that blocks confirmation.
 	 */
 	setTierName(tier: TierIndex, name: string): void {
-		this.#commit((document) => {
-			const stored = document.tiers[tier];
-			if (stored === undefined) return null;
-			const trimmed = trimOrNull(name);
-			if (stored.tierName === trimmed) return null;
-			stored.tierName = trimmed;
-			return { kind: 'tier-name', name: trimmed };
-		});
+		const document = this.document;
+		if (!document) return;
+		const stored = document.tiers[tier];
+		if (stored === undefined) return;
+
+		const trimmed = trimOrNull(name);
+		if (stored.tierName === trimmed) return;
+		if (document.tiers.length === 2) {
+			if (trimmed === null) return;
+			const other = trimOrNull(document.tiers[tier === 0 ? 1 : 0]?.tierName ?? '');
+			if (other !== null && other.toLowerCase() === trimmed.toLowerCase()) return;
+		}
+		stored.tierName = trimmed;
+		this.#mutated();
 	}
 
 	/** Edit a breakdown entry's label: display only, so no marks move. */
@@ -508,7 +523,7 @@ export class MarksheetStore {
 		const document = this.document;
 		if (!document) return null;
 
-		const student = studentOnTier(name, document.tiers.length === 1 ? 0 : null);
+		const student = newStudent(name, document.tiers.length === 1 ? 0 : null);
 		document.students.push(student);
 		this.#mutated();
 		return student.id;
@@ -551,17 +566,17 @@ export class MarksheetStore {
 	 * A tier the assessment does not have, or no tier on a single-tier
 	 * assessment, is refused: no document is ever left in an unreadable shape.
 	 */
-	setStudentTier(studentId: string, tier: TierIndex | null): void {
+	setStudentTier(studentId: string, tier: TierIndex | null): boolean {
 		const document = this.document;
-		if (!document) return;
-		if (tier !== null && document.tiers[tier] === undefined) return;
-		if (tier === null && document.tiers.length === 1) return;
+		if (!document) return false;
+		if (tier !== null && document.tiers[tier] === undefined) return false;
+		if (tier === null && document.tiers.length === 1) return false;
 
-		this.#commit((commitDocument) => {
+		return this.#commit((commitDocument) => {
 			const student = commitDocument.students.find((candidate) => candidate.id === studentId);
 			if (student === undefined || student.tier === tier) return null;
 			student.tier = tier;
-			return { kind: 'student-tier', name: studentName(student) };
+			return { kind: 'student-tier', name: studentName(student), to: tier };
 		});
 	}
 
@@ -587,7 +602,8 @@ export class MarksheetStore {
 			if (moved === 0) return null;
 			return {
 				kind: 'student-tier',
-				name: moved === 1 && movedName !== null ? movedName : `${moved} students`
+				name: moved === 1 && movedName !== null ? movedName : `${moved} students`,
+				to: tier
 			};
 		});
 	}
@@ -622,13 +638,24 @@ export class MarksheetStore {
 	 * copied from a spreadsheet with marks beside the names (tab-separated) is a
 	 * block anchored in the name column, so one copy builds the class and its marks.
 	 * A tier of null is the resting place for a new student: tier 0 on a single
-	 * tier, no tier on two, where the teacher places them afterward.
+	 * tier, no tier on two, where the teacher places them afterward. Marks have
+	 * nowhere to go without a tier, so a block carrying them is refused whole
+	 * and nothing is added.
 	 */
 	pasteNames(names: string, tier: TierIndex | null): number {
 		const document = this.document;
 		if (!document) return 0;
 		const target = tier ?? (document.tiers.length === 1 ? 0 : null);
-		if (target === null) return this.#addNamesWithoutTier(textGrid(names));
+		if (target === null) {
+			const rows = trimPasteGrid(textGrid(names));
+			if (rows.some((row) => row.length > 1)) {
+				this.pasteNotice = null;
+				this.pasteRefusal =
+					'Nothing was pasted: marks need a tier. Put the class on a tier first, then paste them again.';
+				return 0;
+			}
+			return this.#addNamesWithoutTier(rows);
+		}
 		if (document.tiers[target] === undefined) return 0;
 		return this.pasteMarks(textGrid(names), { kind: 'names', studentId: null }, target)
 			.studentsAdded;
@@ -636,12 +663,13 @@ export class MarksheetStore {
 
 	/** Add a pasted class list with no marks: students on no tier, for the teacher to place. */
 	#addNamesWithoutTier(rows: readonly (readonly string[])[]): number {
+		this.pasteRefusal = null;
 		let result = emptyPasteResult();
 		this.#commit((document) => {
 			for (const row of rows) {
 				const name = readName(row[0] ?? '');
 				if (name === null) continue;
-				document.students.push(studentOnTier(name, null));
+				document.students.push(newStudent(name, null));
 				result = {
 					...result,
 					changed: true,
@@ -669,7 +697,7 @@ export class MarksheetStore {
 		let result = emptyPasteResult();
 		this.#commit((commitDocument) => {
 			const { added, skipped } = newNames(commitDocument.students, names);
-			commitDocument.students.push(...added.map((name) => studentOnTier(name, target)));
+			commitDocument.students.push(...added.map((name) => newStudent(name, target)));
 			result = {
 				...result,
 				changed: added.length > 0,
@@ -719,6 +747,7 @@ export class MarksheetStore {
 	): PasteResult {
 		const document = this.document;
 		if (!document || document.tiers[tier] === undefined) return emptyPasteResult();
+		this.pasteRefusal = null;
 
 		// The snapshot is taken before the first cell lands: undo puts back the
 		// document exactly as the teacher had it, added students included.
@@ -975,6 +1004,7 @@ export class MarksheetStore {
 		this.document = document;
 		this.undoable = null;
 		this.pasteNotice = null;
+		this.pasteRefusal = null;
 		this.unreadable = null;
 		this.runUsage = null;
 		this.matchNotice = null;
@@ -1014,6 +1044,7 @@ export class MarksheetStore {
 		// with it the account of the paste the undo was offering.
 		this.undoable = null;
 		this.pasteNotice = null;
+		this.pasteRefusal = null;
 		const at = this.#now().toISOString();
 		document.updatedAt = at;
 		// The first change after a backup starts the clock on what a backup would

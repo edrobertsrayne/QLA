@@ -176,13 +176,13 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		if (paperFile) {
 			paperBytes = await readBytes(paperFile);
-			// pdf.js detaches the buffer it reads; count a copy so extraction still has one.
-			paperPages = await countPages(paperBytes.slice());
+			// countPdfPages copies its input, so paperBytes stays whole for extraction.
+			paperPages = await countPages(paperBytes);
 			totalPages += paperPages;
 		}
 		if (markschemeFile) {
 			markschemeBytes = await readBytes(markschemeFile);
-			markschemePages = await countPages(markschemeBytes.slice());
+			markschemePages = await countPages(markschemeBytes);
 			totalPages += markschemePages;
 		}
 	} catch {

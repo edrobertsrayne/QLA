@@ -12,8 +12,12 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null;
 }
 
-/** Type-guard for a structurally complete breakdown (questions and AO descriptions present; warnings may still apply). */
+/** Type-guard for a structurally complete breakdown (tier name, questions and AO descriptions present; warnings may still apply). */
 export function isBreakdown(value: unknown): value is Breakdown {
 	if (!isRecord(value)) return false;
-	return Array.isArray(value['questions']) && Array.isArray(value['aoDescriptions']);
+	return (
+		(value['tierName'] === null || typeof value['tierName'] === 'string') &&
+		Array.isArray(value['questions']) &&
+		Array.isArray(value['aoDescriptions'])
+	);
 }

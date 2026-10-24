@@ -328,6 +328,28 @@ describe('assessmentBlockers', () => {
 
 		expect(assessmentBlockers(document).unequalPairs).toHaveLength(1);
 	});
+
+	it('names a pair whose Tier 1 available marks are not known yet', () => {
+		const document = twoTier({
+			tiers: [
+				tier({
+					tierName: 'Higher',
+					breakdown: {
+						entries: [entry('entry-1', '2bii', '2', { marks: null })],
+						warnings: []
+					}
+				}),
+				tier({
+					tierName: 'Foundation',
+					breakdown: { entries: [entry('entry-2', '2bii', '2')], warnings: [] }
+				})
+			]
+		});
+
+		expect(assessmentBlockers(document).unequalPairs).toEqual([
+			{ tier1EntryId: 'entry-1', tier2EntryId: 'entry-2' }
+		]);
+	});
 });
 
 describe('needsAttention', () => {

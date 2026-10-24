@@ -436,6 +436,8 @@ describe('two-tier boundaries', () => {
 		await page.getByTestId('tier-name-save').click();
 
 		expect(marksheetStore().document?.tiers[0].tierName).toBe('Higher Tier');
+		// A printed name is display data: there is no rename to take back.
+		expect(marksheetStore().undoable).toBeNull();
 		await expect
 			.element(page.getByRole('dialog').getByText('Grade boundaries · Tier 1 · Higher Tier'))
 			.toBeInTheDocument();

@@ -86,12 +86,15 @@ export function parseVersion2Document(
 	if (typeof createdAt !== 'string' || typeof updatedAt !== 'string') return null;
 	if (!isStringOrNull(breakdownConfirmedAt) || !isStringOrNull(lastExportedAt)) return null;
 
-	// A flat version 3 recorded this itself. Version 2 kept no such field: it
-	// was unbacked exactly while its last write was later than its last backup,
-	// and the last write is the one moment it can name for that change.
+	// A flat version 3 recorded this itself, and a value of the wrong shape is
+	// unreadable. A flat version 3 missing it was written before the field
+	// existed, like version 2. Version 2 kept no such field: it was unbacked
+	// exactly while its last write was later than its last backup, and the last
+	// write is the one moment it can name for that change.
 	let firstUnbackedChangeAt: string | null;
 	const storedFirstUnbacked = value['firstUnbackedChangeAt'];
-	if (schemaVersion === 3 && isStringOrNull(storedFirstUnbacked)) {
+	if (schemaVersion === 3 && storedFirstUnbacked !== undefined) {
+		if (!isStringOrNull(storedFirstUnbacked)) return null;
 		firstUnbackedChangeAt = storedFirstUnbacked;
 	} else if (lastExportedAt === null) {
 		firstUnbackedChangeAt = null;

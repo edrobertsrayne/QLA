@@ -67,8 +67,8 @@ export function newNames(
 	return { added, skipped: uploaded.length - added.length };
 }
 
-/** A new student on this device, unmarked, present, and on the tier they sit. */
-export function newStudent(name: StudentName, tier: TierIndex): StoredStudent {
+/** A new student on this device, unmarked, present, and on the tier they sit — or waiting for one. */
+export function newStudent(name: StudentName, tier: TierIndex | null): StoredStudent {
 	return { id: localId(), firstName: name.firstName, surname: name.surname, absent: false, tier };
 }
 

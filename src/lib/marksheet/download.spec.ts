@@ -4,6 +4,7 @@ import type { MarksheetDocument } from './document.js';
 import { confirmed, entry, student, tier } from './fixtures.spec-helpers.js';
 import {
 	analysisCsvFile,
+	analysisPdfFilename,
 	backupFile,
 	commonQuestionsCsvFile,
 	corruptFile,
@@ -108,14 +109,9 @@ describe('marksCsvFile', () => {
 		expect(file.type).toBe('text/csv');
 	});
 
-	it('names itself by assessment and class, with the tier’s name when it has one', () => {
+	it('names itself by assessment, class and tier, using the tier’s position when it has no name', () => {
 		expect(marksCsvFile(marksForSpreadsheet(), 0).filename).toBe('10x-ph1-10c1-higher-marks.csv');
-	});
-
-	it('leaves the tier out of the name when the tier has none', () => {
-		const document = marksheet();
-
-		expect(marksCsvFile(document, 0).filename).toBe('10x-ph1-10c1-marks.csv');
+		expect(marksCsvFile(marksheet(), 0).filename).toBe('10x-ph1-10c1-tier-1-marks.csv');
 	});
 
 	it('falls back for an assessment or a class the teacher never named', () => {
@@ -356,11 +352,20 @@ describe('analysisCsvFile', () => {
 		expect(rows.slice(1).map((row) => row[0])).toEqual(['8a']);
 	});
 
-	it('is named by assessment and day', () => {
+	it('is named by assessment, tier and day', () => {
 		const file = analysisCsvFile(analysed(), 0, NOW);
 
-		expect(file.filename).toBe('qla-analysis-10x-ph1-2026-01-01.csv');
+		expect(file.filename).toBe('qla-analysis-10x-ph1-higher-2026-01-01.csv');
 		expect(file.type).toBe('text/csv');
+	});
+
+	it('names a tier with no printed name by its position, so two tiers never collide', () => {
+		const document = analysed();
+		document.tiers[0].tierName = null;
+
+		expect(analysisCsvFile(document, 0, NOW).filename).toBe(
+			'qla-analysis-10x-ph1-tier-1-2026-01-01.csv'
+		);
 	});
 });
 
@@ -437,13 +442,16 @@ describe('commonQuestionsCsvFile', () => {
 
 	it('keeps a formula-looking cell as text for the spreadsheet', () => {
 		const document = paired();
-		document.tiers[0].breakdown.entries[0].summary = '=1+1';
+		document.tiers[0].breakdown.entries[0].summary = '=SUM(A1,B1)';
 		document.tiers[0].tierName = '=cmd';
 
 		const text = commonQuestionsCsvFile(document, NOW).text;
+		const [header, row] = parseCsv(text);
 
-		expect(text).toContain("'=cmd question");
-		expect(text).toContain("'=1+1");
+		expect(header?.[0]).toBe("'=cmd question");
+		expect(row?.[2]).toBe("'=SUM(A1,B1)");
+		// The apostrophe comes before the quotes the comma forces.
+		expect(text).toContain(`"'=SUM(A1,B1)"`);
 	});
 
 	it('writes one row per pair with both tiers’ figures, the pooled figure and the gap', () => {
@@ -565,8 +573,11 @@ describe('PDF filenames', () => {
 		expect(exportFilename('reports', document, NOW, 'zip')).toBe(
 			'qla-reports-10x-ph1-2026-01-01.zip'
 		);
-		expect(exportFilename('analysis', document, NOW, 'pdf')).toBe(
-			'qla-analysis-10x-ph1-2026-01-01.pdf'
+		expect(analysisPdfFilename(document, 0, NOW)).toBe(
+			'qla-analysis-10x-ph1-tier-1-2026-01-01.pdf'
+		);
+		expect(analysisPdfFilename(document, 'common', NOW)).toBe(
+			'qla-common-questions-10x-ph1-2026-01-01.pdf'
 		);
 	});
 });

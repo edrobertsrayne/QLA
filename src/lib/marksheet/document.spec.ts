@@ -9,11 +9,10 @@ import {
 	entriesOfStudent,
 	entryTierOf,
 	entryValuesOf,
-	isCountedMark,
-	markCount,
 	marksOnEntry,
 	parseStoredDocument,
 	partnerIdOf,
+	storedMarkCount,
 	studentTierName,
 	studentTotal,
 	tierEntries,
@@ -436,6 +435,15 @@ describe('reading an unknown version', () => {
 			expect(parseStoredDocument(JSON.stringify(document))).toBeNull();
 		}
 	});
+
+	it('treats a flat document of an unknown version as unreadable', () => {
+		for (const schemaVersion of [1, 4]) {
+			const written = writtenAsV2(confirmed());
+			written.schemaVersion = schemaVersion;
+
+			expect(parseStoredDocument(JSON.stringify(written))).toBeNull();
+		}
+	});
 });
 
 describe('reading changes since the last backup', () => {
@@ -508,6 +516,14 @@ describe('reading changes since the last backup', () => {
 		written.firstUnbackedChangeAt = 3;
 
 		expect(parseStoredDocument(JSON.stringify(written))).toBeNull();
+
+		// A flat version 3 recorded the field itself: a wrong shape there is not
+		// read as "missing" and derived over.
+		const flat = writtenAsV2(confirmed());
+		flat.schemaVersion = 3;
+		flat.firstUnbackedChangeAt = 3;
+
+		expect(parseStoredDocument(JSON.stringify(flat))).toBeNull();
 	});
 
 	it('treats a current document with no unbacked-change field as unreadable', () => {
@@ -654,37 +670,37 @@ describe('dropping what no longer exists', () => {
 	});
 });
 
-describe('counting marks', () => {
-	it('counts only a student’s marks on the tier they sit', () => {
+describe('counting stored marks', () => {
+	it('counts a mark on either tier, whether or not the student sits it', () => {
 		const document = read(
 			twoTier({
 				students: [
 					student('on-tier-1', 'Ada', 'Lovelace', false, 0),
-					student('on-tier-2', 'Alan', 'Turing', false, 1)
+					student('no-tier', 'Alan', 'Turing', false, null)
 				],
 				marks: {
-					'on-tier-1': { 'tier-1-entry': 3, 'tier-2-entry': 2, 'entry-gone': 1 },
-					'on-tier-2': { 'tier-1-entry': 1, 'tier-2-entry': 4 },
-					'student-gone': { 'tier-1-entry': 1 }
+					'on-tier-1': { 'tier-1-entry': 3, 'tier-2-entry': 2 },
+					'no-tier': { 'tier-2-entry': 4 }
 				}
 			})
 		);
 
-		expect(markCount(document)).toBe(2);
+		// The off-tier mark and the tierless student's mark are both stored work.
+		expect(storedMarkCount(document)).toBe(3);
 	});
 
-	it('counts every mark of a student with no tier', () => {
+	it('leaves out a mark whose entry no tier holds', () => {
 		const document = read(
 			twoTier({
-				students: [student('no-tier', 'Ada', 'Lovelace', false, null)],
-				marks: { 'no-tier': { 'tier-1-entry': 3, 'tier-2-entry': 2 } }
+				students: [student('student-1', 'Ada', 'Lovelace', false, 0)],
+				marks: { 'student-1': { 'tier-1-entry': 3, 'entry-gone': 1 } }
 			})
 		);
 
-		expect(markCount(document)).toBe(2);
+		expect(storedMarkCount(document)).toBe(1);
 	});
 
-	it('counts every mark on an entry, including marks on the other tier', () => {
+	it('counts every mark on one entry, including marks on the other tier', () => {
 		const document = read(
 			twoTier({
 				students: [
@@ -774,19 +790,6 @@ describe('document helpers', () => {
 		expect(entriesOfStudent(document, document.students[1])).toEqual([]);
 	});
 
-	it('counts a mark as counted only on the student’s own tier', () => {
-		const document = twoTier({
-			students: [
-				student('on-tier-1', 'Ada', 'Lovelace', false, 0),
-				student('no-tier', 'Alan', 'Turing', false, null)
-			]
-		});
-
-		expect(isCountedMark(document, document.students[0], 'tier-1-entry')).toBe(true);
-		expect(isCountedMark(document, document.students[0], 'tier-2-entry')).toBe(false);
-		expect(isCountedMark(document, document.students[1], 'tier-1-entry')).toBe(false);
-	});
-
 	it('totals a student’s own tier only, and nothing without a tier', () => {
 		const document = twoTier({
 			students: [
@@ -815,10 +818,13 @@ describe('document helpers', () => {
 		expect(studentTierName(document, document.students[1])).toBeNull();
 	});
 
-	it('reads a stored blank tier name as none, so the report header adds no separator', () => {
+	it('reads a stored blank tier name back and gives the report header no separator', () => {
 		const document = twoTier({ students: [student('on-tier-1', 'Ada', 'Lovelace', false, 0)] });
 		document.tiers[0].tierName = '   ';
 
-		expect(studentTierName(document, document.students[0])).toBeNull();
+		const reread = read(document);
+
+		expect(reread.tiers[0].tierName).toBe('   ');
+		expect(studentTierName(reread, reread.students[0])).toBeNull();
 	});
 });

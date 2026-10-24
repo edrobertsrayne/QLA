@@ -1,7 +1,8 @@
 <!--
-	The run dialog: one step per call, no close control, and every way out is
-	inside. A parse failure keeps the other tier's result; a replaceable file
-	closes the dialog on its tab; only a finished run offers Open breakdown.
+	The run dialog: one step per call. A parse failure keeps the other tier's
+	result; a replaceable file closes the dialog on its tab; a stopped run can
+	be retried or abandoned back to the form (keeping the files and unlocking
+	the options); only a finished run offers Open breakdown.
 -->
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -13,6 +14,7 @@
 	import XCircleIcon from '@lucide/svelte/icons/circle-x';
 	import MinusCircleIcon from '@lucide/svelte/icons/circle-minus';
 	import type { Snippet } from 'svelte';
+	import { count } from '$lib/prose.js';
 	import { isFileProblem, type StepError, type UploadRun } from './run.svelte.js';
 
 	interface Props {
@@ -26,6 +28,7 @@
 	let { run, open, onReplaceFile, onBackToUpload, onOpenBreakdown }: Props = $props();
 
 	const busy = $derived(run.phase === 'running');
+	const retryIndex = $derived(run.retryIndex);
 
 	type StepState = 'idle' | 'running' | 'done' | 'failed' | 'skipped';
 </script>
@@ -64,11 +67,16 @@
 	</li>
 {/snippet}
 
-<Dialog.Root {open}>
+<Dialog.Root
+	{open}
+	onOpenChange={(next) => {
+		if (!next) onBackToUpload();
+	}}
+>
 	<Dialog.Content
 		showCloseButton={false}
-		interactOutsideBehavior="ignore"
-		escapeKeydownBehavior="ignore"
+		interactOutsideBehavior={run.phase === 'stopped' ? 'close' : 'ignore'}
+		escapeKeydownBehavior={run.phase === 'stopped' ? 'close' : 'ignore'}
 	>
 		<Dialog.Header>
 			<Dialog.Title>
@@ -92,62 +100,66 @@
 		{#if run.fatal}
 			<FatalAlert fatal={run.fatal} retryable={false} />
 		{:else}
-			<ol class="space-y-4">
-				{#each run.tiers as tier, index (tier)}
-					{#snippet retryAction()}
-						<Button size="sm" variant="outline" onclick={() => void run.retryTier(index)}>
-							Retry
-						</Button>
-					{/snippet}
-					{#snippet replaceAction()}
-						<Button size="sm" variant="outline" onclick={() => onReplaceFile(index)}>
-							Replace Tier {index + 1}'s file
-						</Button>
-					{/snippet}
-					{@render step(
-						run.twoTiers ? `Parse Tier ${index + 1}` : 'Parse',
-						tier.parse,
-						tier.parse === 'done'
-							? `${tier.tierName ?? 'No tier printed'} · ${tier.entryCount ?? 0} entries`
-							: null,
-						tier.parse === 'failed' ? tier.error : null,
-						tier.parse === 'failed' && tier.error !== null
-							? isFileProblem(tier.error)
-								? replaceAction
-								: tier.error.retryable
-									? retryAction
-									: null
-							: null
-					)}
-				{/each}
-				{#if run.twoTiers}
-					{#snippet matchActions()}
-						<div class="flex flex-wrap gap-2">
-							<Button size="sm" onclick={() => void run.tryMatchAgain()}>Try again</Button>
-							<Button size="sm" variant="outline" onclick={() => run.continueWithoutPairs()}>
-								Continue without proposed pairs
+			<!-- Step changes are progress: announce them without stealing focus. -->
+			<div aria-live="polite">
+				<ol class="space-y-4">
+					{#each run.tiers as tier, index (tier)}
+						{#snippet replaceAction()}
+							<Button size="sm" variant="outline" onclick={() => onReplaceFile(index)}>
+								Replace Tier {index + 1}'s file
 							</Button>
-						</div>
-					{/snippet}
-					{@render step(
-						'Find common questions',
-						run.match,
-						run.match === 'done'
-							? `${run.pairs ?? 0} pairs proposed`
-							: run.match === 'skipped'
-								? 'Skipped: pair them by hand at review'
-								: run.notice !== null
-									? 'None proposed: pair them by hand at review'
-									: null,
-						run.match === 'failed' ? run.matchError : null,
-						run.phase === 'stopped' && run.match === 'failed' ? matchActions : null
-					)}
-				{/if}
-			</ol>
+						{/snippet}
+						{@render step(
+							run.twoTiers ? `Parse Tier ${index + 1}` : 'Parse',
+							tier.parse,
+							tier.parse === 'done'
+								? `${tier.tierName ?? 'No tier printed'} · ${count(tier.entryCount ?? 0, 'entry', 'entries')}`
+								: null,
+							tier.parse === 'failed' ? tier.error : null,
+							tier.parse === 'failed' && tier.error !== null && isFileProblem(tier.error)
+								? replaceAction
+								: null
+						)}
+					{/each}
+					{#if run.twoTiers}
+						{#snippet matchActions()}
+							<div class="flex flex-wrap gap-2">
+								<Button size="sm" onclick={() => void run.tryMatchAgain()}>Try again</Button>
+								<Button size="sm" variant="outline" onclick={() => run.continueWithoutPairs()}>
+									Continue without proposed pairs
+								</Button>
+							</div>
+						{/snippet}
+						{@render step(
+							'Find common questions',
+							run.match,
+							run.match === 'done'
+								? `${count(run.pairs ?? 0, 'pair')} proposed`
+								: run.match === 'skipped'
+									? 'Skipped: pair them by hand at review'
+									: run.notice !== null
+										? 'None proposed: pair them by hand at review'
+										: null,
+							run.match === 'failed' ? run.matchError : null,
+							run.phase === 'stopped' && run.match === 'failed' ? matchActions : null
+						)}
+					{/if}
+				</ol>
+			</div>
 		{/if}
 
 		{#if run.fatal}
 			<Dialog.Footer>
+				<Button variant="outline" onclick={onBackToUpload}>Back to upload</Button>
+			</Dialog.Footer>
+		{:else if run.phase === 'stopped'}
+			<Dialog.Footer>
+				{#if retryIndex !== null && run.canRetry(retryIndex)}
+					{@const index = retryIndex}
+					<Button onclick={() => void run.retryTier(index)}>
+						{run.twoTiers ? `Retry Tier ${index + 1}` : 'Retry'}
+					</Button>
+				{/if}
 				<Button variant="outline" onclick={onBackToUpload}>Back to upload</Button>
 			</Dialog.Footer>
 		{:else if run.phase === 'done'}

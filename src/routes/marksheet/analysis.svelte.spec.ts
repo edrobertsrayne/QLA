@@ -70,12 +70,16 @@ describe('analysis', () => {
 		await expect
 			.element(page.getByRole('heading', { name: 'Amber — 40% to below 70%' }))
 			.toBeInTheDocument();
-		expect(screen.container.querySelector('[data-entry-id="entry-green"]')).toBeNull();
+		// Green is folded: its row stays in the page for print, hidden on screen.
+		expect(tierRow(screen.container, 'entry-green').checkVisibility()).toBe(false);
 		expect(figureText(tierRow(screen.container, 'entry-unmarked'), 'facility')).toBe(
 			'Not marked yet'
 		);
 
 		await page.getByRole('button', { name: 'Green — 70% and above' }).click();
+		await vi.waitFor(() =>
+			expect(tierRow(screen.container, 'entry-green').checkVisibility()).toBe(true)
+		);
 		await vi.waitFor(() =>
 			expect(figureText(tierRow(screen.container, 'entry-green'), 'facility')).toBe('90%')
 		);
@@ -129,6 +133,31 @@ describe('analysis', () => {
 		expect(trackValue(foundation, 'pooled')).toBe('60');
 		expect(screen.container.querySelector('[data-entry-id="e-a"]')).toBeNull();
 		expect(figureText(tierRow(screen.container, 'f-d'), 'facility')).toBe('Not marked yet');
+	});
+
+	it('stays on the tab clicked twice, and keys every track by tier, not by the open tab', async () => {
+		seedTwoTierAnalysis();
+		const screen = openAnalysisAt();
+
+		const legend = screen.container.querySelector('[data-testid="track-legend"]');
+		const keys = [...(legend?.querySelectorAll<HTMLElement>('[data-testid="legend-tier"]') ?? [])];
+		expect(keys.map((key) => key.dataset.tier)).toEqual(['0', '1']);
+		// Filled is always Tier 1's figure; hollow always Tier 2's.
+		expect(keys[0].textContent).toContain('Higher');
+		expect(keys[1].textContent).toContain('Foundation');
+		expect(keys[0].classList.contains('opacity-40')).toBe(false);
+		expect(keys[1].classList.contains('opacity-40')).toBe(true);
+
+		await page.getByRole('radio', { name: 'Tier 2 · Foundation' }).click();
+		await vi.waitFor(() => expect(tierRow(screen.container, 'f-a').checkVisibility()).toBe(true));
+		await vi.waitFor(() => expect(keys[0].classList.contains('opacity-40')).toBe(true));
+		expect(keys[1].classList.contains('opacity-40')).toBe(false);
+
+		// Re-clicking the open tab reports no value; it must stay open rather than fall back.
+		await page.getByRole('radio', { name: 'Tier 2 · Foundation' }).click();
+		await expect.element(page.getByRole('radio', { name: 'Tier 2 · Foundation' })).toBeChecked();
+		expect(tierRow(screen.container, 'f-a').checkVisibility()).toBe(true);
+		expect(screen.container.querySelector('[data-entry-id="e-a"]')).toBeNull();
 	});
 
 	it('keeps the band sections on a tier tab, worst first within each, with the band in every heading', async () => {
@@ -186,6 +215,84 @@ describe('analysis', () => {
 		expect(trackValue(oneSided, 'tier1')).toBe('40');
 		expect(trackValue(oneSided, 'tier2')).toBe('');
 		expect(trackValue(oneSided, 'pooled')).toBe('');
+		expect(figureText(oneSided, 'common-note-tier2')).toBe('F Not marked yet');
+		expect(oneSided.querySelector('[data-testid="common-note-tier1"]')).toBeNull();
+	});
+
+	it('names what one side of a pair leaves out of its figure', async () => {
+		const document = twoTierAnalysisDocument();
+		// Flo's only mark on 8d is above its available marks: marked, but nothing counted.
+		document.marks.f1 = { 'f-a': 5, 'f-b': 8, 'f-c': 5, 'e-a': 10, 'f-d': 11 };
+		seed(document);
+		const screen = openAnalysisAt('?tier=common');
+
+		const pair = commonRow(screen.container, 'e-d');
+		expect(figureText(pair, 'common-coverage')).toBe('H 2/2 · F 1/2');
+		expect(figureText(pair, 'common-note-tier2')).toBe(
+			'F No mark within the available marks · F 1 above max — not counted'
+		);
+		expect(pair.querySelector('[data-testid="common-note-tier1"]')).toBeNull();
+	});
+
+	it('says when students without a tier are left out of the common facts', async () => {
+		const document = twoTierAnalysisDocument();
+		document.students.push(student('u1', 'Una', 'Tierless', false, null));
+		seed(document);
+		openAnalysisAt('?tier=common');
+
+		await expect
+			.element(page.getByTestId('analysis-view'))
+			.toHaveTextContent('1 student without a tier excluded');
+	});
+
+	it('falls back to T1 and T2 when two tier names share an initial', async () => {
+		const document = twoTierAnalysisDocument();
+		document.tiers[0].tierName = 'Higher';
+		document.tiers[1].tierName = 'Higher Prep';
+		seed(document);
+		const screen = openAnalysisAt('?tier=common');
+
+		await expect.element(page.getByRole('columnheader', { name: 'T1 ↔ T2' })).toBeInTheDocument();
+		expect(
+			screen.container
+				.querySelector('[data-testid="common-coverage"]')
+				?.textContent?.replace(/\s+/g, ' ')
+				.trim()
+		).toContain('T1 2/2 · T2 2/2');
+	});
+
+	it('draws the gap line between the whole percentages its labels show', async () => {
+		const document = twoTierAnalysisDocument();
+		// 5/13 = 38.46% and 3/8 = 37.5% both label 38%, so the line has no length.
+		document.tiers[0].breakdown.entries = [entry('e-a', '1a', '1', { marks: 13 })];
+		document.tiers[1].breakdown.entries = [entry('f-a', '8a', '8', { marks: 8 })];
+		document.commonQuestions = [{ tier1EntryId: 'e-a', tier2EntryId: 'f-a' }];
+		document.students = [
+			student('h1', 'Ada', 'Lovelace', false, 0),
+			student('f1', 'Flo', 'Found', false, 1)
+		];
+		document.marks = { h1: { 'e-a': 5 }, f1: { 'f-a': 3 } };
+		seed(document);
+		const screen = openAnalysisAt('?tier=common');
+
+		const row = commonRow(screen.container, 'e-a');
+		const gap = row.querySelector<HTMLElement>('[data-testid="track-gap"]');
+		expect(gap?.style.left).toBe('38%');
+		expect(gap?.style.width).toBe('0%');
+	});
+
+	it('keeps the open tier and sort selected when they are clicked again', async () => {
+		seedTwoTierAnalysis();
+		openAnalysisAt('?tier=common');
+
+		const common = page.getByRole('radio', { name: /Common questions/ });
+		await expect.element(common).toHaveAttribute('aria-checked', 'true');
+		await common.click();
+		await expect.element(common).toHaveAttribute('aria-checked', 'true');
+
+		const sort = page.getByRole('radio', { name: 'Biggest gap' });
+		await sort.click();
+		await expect.element(sort).toHaveAttribute('aria-checked', 'true');
 	});
 
 	it('sorts the common questions by biggest gap, then by pooled and paper order', async () => {
@@ -197,6 +304,13 @@ describe('analysis', () => {
 		);
 
 		await page.getByRole('radio', { name: 'Pooled, worst first' }).click();
+		await vi.waitFor(() =>
+			expect(commonOrder(screen.container)).toEqual(['e-b', 'e-c', 'e-a', 'e-d'])
+		);
+
+		// Re-clicking the chosen sort keeps it: the order must not quietly fall back.
+		await page.getByRole('radio', { name: 'Pooled, worst first' }).click();
+		await expect.element(page.getByRole('radio', { name: 'Pooled, worst first' })).toBeChecked();
 		await vi.waitFor(() =>
 			expect(commonOrder(screen.container)).toEqual(['e-b', 'e-c', 'e-a', 'e-d'])
 		);

@@ -22,7 +22,7 @@ function pasteSheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocume
 	});
 }
 
-/** Two tiers: two Higher entries and one Foundation entry, with a Foundation student. */
+/** Two tiers: two Higher entries and one Foundation entry, with a Higher student. */
 function tieredSheet(overrides: Partial<MarksheetDocument> = {}): MarksheetDocument {
 	return confirmed({
 		tiers: [
@@ -243,6 +243,21 @@ describe('applying a block', () => {
 			'student-1': { h1: 3, h2: 2 },
 			'student-2': { h1: 1, h2: 4 }
 		});
+	});
+
+	it('does nothing when the assessment has no such tier', () => {
+		const document = pasteSheet();
+
+		const result = applyPaste(
+			document,
+			[['Lovelace, Ada', '3']],
+			{ kind: 'names', studentId: null },
+			1
+		);
+
+		expect(result).toEqual(emptyPasteResult());
+		expect(document.students).toHaveLength(2);
+		expect(document.marks).toEqual({});
 	});
 
 	it('gives a student added on a tier that tier', () => {

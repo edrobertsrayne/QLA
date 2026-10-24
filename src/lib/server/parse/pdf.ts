@@ -14,6 +14,7 @@
 // `research/pdf-ingestion`, throwaway, not merged).
 
 import { extractText, getDocumentProxy } from 'unpdf';
+import type { PDFDocumentProxy } from 'unpdf/pdfjs';
 import { fenceDocuments } from '../fence';
 import { AO_DESCRIPTION_TARGET_WORDS, type ParseWarning } from './schema';
 import { getServerEnv } from './env';
@@ -59,7 +60,6 @@ export function supportsNativePdf(modelId: string): boolean {
 
 /** Deterministic text extraction of one PDF. */
 export interface ParsedPdf {
-	pageCount: number;
 	textPerPage: string[];
 	textWithMarkers: string;
 }
@@ -68,17 +68,24 @@ export interface ParsedPdf {
  * Count a PDF's pages without extracting their text. The page ceiling can then
  * be enforced before the work of reading every page. Throws on unreadable
  * input — the route maps that to a 400 before any model call.
+ *
+ * Loads a copy: pdf.js detaches the buffer it parses, and the document is
+ * destroyed before returning, so the caller's bytes stay attached and no
+ * parsed document outlives the call.
  */
 export async function countPdfPages(bytes: Uint8Array): Promise<number> {
+	let pdf: PDFDocumentProxy | null = null;
 	let pageCount: number;
 	try {
-		const pdf = await getDocumentProxy(bytes);
+		pdf = await getDocumentProxy(new Uint8Array(bytes));
 		pageCount = pdf.numPages;
 	} catch (error) {
 		throw new Error(
 			`PDF could not be read: ${error instanceof Error ? error.message : String(error)}`,
 			{ cause: error }
 		);
+	} finally {
+		if (pdf !== null) await pdf.loadingTask.destroy();
 	}
 	if (!Number.isInteger(pageCount) || pageCount < 1) {
 		throw new Error('PDF could not be read: no pages found.');
@@ -115,7 +122,7 @@ export async function parsePdfBytes(bytes: Uint8Array): Promise<ParsedPdf> {
 	const textWithMarkers = textPerPage
 		.map((pageText, index) => `[p.${index + 1}]\n${pageText.trim()}`)
 		.join('\n\n');
-	return { pageCount: totalPages, textPerPage, textWithMarkers };
+	return { textPerPage, textWithMarkers };
 }
 
 /** Visible warning for the text-only degradation path (HTTP 200, breakdown intact). */

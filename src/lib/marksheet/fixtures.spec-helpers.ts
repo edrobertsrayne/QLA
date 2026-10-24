@@ -93,7 +93,12 @@ export function parsed(overrides: Partial<MarksheetDocument> = {}): MarksheetDoc
 
 /** A document as version 2 stored it: one flat paper, and no unbacked-change field. */
 export function writtenAsV2(document: MarksheetDocument): Record<string, unknown> {
-	const written: Record<string, unknown> = JSON.parse(JSON.stringify(document));
+	if (document.tiers.length !== 1) {
+		throw new Error('A version 2 document has exactly one paper.');
+	}
+	const written = JSON.parse(JSON.stringify(document)) as Record<string, unknown> & {
+		students: Record<string, unknown>[];
+	};
 	const first = document.tiers[0];
 	written.schemaVersion = 2;
 	delete written.firstUnbackedChangeAt;
@@ -102,6 +107,8 @@ export function writtenAsV2(document: MarksheetDocument): Record<string, unknown
 	delete written.aoDescriptions;
 	delete written.tiers;
 	delete written.commonQuestions;
+	// Version 2 students had no tier: the one paper was the only paper.
+	for (const student of written.students) delete student['tier'];
 	written.paper = {
 		label: document.label,
 		className: document.className,
@@ -136,9 +143,9 @@ export function question(overrides: Partial<ParseQuestion> = {}): ParseQuestion 
 	};
 }
 
-/** One tier as a parse leaves it, with its printed name carried into the breakdown too. */
+/** One tier as a parse leaves it, with the tier name the parse would read from the paper. */
 export function tierParse(overrides: Partial<TierParse> = {}): TierParse {
-	const tierName = overrides.tierName ?? null;
+	const tierName = overrides.tierName ?? overrides.breakdown?.tierName ?? null;
 	return {
 		tierName,
 		breakdown: { tierName, questions: [question()], aoDescriptions: [] },

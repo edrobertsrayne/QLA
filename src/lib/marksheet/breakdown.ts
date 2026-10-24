@@ -126,7 +126,7 @@ export interface AssessmentBlockers {
 	blankTierNames: TierIndex[];
 	/** Both tiers carry the same name, trimmed and ignoring case. False on a single tier. */
 	sameTierNames: boolean;
-	/** Confirmed pairs whose marks are unknown or differ between the two tiers. */
+	/** Pairs whose entry is missing from its tier, or whose marks are unknown or differ between the two tiers. */
 	unequalPairs: CommonQuestion[];
 }
 

@@ -47,6 +47,15 @@
 	const redWidth = at(RED_BELOW);
 	const amberWidth = `${facilityPercent(GREEN_FROM) - facilityPercent(RED_BELOW)}%`;
 	const greenLeft = at(GREEN_FROM);
+
+	/** The gap line's ends, from the whole percentages its labels show. */
+	function gapLeft(first: number, second: number): string {
+		return `${Math.min(facilityPercent(first), facilityPercent(second))}%`;
+	}
+
+	function gapWidth(first: number, second: number): string {
+		return `${Math.abs(facilityPercent(first) - facilityPercent(second))}%`;
+	}
 </script>
 
 <div
@@ -71,8 +80,10 @@
 				'absolute top-1/2 h-0.5 -translate-y-1/2 bg-foreground/50',
 				dimmed !== null && 'bg-foreground/20'
 			)}
-			style:left={at(Math.min(one, two))}
-			style:width={at(Math.abs(one - two))}
+			style:left={gapLeft(one, two)}
+			style:width={gapWidth(one, two)}
+			data-testid="track-gap"
+			aria-hidden="true"
 		></div>
 	{/if}
 
@@ -101,7 +112,8 @@
 				tier2?.coverage.partMarked && 'italic',
 				dimmed === 1 && 'opacity-60'
 			)}
-			style:left={at(two)}>{facilityPercent(two)}%</span
+			style:left={at(two)}
+			aria-label={`Tier 2 ${facilityPercent(two)}%`}>{facilityPercent(two)}%</span
 		>
 	{/if}
 
@@ -121,7 +133,8 @@
 				tier1?.coverage.partMarked && 'italic',
 				dimmed === 0 && 'opacity-60'
 			)}
-			style:left={at(one)}>{facilityPercent(one)}%</span
+			style:left={at(one)}
+			aria-label={`Tier 1 ${facilityPercent(one)}%`}>{facilityPercent(one)}%</span
 		>
 	{/if}
 

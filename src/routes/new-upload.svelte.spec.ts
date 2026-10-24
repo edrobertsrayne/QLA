@@ -3,7 +3,7 @@ import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { goto } from '$app/navigation';
 import AppNav from '$lib/components/shell/AppNav.svelte';
-import { STORAGE_KEY, markCount, type MarksheetDocument } from '$lib/marksheet/document.js';
+import { STORAGE_KEY, storedMarkCount, type MarksheetDocument } from '$lib/marksheet/document.js';
 import {
 	confirmed,
 	entry,
@@ -195,7 +195,7 @@ describe('the new-upload dialog', () => {
 
 		await page.getByRole('button', { name: 'Export CSV' }).click();
 
-		expect(file.filename()).toBe('10x-ph1-10c1-marks.csv');
+		expect(file.filename()).toBe('10x-ph1-10c1-tier-1-marks.csv');
 		expect(await file.text()).toContain('Lovelace,Ada,,3,3');
 		// A marks export is not a backup, so the dialog's own backup row must not
 		// look done because of it.
@@ -244,14 +244,14 @@ describe('the new-upload dialog', () => {
 		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/'));
 	});
 
-	it('counts only the marks on each student’s own tier', async () => {
-		// One on-tier mark and one off-tier mark: the off-tier mark is kept in the
-		// document but is not work the teacher has counted, so the dialog says 1.
+	it('counts every stored mark, including on the tier the student does not sit', async () => {
+		// One on-tier mark and one off-tier mark: both are stored work the wipe
+		// destroys, so the dialog names both.
 		const document = twoTierMarksheet({
 			students: [student('student-1', 'Ada', 'Lovelace', false, 0)],
 			marks: { 'student-1': { 'higher-1': 4, 'foundation-1': 1 } }
 		});
-		expect(markCount(document)).toBe(1);
+		expect(storedMarkCount(document)).toBe(2);
 		seed(document);
 		openNav();
 
@@ -260,10 +260,10 @@ describe('the new-upload dialog', () => {
 		await expect
 			.element(dialog)
 			.toHaveTextContent(
-				'This deletes 1 mark for 1 student in 10X Ph1 (Higher and Foundation) from this browser.'
+				'This deletes 2 marks for 1 student in 10X Ph1 (Higher and Foundation) from this browser.'
 			);
 		await expect
-			.element(page.getByRole('button', { name: 'Delete 1 mark and start again' }))
+			.element(page.getByRole('button', { name: 'Delete 2 marks and start again' }))
 			.toBeInTheDocument();
 	});
 });

@@ -249,8 +249,10 @@ describe('topic names across both tiers', () => {
 		await openReports();
 
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
+		await vi.waitFor(() =>
+			expect(stub.mock.calls.filter(([url]) => String(url) === '/api/topic-names')).toHaveLength(1)
+		);
 		const calls = stub.mock.calls.filter(([url]) => String(url) === '/api/topic-names');
-		await vi.waitFor(() => expect(calls).toHaveLength(1));
 		const body = JSON.parse((calls[0][1] as { body: string }).body) as {
 			paperLabel: string;
 			codes: { code: string; summaries: string[]; tier?: number }[];

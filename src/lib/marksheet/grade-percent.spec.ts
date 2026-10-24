@@ -105,7 +105,6 @@ describe('boundaries of one tier', () => {
 		expect(boundariesOf(document, 0)?.map(({ label }) => label)).toEqual(['9', '8']);
 		expect(boundariesOf(document, 1)?.map(({ label }) => label)).toEqual(['5', '4']);
 		expect(boundariesOf(confirmed(), 0)).toBeNull();
-		expect(boundariesOf(document, 1)?.length).toBe(2);
 	});
 
 	it('treats an empty boundary list as no boundaries', () => {
@@ -148,6 +147,18 @@ describe('boundaries of one tier', () => {
 		expect(paperGrade(confirmed(), 0, 3)).toBeNull();
 	});
 
+	it('saves a blank below-lowest label as the default on that tier only', () => {
+		const document = twoTier();
+		document.tiers[0].belowLowestLabel = 'Below dist';
+		document.tiers[1].belowLowestLabel = 'Below C';
+
+		setBoundaries(document, 1, [{ label: 'A', minimum: 2 }], '  ');
+
+		expect(document.tiers[1].belowLowestLabel).toBe('U');
+		// Tier 1's own label is untouched.
+		expect(document.tiers[0].belowLowestLabel).toBe('Below dist');
+	});
+
 	it('stores and clears boundaries on one tier without touching the other', () => {
 		const document = twoTier();
 
@@ -161,6 +172,9 @@ describe('boundaries of one tier', () => {
 
 		expect(clearBoundaries(document, 1)).toBe(true);
 		expect(boundariesOf(document, 1)).toBeNull();
+		expect(clearBoundaries(document, 1)).toBe(false);
+		// An empty list is already marks only: clearing it changes nothing.
+		document.tiers[1].boundaries = [];
 		expect(clearBoundaries(document, 1)).toBe(false);
 		expect(boundariesOf(document, 0)).not.toBeNull();
 	});
@@ -204,6 +218,20 @@ describe('studentGrade', () => {
 
 		// entry-2 is a Foundation entry: a mark above its available marks there
 		// does not spoil the Higher student's grade.
+		expect(studentGrade(document, higher)).toEqual({
+			kind: 'complete',
+			total: 4,
+			grade: { label: '9', next: null }
+		});
+	});
+
+	it('totals only the student’s own tier, even when the off-tier mark is in range', () => {
+		const document = twoTier({
+			// entry-1 offers 4 on Higher; entry-2 offers 4 on Foundation.
+			marks: { h1: { 'entry-1': 4, 'entry-2': 3 } }
+		});
+		const [higher] = document.students;
+
 		expect(studentGrade(document, higher)).toEqual({
 			kind: 'complete',
 			total: 4,

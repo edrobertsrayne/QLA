@@ -15,7 +15,7 @@
 	import NewUploadChecklist from '$lib/components/marksheet/NewUploadChecklist.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { markCount } from '$lib/marksheet/document.js';
+	import { storedMarkCount } from '$lib/marksheet/document.js';
 	import { goToSurface, marksheetStore } from '$lib/marksheet/index.js';
 	import { count } from '$lib/prose.js';
 
@@ -23,7 +23,7 @@
 	let open = $state(false);
 
 	/** The work a wipe would take: how much of it, and whose paper. */
-	const marksEntered = $derived(store.document ? markCount(store.document) : 0);
+	const marksStored = $derived(store.document ? storedMarkCount(store.document) : 0);
 	const studentsInClass = $derived(store.document?.students.length ?? 0);
 	const label = $derived(store.label);
 	/** Each tier as the teacher knows it: its printed name, or its position when it has none. */
@@ -41,8 +41,8 @@
 	const loss = $derived.by(() => {
 		const namedTiers = bothTiers === null ? '' : ` (${bothTiers})`;
 		const inPaper = label === null ? '' : ` in ${label}${namedTiers}`;
-		if (marksEntered > 0) {
-			return `${count(marksEntered, 'mark')} for ${count(studentsInClass, 'student')}${inPaper}`;
+		if (marksStored > 0) {
+			return `${count(marksStored, 'mark')} for ${count(studentsInClass, 'student')}${inPaper}`;
 		}
 		if (studentsInClass > 0) {
 			return `the class of ${count(studentsInClass, 'student')} and the breakdown${inPaper}`;
@@ -57,8 +57,8 @@
 
 	/** The button says what the click costs, so it can never be pressed by reflex. */
 	const deleteLabel = $derived(
-		marksEntered > 0
-			? `Delete ${count(marksEntered, 'mark')} and start again`
+		marksStored > 0
+			? `Delete ${count(marksStored, 'mark')} and start again`
 			: 'Delete and start again'
 	);
 

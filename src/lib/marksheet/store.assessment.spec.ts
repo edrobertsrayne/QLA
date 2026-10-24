@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { entryEdits } from './breakdown.js';
 import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from './document.js';
 import { parseRun, parsed, question, tierParse } from './fixtures.spec-helpers.js';
 import { NOW, fakeStorage, refusingWrites, stored, storeWith } from './store.spec-helpers.js';
@@ -183,6 +184,8 @@ describe('createFromAssessment', () => {
 			['foundation-paper.pdf']
 		]);
 		expect(written.tiers.map((one) => one.breakdown.entries.length)).toEqual([1, 1]);
+		// Identical labels across tiers are not pairs: only the match call proposes them.
+		expect(written.commonQuestions).toEqual([]);
 		const secondEntry = written.tiers[1].breakdown.entries[0];
 		expect(written.tiers[1].breakdown.warnings).toEqual([
 			{ questionId: secondEntry.id, code: 'SUMMARY_LENGTH', message: 'Two words.' }
@@ -255,7 +258,8 @@ describe('createFromAssessment', () => {
 
 		store.createFromAssessment(input);
 
-		expect(stored(storage).tiers[0].breakdown.entries.map((entry) => entry.original)).toEqual([
+		const written = stored(storage);
+		expect(written.tiers[0].breakdown.entries.map((entry) => entry.original)).toEqual([
 			{
 				label: '1a',
 				questionNumber: '1',
@@ -275,14 +279,23 @@ describe('createFromAssessment', () => {
 				ao: null
 			}
 		]);
+
+		const entryId = written.tiers[0].breakdown.entries[0]?.id;
+		if (entryId === undefined) throw new Error('expected an entry');
+		store.setEntryMarks(entryId, 5);
+		const edited = store.document?.tiers[0].breakdown.entries[0];
+		if (edited === undefined) throw new Error('expected the edited entry');
+		expect(entryEdits(edited).fields).toEqual(['marks']);
 	});
 
 	it('keeps this run usage in memory only, and routes to the breakdown', () => {
-		const store = storeWith(fakeStorage());
+		const storage = fakeStorage();
+		const store = storeWith(storage);
 
 		store.createFromAssessment(input);
 
 		expect(store.runUsage).toEqual(input.usage);
+		expect(storage.getItem(STORAGE_KEY)).not.toContain('promptTokens');
 		expect(store.route()).toBe('/breakdown');
 	});
 
@@ -301,7 +314,7 @@ describe('createFromAssessment', () => {
 		expect(store.matchNotice).toBeNull();
 	});
 
-	it('has no matching notice for a run that proposed pairs', () => {
+	it('has no matching notice for a run that proposed no pairs', () => {
 		const store = storeWith(fakeStorage());
 
 		store.createFromAssessment(input);

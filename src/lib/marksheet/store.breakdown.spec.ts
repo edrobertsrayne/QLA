@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { STORAGE_KEY, entryValuesOf, markCount } from './document.js';
+import { STORAGE_KEY, entryValuesOf, storedMarkCount } from './document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredTier, StoredWarning } from './document.js';
 import { entry, parsed, student, tier } from './fixtures.spec-helpers.js';
 import { changedInputFields, generationInputFor } from './report-input.js';
@@ -173,8 +173,11 @@ describe('breakdown edits', () => {
 
 		store.setEntryLabel('entry-f1', '1b');
 		store.setEntryMarks('entry-f1', 3);
+		store.setEntryLabel('entry-h1', '1b');
+		store.setEntryMarks('entry-h1', 2);
 
 		expect(entryOf(store, 'entry-f1')).toMatchObject({ label: '1b', marks: 3 });
+		expect(entryOf(store, 'entry-h1')).toMatchObject({ label: '1b', marks: 2 });
 	});
 
 	it('leaves a confirmed breakdown alone', () => {
@@ -372,7 +375,7 @@ describe('breakdown structure', () => {
 		expect(store.undoable).toBeNull();
 	});
 
-	it('deleting a paired entry drops the pair, and undo brings both back', () => {
+	it('deleting a paired entry drops the pair from either side, and undo brings both back', () => {
 		const { store } = openStore(
 			twoTiers({
 				commonQuestions: [{ tier1EntryId: 'entry-h1', tier2EntryId: 'entry-f1' }]
@@ -391,6 +394,17 @@ describe('breakdown structure', () => {
 			tier2EntryId: 'entry-f1'
 		});
 		expect(store.partnerOf(1, 'entry-f1')).toBe('entry-h1');
+
+		// The Tier 1 member is the other side of the same cleanup.
+		expect(store.deleteEntry('entry-h1')).toBe(true);
+		expect(store.pairOf(1, 'entry-f1')).toBeNull();
+		expect(store.document?.commonQuestions).toEqual([]);
+
+		expect(store.undo()).toBe(true);
+		expect(store.pairOf(0, 'entry-h1')).toEqual({
+			tier1EntryId: 'entry-h1',
+			tier2EntryId: 'entry-f1'
+		});
 	});
 
 	it('takes nothing back twice', () => {
@@ -621,10 +635,19 @@ describe('confirm breakdown', () => {
 	it('confirms once both tier names differ and every pair has equal marks', () => {
 		const { store } = openStore(
 			twoTiers({
+				tiers: [
+					tierWith([entry('entry-h1', '1a', '1', { marks: 4 })], [], { tierName: 'Higher' }),
+					tierWith([entry('entry-f1', '1a', '1', { marks: 3 })], [], { tierName: '  ' })
+				],
 				commonQuestions: [{ tier1EntryId: 'entry-h1', tier2EntryId: 'entry-f1' }]
 			})
 		);
+		expect(store.confirmBreakdown()).toBe(false);
 
+		store.setTierName(1, 'Foundation');
+		expect(store.confirmBreakdown()).toBe(false);
+
+		store.setEntryMarks('entry-f1', 4);
 		expect(store.confirmBreakdown()).toBe(true);
 
 		expect(store.document?.breakdownConfirmedAt).toBe(NOW.toISOString());
@@ -646,7 +669,7 @@ describe('confirm breakdown', () => {
 });
 
 describe('tier names', () => {
-	it('renames a tier, trimming it, after the breakdown is confirmed', () => {
+	it('renames a tier after the breakdown is confirmed, leaving no undo behind', () => {
 		const { store } = openStore({
 			breakdownConfirmedAt: NOW.toISOString(),
 			tiers: [tierWith([entry('entry-1', '2bii', '2')], [], { tierName: 'Higher' })]
@@ -655,26 +678,67 @@ describe('tier names', () => {
 		store.setTierName(0, '  Higher Tier ');
 
 		expect(store.tiers[0].tierName).toBe('Higher Tier');
-		expect(store.undoable).toMatchObject({ kind: 'tier-name', name: 'Higher Tier' });
-
-		expect(store.undo()).toBe(true);
-		expect(store.tiers[0].tierName).toBe('Higher');
+		// Display data is not a document change to take back.
+		expect(store.undoable).toBeNull();
 	});
 
-	it('clears a blank tier name, reading it as none', () => {
+	it('renames either tier after a two-tier confirmation', () => {
+		const { store } = openStore(twoTiers({ breakdownConfirmedAt: NOW.toISOString() }));
+
+		store.setTierName(0, 'Higher Tier');
+		store.setTierName(1, 'Foundation Tier');
+
+		expect(store.tiers.map((one) => one.tierName)).toEqual(['Higher Tier', 'Foundation Tier']);
+		expect(store.undoable).toBeNull();
+	});
+
+	it('clears a blank tier name on a single tier, reading it as none', () => {
+		const { store } = openStore();
+
+		store.setTierName(0, 'Higher');
+		store.setTierName(0, '   ');
+
+		expect(store.tiers[0].tierName).toBeNull();
+	});
+
+	it('refuses a blank or the other tier’s name on a two-tier assessment', () => {
 		const { store } = openStore(twoTiers());
 
-		store.setTierName(1, '   ');
+		store.setTierName(0, '   ');
+		expect(store.tiers[0].tierName).toBe('Higher');
 
-		expect(store.tiers[1].tierName).toBeNull();
+		// Trimmed and case-insensitive, the two names would read as one.
+		store.setTierName(0, '  foundation ');
+		expect(store.tiers[0].tierName).toBe('Higher');
+
+		store.setTierName(0, 'Higher Tier');
+		expect(store.tiers[0].tierName).toBe('Higher Tier');
 	});
 
 	it('changes nothing when the name is the one already there', () => {
 		const { store } = openStore(twoTiers());
+		const before = store.document?.updatedAt;
 
-		store.setTierName(0, 'Higher');
+		store.setTierName(0, ' Higher ');
+
+		expect(store.document?.updatedAt).toBe(before);
+		expect(store.tiers[0].tierName).toBe('Higher');
+		expect(store.undoable).toBeNull();
+	});
+
+	it('takes the undo offer with it, because there is no rename to take back', () => {
+		const { store } = openStore({
+			...twoTiers(),
+			breakdownConfirmedAt: NOW.toISOString(),
+			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')]
+		});
+		store.removeStudent('student-2');
+		expect(store.undoable).toMatchObject({ kind: 'student-removal' });
+
+		store.setTierName(0, 'Higher Tier');
 
 		expect(store.undoable).toBeNull();
+		expect(store.undo()).toBe(false);
 	});
 
 	it('ignores a tier the assessment does not have', () => {
@@ -684,6 +748,36 @@ describe('tier names', () => {
 
 		expect(store.tiers[0].tierName).toBeNull();
 		expect(store.undoable).toBeNull();
+	});
+});
+
+describe('tier findings', () => {
+	it('hands back one tier’s findings alone, run-level ones included', () => {
+		const { store } = openStore({
+			tiers: [
+				tierWith(
+					[entry('entry-h1', '1a', '1')],
+					[
+						{ questionId: 'entry-h1', code: 'SUMMARY_LENGTH', message: 'Two words.' },
+						{ questionId: null, code: 'MARKS_TOTAL', message: 'Marks total 76.' }
+					],
+					{ tierName: 'Higher' }
+				),
+				tierWith(
+					[entry('entry-f1', '1a', '1')],
+					[{ questionId: null, code: 'SPEC_UNREADABLE', message: 'No specification.' }],
+					{ tierName: 'Foundation', sourceFilenames: ['foundation.pdf'] }
+				)
+			]
+		});
+
+		expect(store.warningsOf(0).map((warning) => warning.code)).toEqual([
+			'SUMMARY_LENGTH',
+			'MARKS_TOTAL'
+		]);
+		expect(store.warningsOf(1).map((warning) => warning.code)).toEqual(['SPEC_UNREADABLE']);
+		// The whole assessment's findings stay available to surfaces covering both.
+		expect(store.warnings).toHaveLength(3);
 	});
 });
 
@@ -781,7 +875,7 @@ describe('what changing the breakdown costs the marks', () => {
 		// The count was the loss: the entry's marks are gone, and only its marks.
 		const document = store.document;
 		if (document === null) throw new Error('expected a document');
-		expect(markCount(document)).toBe(0);
+		expect(storedMarkCount(document)).toBe(0);
 	});
 
 	it('says how many marks are left above an entry’s available marks', () => {
@@ -915,6 +1009,7 @@ describe('per-tier grade boundaries', () => {
 
 		store.saveBoundaries(1, [{ label: 'A', minimum: 40 }], 'U');
 		store.removeBoundaries(1);
+		store.removeBoundaries(0);
 
 		expect(store.tiers[0].boundaries).toBeNull();
 		expect(store.undoable).toBeNull();

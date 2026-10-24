@@ -16,17 +16,29 @@
 	/** What the last paste did, cleared by the change that clears the undo it offered. */
 	const pasteNotice = $derived(store.pasteNotice);
 	const described = $derived(pasteNotice ? describePaste(pasteNotice) : null);
+	/** Why a paste was refused whole: a block of marks with no tier to take them. */
+	const pasteRefusal = $derived(store.pasteRefusal);
 </script>
 
-{#if undoable?.kind === 'student-removal' || undoable?.kind === 'grade-boundaries' || refusal || pasteNotice}
+{#if undoable?.kind === 'student-tier' || undoable?.kind === 'student-removal' || undoable?.kind === 'grade-boundaries' || refusal || pasteNotice || pasteRefusal}
 	<!-- Sticky, and above the toolbar: a notice about a cell far down a long class
 	     must still be where the teacher is looking. Neither notice takes a click,
 	     so the mark cells it passes over stay reachable. -->
 	<div class="pointer-events-none sticky top-2 z-10 space-y-2">
 		<UndoAlert
-			kinds={['student-removal', 'grade-boundaries']}
+			kinds={['student-tier', 'student-removal', 'grade-boundaries']}
 			class="pointer-events-auto flex flex-row items-center gap-2 py-2 shadow-sm"
 		/>
+		{#if pasteRefusal}
+			<Alert
+				role="status"
+				variant="destructive"
+				class="pointer-events-auto py-2 shadow-sm"
+				data-testid="paste-refusal"
+			>
+				<AlertDescription>{pasteRefusal}</AlertDescription>
+			</Alert>
+		{/if}
 		{#if pasteNotice && described}
 			<!-- What a block did, beside the grid: the sheet under it has already
 			     changed, so the account has to be where the teacher can read it. -->

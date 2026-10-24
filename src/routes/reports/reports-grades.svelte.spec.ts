@@ -263,8 +263,8 @@ describe('tiered report figures', () => {
 		const { router } = await openReports('/reports/grades');
 		expect(router.path).toBe('/reports/grades');
 
-		const first = page.getByRole('button', { name: 'Tier 1 · Higher' });
-		const second = page.getByRole('button', { name: 'Tier 2 · Foundation' });
+		const first = page.getByRole('button', { name: 'Tier 1 · Higher', exact: true });
+		const second = page.getByRole('button', { name: 'Tier 2 · Foundation', exact: true });
 		await expect.element(first).toHaveAttribute('aria-pressed', 'true');
 		await expect.element(page.getByText('Raw marks out of 10.')).toBeInTheDocument();
 
@@ -276,8 +276,10 @@ describe('tiered report figures', () => {
 		await page.getByRole('radio', { name: 'GCSE 9–1' }).click();
 		await userEvent.fill(page.getByLabelText('Lowest mark for 9'), '6');
 		await page.getByRole('button', { name: 'Save boundaries' }).click();
+		// Two tiers stay on the step so the other tier can be set in the same visit.
+		await expect.element(page.getByRole('heading', { name: 'Grades' })).toBeInTheDocument();
 		await expect
-			.element(page.getByRole('heading', { name: '2 students get a report' }))
+			.element(page.getByText('Tier 2 · Foundation boundaries saved.'))
 			.toBeInTheDocument();
 
 		expect(marksheetStore().document?.tiers[1].boundaries?.[0]).toEqual({
@@ -289,6 +291,78 @@ describe('tiered report figures', () => {
 			{ label: 'B', minimum: 5 },
 			{ label: 'C', minimum: 2 }
 		]);
+
+		// The offer moves straight to the other tier, with its own rows.
+		await page.getByRole('button', { name: 'Set Tier 1 · Higher grades' }).click();
+		await expect.element(first).toHaveAttribute('aria-pressed', 'true');
+		await expect.element(page.getByLabelText('Lowest mark for A')).toHaveValue('8');
+
+		await page.getByRole('button', { name: 'Next' }).click();
+		await expect
+			.element(page.getByRole('heading', { name: '2 students get a report' }))
+			.toBeInTheDocument();
+	});
+
+	it('shows each tier’s own stored rows when the tier changes, and keeps them when saved untouched', async () => {
+		seed(namedTwoTiers());
+		stubFetch();
+		await openReports('/reports/grades');
+
+		// Tier 1's stored scale, as the form reads it on arrival.
+		await expect.element(page.getByLabelText('Lowest mark for A')).toHaveValue('8');
+		// Re-clicking the scale that is already chosen keeps it chosen.
+		await page.getByRole('radio', { name: 'Custom' }).click();
+		await expect
+			.element(page.getByRole('radio', { name: 'Custom' }))
+			.toHaveAttribute('aria-checked', 'true');
+		await expect.element(page.getByLabelText('Lowest mark for A')).toHaveValue('8');
+
+		// Tier 2's stored rows replace them: the form is a fresh one for that tier.
+		await page.getByRole('button', { name: 'Tier 2 · Foundation', exact: true }).click();
+		await expect.element(page.getByLabelText('Lowest mark for F-A')).toHaveValue('6');
+		await expect.element(page.getByLabelText('Lowest mark for F-B')).toHaveValue('3');
+		expect(page.getByLabelText('Lowest mark for A').query()).toBeNull();
+
+		// Saving without typing anything stores the rows shown, not Tier 1's, and
+		// stays on the step for the other tier.
+		await page.getByRole('button', { name: 'Save boundaries' }).click();
+		await expect
+			.element(page.getByText('Tier 2 · Foundation boundaries saved.'))
+			.toBeInTheDocument();
+		expect(marksheetStore().document?.tiers[1].boundaries).toEqual([
+			{ label: 'F-A', minimum: 6 },
+			{ label: 'F-B', minimum: 3 }
+		]);
+		expect(marksheetStore().document?.tiers[0].boundaries).toEqual([
+			{ label: 'A', minimum: 8 },
+			{ label: 'B', minimum: 5 },
+			{ label: 'C', minimum: 2 }
+		]);
+
+		// And the other way: Tier 2 keeps its rows, Tier 1 shows its own again.
+		await page.getByRole('button', { name: 'Tier 1 · Higher', exact: true }).click();
+		await expect.element(page.getByLabelText('Lowest mark for A')).toHaveValue('8');
+		await page.getByRole('button', { name: 'Tier 2 · Foundation', exact: true }).click();
+		await expect.element(page.getByLabelText('Lowest mark for F-A')).toHaveValue('6');
+		await page.getByRole('button', { name: 'Tier 1 · Higher', exact: true }).click();
+		await expect.element(page.getByLabelText('Lowest mark for A')).toHaveValue('8');
+
+		await page.getByRole('button', { name: 'Save boundaries' }).click();
+		await expect.element(page.getByText('Tier 1 · Higher boundaries saved.')).toBeInTheDocument();
+		expect(marksheetStore().document?.tiers[0].boundaries).toEqual([
+			{ label: 'A', minimum: 8 },
+			{ label: 'B', minimum: 5 },
+			{ label: 'C', minimum: 2 }
+		]);
+		expect(marksheetStore().document?.tiers[1].boundaries).toEqual([
+			{ label: 'F-A', minimum: 6 },
+			{ label: 'F-B', minimum: 3 }
+		]);
+
+		await page.getByRole('button', { name: 'Next' }).click();
+		await expect
+			.element(page.getByRole('heading', { name: '2 students get a report' }))
+			.toBeInTheDocument();
 	});
 
 	it('keeps today’s single form and no toggle on one tier', async () => {

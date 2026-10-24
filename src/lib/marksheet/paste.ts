@@ -151,6 +151,9 @@ export function applyPaste(
 	tier: TierIndex
 ): PasteResult {
 	const result = emptyPasteResult();
+	// No such tier is no grid: a paste must not add students or marks to a tier
+	// the assessment does not have.
+	if (document.tiers[tier] === undefined) return result;
 
 	const students = document.students.filter((student) => student.tier === tier);
 	// No student to anchor on starts the block below the class: only a block

@@ -185,7 +185,7 @@
 			<div class="min-w-0">
 				<h2 class="text-[18pt] leading-tight font-bold">{displayName}</h2>
 				{#if document.className}<p class="text-[10pt]">{document.className}</p>{/if}
-				<p class="text-[9pt] text-neutral-700">
+				<p class="text-[9pt] text-neutral-700" data-testid="report-label">
 					{document.label ?? ''}{#if tierName}<span data-testid="report-tier"
 							>{document.label ? ' · ' : ''}<span class="font-semibold text-black">{tierName}</span
 							></span

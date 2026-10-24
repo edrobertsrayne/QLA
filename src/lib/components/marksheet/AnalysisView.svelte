@@ -3,11 +3,11 @@
 	exist, a Common questions tab. Every figure is read from the marksheet as it
 	stands, so there is no run step and no out-of-date state. A tier tab keeps
 	today's band sections, green folded; the common tab compares each pair on
-	one track. Print and the PDF render the open tab, green unfolded; the CSV
-	follows the tab.
+	one track. Print and the PDF reveal the folded green rows from the same
+	markup through print styles; the CSV follows the tab.
 -->
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import DownloadIcon from '@lucide/svelte/icons/download';
@@ -20,6 +20,7 @@
 	import { exportAnalysisNow, marksheetStore } from '$lib/marksheet/index.js';
 	import { toastPdfFailure } from '$lib/print-pdf.js';
 	import { count, agree } from '$lib/prose.js';
+	import { cn } from '$lib/utils.js';
 	import CommonQuestions from './CommonQuestions.svelte';
 	import TierAnalysis from './TierAnalysis.svelte';
 	import { downloadAnalysisPdf } from './analysis-pdf.js';
@@ -57,6 +58,17 @@
 	}
 
 	const selected = $derived(chosen ?? initialSelection(requestedTab));
+	/** The tab group's own value: restore the current tab when a re-click clears it. */
+	let shownTab = $state<string>(untrack(() => selected));
+
+	function chooseTab(next: string | string[] | undefined): void {
+		if (next === '0' || next === '1' || next === 'common') {
+			chosen = next;
+			shownTab = next;
+			return;
+		}
+		shownTab = selected;
+	}
 	/** The Common tab is absent with no pairs, so the view falls back to Tier 1's chart. */
 	const openTab = $derived<AnalysisTab>(
 		!twoTiers ? 0 : selected === 'common' && hasPairs ? 'common' : selected === '1' ? 1 : 0
@@ -68,6 +80,17 @@
 	let greenOpen = $state(false);
 	/** The common questions' order: the most revealing pairs first. */
 	let commonSort = $state('gap');
+	/** The sort group's own value: keep the current order when a re-click clears it. */
+	let shownSort = $state<string>(untrack(() => commonSort));
+
+	function chooseSort(next: string | string[] | undefined): void {
+		if (next === 'gap' || next === 'pooled' || next === 'paper') {
+			commonSort = next;
+			shownSort = next;
+			return;
+		}
+		shownSort = commonSort;
+	}
 
 	let view = $state<HTMLElement>();
 	/** The element the PDF renders: the whole view, tabs and legend included. */
@@ -107,6 +130,15 @@
 		return printedName(tier)?.charAt(0).toUpperCase() ?? `T${tier + 1}`;
 	}
 
+	/** Initials that cannot collide: two names sharing one letter fall back to T1/T2. */
+	const initials = $derived.by((): readonly [string, string] => {
+		const first = tierShort(0);
+		const second = tierShort(1);
+		return first.toLowerCase() === second.toLowerCase()
+			? (['T1', 'T2'] as const)
+			: ([first, second] as const);
+	});
+
 	/** The paper and class the figures belong to, as far as they are named. */
 	const heading = $derived(
 		[store.label, store.className].filter((part) => part !== null && part !== '').join(' · ')
@@ -142,26 +174,18 @@
 		const absentExcluded = store.students.filter(
 			(student) => student.tier !== null && student.absent
 		).length;
+		const withoutTier = store.studentsWithoutTier().length;
 		const marks = allCommon.reduce((total, row) => total + (row.tier1.entry.marks ?? 0), 0);
-		return [
+		const facts = [
 			count(allCommon.length, 'common question'),
-			`${marks} marks`,
+			`${marks} marks available`,
 			`${tier1Present} ${tierTitle(0)} + ${tier2Present} ${tierTitle(1)} students counted`,
 			`${absentExcluded} absent excluded`
-		].join(' · ');
+		];
+		// A student on no tier belongs to neither side of any pair, so the figures leave them out.
+		if (withoutTier > 0) facts.push(`${count(withoutTier, 'student')} without a tier excluded`);
+		return facts.join(' · ');
 	});
-
-	/**
-	 * Green unfolded for the moment the page is read, so the file does not
-	 * depend on what is open on screen. The common tab has nothing folded, so
-	 * unfolding it changes nothing there.
-	 */
-	async function unfoldGreen(): Promise<() => void> {
-		const wasOpen = greenOpen;
-		greenOpen = true;
-		await tick();
-		return () => (greenOpen = wasOpen);
-	}
 
 	async function downloadPdf(): Promise<void> {
 		const document = store.document;
@@ -169,20 +193,15 @@
 		if (!element || !document) return;
 		makingPdf = true;
 		try {
-			await toastPdfFailure(() => downloadAnalysisPdf(element, document, new Date(), unfoldGreen));
+			await toastPdfFailure(() => downloadAnalysisPdf(element, document, openTab, new Date()));
 		} finally {
 			makingPdf = false;
 		}
 	}
 
-	/** A print holds every band, as a paper copy has no fold to open. */
-	async function printPage(): Promise<void> {
-		const restore = await unfoldGreen();
-		try {
-			window.print();
-		} finally {
-			restore();
-		}
+	/** A print shows every band: the folded green rows are revealed by print styles. */
+	function printPage(): void {
+		window.print();
 	}
 
 	/** The row the view was opened at: its entry's row, or on the common tab its pair. */
@@ -216,7 +235,7 @@
 		<Button variant="ghost" size="sm" onclick={onBack}>
 			<ArrowLeftIcon class="size-4" /> Back to marksheet
 		</Button>
-		<Button variant="outline" size="sm" class="ml-auto" onclick={() => void printPage()}>
+		<Button variant="outline" size="sm" class="ml-auto" onclick={printPage}>
 			<PrinterIcon class="size-4" /> Print
 		</Button>
 		<Button variant="outline" size="sm" disabled={makingPdf} onclick={() => void downloadPdf()}>
@@ -230,13 +249,13 @@
 
 	<div class="flex flex-wrap items-center gap-3 print:hidden">
 		{#if twoTiers}
+			<!-- A single toggle group reports '' when the open tab is clicked again; stay on it. -->
 			<ToggleGroup.Root
 				type="single"
 				variant="outline"
-				value={selected}
-				onValueChange={(value) => {
-					if (value === '0' || value === '1' || value === 'common') chosen = value;
-				}}
+				aria-label="Analysis tier"
+				bind:value={shownTab}
+				onValueChange={chooseTab}
 				class="w-fit"
 				data-testid="analysis-tabs"
 			>
@@ -257,7 +276,15 @@
 
 		{#if openTier === null}
 			<span class="ml-auto text-sm text-muted-foreground">Sort</span>
-			<ToggleGroup.Root type="single" variant="outline" size="sm" bind:value={commonSort}>
+			<!-- The same empty value on a re-click: keep the order that is showing. -->
+			<ToggleGroup.Root
+				type="single"
+				variant="outline"
+				size="sm"
+				aria-label="Sort common questions"
+				bind:value={shownSort}
+				onValueChange={chooseSort}
+			>
 				<ToggleGroup.Item value="gap" class="px-3">Biggest gap</ToggleGroup.Item>
 				<ToggleGroup.Item value="pooled" class="px-3">Pooled, worst first</ToggleGroup.Item>
 				<ToggleGroup.Item value="paper" class="px-3">Tier 1 paper order</ToggleGroup.Item>
@@ -277,7 +304,10 @@
 				a mark above the available marks, which no figure counts.
 			</p>
 		{/if}
-		<div class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+		<div
+			class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground"
+			data-testid="track-legend"
+		>
 			{#if openTier === null}
 				<span class="inline-flex items-center gap-1.5">
 					<span class="size-3 rounded-full bg-foreground"></span>{tierTitle(0)}
@@ -291,21 +321,29 @@
 				</span>
 				<span>Gap = {tierTitle(0)} − {tierTitle(1)}, points.</span>
 			{:else if twoTiers}
-				<span class="inline-flex items-center gap-1.5">
-					<span class="size-3 rounded-full bg-foreground"></span>{tierTitle(openTier)}
+				<!-- The dot is the tier's, not the tab's: filled is always Tier 1's figure. -->
+				<span
+					class={cn('inline-flex items-center gap-1.5', openTier !== 0 && 'opacity-40')}
+					data-testid="legend-tier"
+					data-tier="0"
+				>
+					<span class="size-3 rounded-full bg-foreground"></span>{tierTitle(0)}
+				</span>
+				<span
+					class={cn('inline-flex items-center gap-1.5', openTier !== 1 && 'opacity-40')}
+					data-testid="legend-tier"
+					data-tier="1"
+				>
+					<span class="size-3 rounded-full border-2 border-foreground bg-background"></span>
+					{tierTitle(1)}
 				</span>
 				{#if hasPairs}
-					<span class="inline-flex items-center gap-1.5">
-						<span class="size-3 rounded-full border-2 border-foreground bg-background opacity-40">
-						</span>
-						{tierTitle(openTier === 0 ? 1 : 0)}, on common questions
-					</span>
 					<span class="inline-flex items-center gap-1.5">
 						<span class="h-3.5 w-1 rounded-sm bg-primary"></span>Pooled
 					</span>
 				{/if}
 			{/if}
-			<span>Faded / dashed = part-marked.</span>
+			<span>Faded, dashed or italic = part-marked.</span>
 		</div>
 	</header>
 
@@ -313,8 +351,8 @@
 		<CommonQuestions
 			rows={commonRows}
 			{highlight}
-			tier1Short={tierShort(0)}
-			tier2Short={tierShort(1)}
+			tier1Short={initials[0]}
+			tier2Short={initials[1]}
 		/>
 	{:else}
 		<TierAnalysis
@@ -322,8 +360,8 @@
 			bind:greenOpen
 			{highlight}
 			tier={openTier}
-			tierShort={twoTiers ? tierShort(openTier) : null}
-			otherShort={twoTiers ? tierShort(openTier === 0 ? 1 : 0) : ''}
+			tierShort={twoTiers ? initials[openTier] : null}
+			otherShort={twoTiers ? initials[openTier === 0 ? 1 : 0] : ''}
 			otherTierName={twoTiers ? tierTitle(openTier === 0 ? 1 : 0) : ''}
 			pairs={allCommon}
 		/>

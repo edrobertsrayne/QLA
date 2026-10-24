@@ -57,6 +57,29 @@
 		onViewAnalysis: (entryId: string | null) => void;
 	} = $props();
 
+	/** The open mark editor: the cell it is on, and what has been typed into it. */
+	interface MarkEditor {
+		studentId: string;
+		entryId: string;
+		value: string;
+	}
+
+	/** Everything about the grid that belongs to one paper rather than the document. */
+	interface SheetState {
+		/** Where the cursor is: a mark cell, or a row's name cell when `entryId` is null. */
+		cursor: GridCell | null;
+		editing: MarkEditor | null;
+		/**
+		 * Why the last keystroke did not become a mark, shown beside the grid rather
+		 * than floating over it: a teacher mid-entry is looking at the cell, and a
+		 * message that covers a control is one they have to dismiss to keep working.
+		 */
+		refusal: string | null;
+		/** The add-student row: whether it is open, and what has been typed into it. */
+		adding: boolean;
+		newName: string;
+	}
+
 	const store = marksheetStore();
 	const document = $derived(store.document);
 	const tiered = $derived(store.tierCount === 2);
@@ -64,6 +87,8 @@
 	const students = $derived(tier === null ? store.studentsWithoutTier() : store.studentsOf(tier));
 	const bands = $derived<QuestionBand[]>(tier === null ? [] : store.bandsOf(tier));
 	const marks = $derived(store.document?.marks ?? {});
+	/** The open tier's parse findings: the ones its columns are flagged from. */
+	const warnings = $derived(tier === null ? [] : store.warningsOf(tier));
 	/** Grade columns beside the marks: total always, grade and to-next only with boundaries. */
 	const hasGrades = $derived(
 		document !== null && tier !== null && boundariesOf(document, tier) !== null
@@ -73,19 +98,22 @@
 		return new Map(students.map((student) => [student.id, studentGrade(document, student)]));
 	});
 
-	/** Where the cursor is: a mark cell, or a row's name cell when `entryId` is null. */
-	let cursor = $state<GridCell | null>(null);
-	/** The open mark editor: the cell it is on, and what has been typed into it. */
-	let editing = $state<{ studentId: string; entryId: string; value: string } | null>(null);
 	/**
-	 * Why the last keystroke did not become a mark, shown beside the grid rather
-	 * than floating over it: a teacher mid-entry is looking at the cell, and a
-	 * message that covers a control is one they have to dismiss to keep working.
+	 * The grid's view state, remade when the open tier changes: a cursor, an open
+	 * editor, a refusal or a half-typed name from another paper means nothing on
+	 * this one.
 	 */
-	let refusal = $state<string | null>(null);
-	/** The add-student row: whether it is open, and what has been typed into it. */
-	let adding = $state(false);
-	let newName = $state('');
+	const sheet = $derived.by(() => {
+		void tier;
+		const state = $state<SheetState>({
+			cursor: null,
+			editing: null,
+			refusal: null,
+			adding: false,
+			newName: ''
+		});
+		return state;
+	});
 	/** The grid's own element, so a cell is looked for only where it can be. */
 	let gridRoot: HTMLDivElement | undefined;
 
@@ -98,7 +126,7 @@
 		entryIds: entries.map((entry) => entry.id)
 	});
 	/** The cell a keystroke would land on: the cursor while its row and column exist, else the first cell. */
-	const activeCell = $derived(resolveCell(cursor, shape));
+	const activeCell = $derived(resolveCell(sheet.cursor, shape));
 
 	function isActiveCell(studentId: string, entryId: string | null): boolean {
 		return activeCell?.studentId === studentId && activeCell.entryId === entryId;
@@ -123,14 +151,14 @@
 	function selectCell(studentId: string, entryId: string | null): void {
 		// A click is not a reason to clear the message: it can be the very click
 		// that left a refused cell, and the refusal was raised as the cell was left.
-		cursor = { studentId, entryId };
+		sheet.cursor = { studentId, entryId };
 	}
 
 	/** Move to a cell and take the keyboard with it. */
 	function moveTo(cell: GridCell | null): void {
 		if (!cell) return;
 		clearRefusal();
-		cursor = cell;
+		sheet.cursor = cell;
 		focusCell(cell.studentId, cell.entryId);
 	}
 
@@ -147,8 +175,8 @@
 	 */
 	function startMarkEdit(student: StoredStudent, entry: BreakdownEntry, value: string): void {
 		clearRefusal();
-		cursor = { studentId: student.id, entryId: entry.id };
-		editing = { studentId: student.id, entryId: entry.id, value };
+		sheet.cursor = { studentId: student.id, entryId: entry.id };
+		sheet.editing = { studentId: student.id, entryId: entry.id, value };
 		flushSync();
 	}
 
@@ -164,8 +192,8 @@
 	 * about a refusal, or null when there was nothing to refuse.
 	 */
 	function commitMarkEdit(): string | null {
-		const open = editing;
-		editing = null;
+		const open = sheet.editing;
+		sheet.editing = null;
 		if (!open) return null;
 
 		const read = readMarkText(open.value);
@@ -179,7 +207,7 @@
 
 	/** A refusal belongs to the cell it happened on: moving or editing again drops it. */
 	function clearRefusal(): void {
-		refusal = null;
+		sheet.refusal = null;
 	}
 
 	/** Whether a key event came from a cell's own editor rather than the cell. */
@@ -200,22 +228,22 @@
 		if (event.target !== event.currentTarget && !isMarkEditor(event.target)) return;
 
 		const key = event.key;
-		const open = editing?.studentId === student.id && editing.entryId === entry.id;
+		const open = sheet.editing?.studentId === student.id && sheet.editing.entryId === entry.id;
 
 		if (key === 'Escape') {
 			if (!open) return;
 			event.preventDefault();
-			editing = null;
+			sheet.editing = null;
 			focusCell(student.id, entry.id);
 			return;
 		}
 
 		if (key === 'Enter' || key === 'Tab') {
 			event.preventDefault();
-			refusal = commitMarkEdit();
+			sheet.refusal = commitMarkEdit();
 			// A refused cell is left where it is, with the keyboard still on it, so
 			// the message beside the grid is about the cell in front of the teacher.
-			if (refusal) {
+			if (sheet.refusal) {
 				focusCell(student.id, entry.id);
 				return;
 			}
@@ -276,8 +304,8 @@
 	function onEditorFocusOut(): void {
 		// Only an editor that is still open has anything to take: the focusout that
 		// follows a commit the keyboard already made must not undo it.
-		if (!editing) return;
-		refusal = commitMarkEdit();
+		if (!sheet.editing) return;
+		sheet.refusal = commitMarkEdit();
 	}
 
 	/**
@@ -299,10 +327,10 @@
 
 		// An open mark editor commits first, so the block lands on the sheet the
 		// teacher can see rather than over a value still being typed.
-		if (editing) {
+		if (sheet.editing) {
 			const refused = commitMarkEdit();
 			if (refused) {
-				refusal = refused;
+				sheet.refusal = refused;
 				return;
 			}
 		}
@@ -319,14 +347,14 @@
 
 	/** Clicking a band moves the cursor to its first column, on the row it is on. */
 	function jumpToBand(band: QuestionBand): void {
-		const studentId = cursor?.studentId ?? students[0]?.id;
+		const studentId = activeCell?.studentId;
 		const first = band.entries[0];
 		if (!studentId || !first) return;
 		moveTo({ studentId, entryId: first.id });
 	}
 
 	function startAdding(): void {
-		adding = true;
+		sheet.adding = true;
 	}
 
 	/** Enter commits the name and opens the next; a blank Enter or Escape discards it. */
@@ -338,7 +366,7 @@
 		}
 		if (event.key !== 'Enter') return;
 		event.preventDefault();
-		const name = readName(newName);
+		const name = readName(sheet.newName);
 		if (!name) {
 			discardNewStudent();
 			return;
@@ -346,13 +374,13 @@
 		// On one tier there is nowhere else to put them; on two, a name typed on a
 		// tier tab joins that tier, so the row they typed stays where they are.
 		if (tier === null || store.tierCount === 1) store.addStudent(name);
-		else store.pasteNames(newName, tier);
-		newName = '';
+		else store.pasteNames(sheet.newName, tier);
+		sheet.newName = '';
 	}
 
 	function discardNewStudent(): void {
-		newName = '';
-		adding = false;
+		sheet.newName = '';
+		sheet.adding = false;
 	}
 
 	/** Move a student to the other tier: the marks they leave behind are kept, uncounted. */
@@ -360,7 +388,7 @@
 		const from = student.tier;
 		if (from === null) return;
 		const to: TierIndex = from === 0 ? 1 : 0;
-		store.setStudentTier(student.id, to);
+		if (!store.setStudentTier(student.id, to)) return;
 		toast(`${studentName(student)} moved to ${tierLabel(document, to)}`, {
 			description: 'Their marks on the tier they left are kept, not counted.'
 		});
@@ -368,18 +396,18 @@
 </script>
 
 {#snippet addStudentControl()}
-	{#if adding}
+	{#if sheet.adding}
 		<input
 			data-testid="new-student-name"
 			{@attach caretAtEnd}
 			aria-label="New student name"
 			class={cn(CELL_EDITOR, 'w-full')}
 			placeholder="First name Surname"
-			value={newName}
-			oninput={(event) => (newName = event.currentTarget.value)}
+			value={sheet.newName}
+			oninput={(event) => (sheet.newName = event.currentTarget.value)}
 			onkeydown={onAddKeydown}
 			onblur={() => {
-				if (newName.trim() === '') adding = false;
+				if (sheet.newName.trim() === '') sheet.adding = false;
 			}}
 		/>
 	{:else}
@@ -389,13 +417,13 @@
 	{/if}
 {/snippet}
 
-<GridNotices {refusal} />
+<GridNotices refusal={sheet.refusal} />
 
 <GridToolbar {tier} {onViewAnalysis} />
 
 {#if tier === null && store.students.length === 0}
 	<EmptyClassPanel {tier} onAddOne={startAdding} />
-	{#if adding}
+	{#if sheet.adding}
 		<div class="max-w-xl">{@render addStudentControl()}</div>
 	{/if}
 {:else if tier === null}
@@ -429,7 +457,8 @@
 				{#if bands.length > 0}
 					<BandHeaderRow
 						{bands}
-						cursorEntryId={cursor?.entryId ?? null}
+						{warnings}
+						cursorEntryId={sheet.cursor?.entryId ?? null}
 						onJump={jumpToBand}
 						endColumns={hasGrades ? 3 : 1}
 					/>
@@ -440,7 +469,7 @@
 						>Progress</Table.Head
 					>
 					{#each entries as entry (entry.id)}
-						<EntryColumnHead {entry} active={cursor?.entryId === entry.id} />
+						<EntryColumnHead {entry} active={sheet.cursor?.entryId === entry.id} />
 					{/each}
 					<Table.Head class="border-l-2 px-1 text-center text-xs">Total</Table.Head>
 					{#if hasGrades}
@@ -459,7 +488,7 @@
 						data-student-id={student.id}
 						class={cn(
 							'group',
-							cursor?.studentId === student.id && 'bg-muted/50 hover:bg-muted/50',
+							activeCell?.studentId === student.id && 'bg-muted/50 hover:bg-muted/50',
 							student.absent && 'text-muted-foreground'
 						)}
 					>
@@ -508,16 +537,16 @@
 								}}
 								onkeydown={(event) => onMarkKeydown(student, entry, event)}
 							>
-								{#if editing?.studentId === student.id && editing.entryId === entry.id}
+								{#if sheet.editing?.studentId === student.id && sheet.editing.entryId === entry.id}
 									<input
 										data-testid="mark-editor"
 										{@attach caretAtEnd}
 										aria-label={`Mark for ${name} on ${entryName(entry)}`}
 										inputmode="numeric"
 										class="m-0 block w-full min-w-0 appearance-none rounded-none border-0 bg-transparent p-0 text-center tabular-nums shadow-none outline-none ring-0"
-										value={editing.value}
+										value={sheet.editing.value}
 										oninput={(event) => {
-											if (editing) editing.value = event.currentTarget.value;
+											if (sheet.editing) sheet.editing.value = event.currentTarget.value;
 										}}
 										onfocusout={onEditorFocusOut}
 									/>
@@ -575,7 +604,12 @@
 								colspan={entries.length + (hasGrades ? 5 : 3)}
 								class="px-3 py-6 text-sm text-muted-foreground"
 							>
-								No students on {tierLabel(document, tier)} yet. Set tiers on the Tier not set tab.
+								{#if store.studentsWithoutTier().length > 0}
+									No students on {tierLabel(document, tier)} yet. Set tiers on the Tier not set tab.
+								{:else}
+									No students on {tierLabel(document, tier)} yet. Move a student here from
+									{tierLabel(document, tier === 0 ? 1 : 0)} with the ⇄ button.
+								{/if}
 							</Table.Cell>
 						</Table.Row>
 					{/if}

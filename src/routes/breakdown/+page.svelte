@@ -44,14 +44,17 @@
 	const blockers = $derived(store.blockers);
 	const usage = $derived(store.runUsage);
 	/**
-	 * Why no pairs are offered, when the run proposed none: the matching
-	 * failure's own reason if it gave one, else the plain next step.
+	 * What to say when no pairs are offered. Only a run speaks for the matching:
+	 * a sheet whose pairs were cleared by hand says nothing about what was
+	 * proposed, so it asks for a pair rather than claiming there was none.
 	 */
-	const noPairsNotice = $derived(
-		twoTiers && store.commonQuestions.length === 0
-			? (store.matchNotice ?? 'None proposed: pair them by hand at review.')
-			: null
-	);
+	const noPairs = $derived.by(() => {
+		if (!twoTiers || store.commonQuestions.length > 0) return null;
+		const notice = store.matchNotice;
+		return notice === null
+			? { title: 'No common questions yet', description: 'Pair them by hand below.' }
+			: { title: 'No common questions proposed', description: notice };
+	});
 	/** Whether the breakdown was unlocked after marks were entered: the stakes, before an edit. */
 	const studentsWithMarks = $derived.by(() => {
 		const document = store.document;
@@ -91,7 +94,7 @@
 
 	/** A tier as its tab and its panel name it. */
 	function tierLabel(tier: TierIndex): string {
-		const name = store.tiers[tier]?.tierName;
+		const name = store.tiers[tier]?.tierName?.trim();
 		return name ? `Tier ${tier + 1} · ${name}` : `Tier ${tier + 1}`;
 	}
 
@@ -196,10 +199,10 @@
 		<PaperLabelInput />
 	</div>
 
-	{#if noPairsNotice !== null}
+	{#if noPairs !== null}
 		<Alert data-testid="match-notice">
-			<AlertTitle>No common questions proposed</AlertTitle>
-			<AlertDescription>{noPairsNotice}</AlertDescription>
+			<AlertTitle>{noPairs.title}</AlertTitle>
+			<AlertDescription>{noPairs.description}</AlertDescription>
 		</Alert>
 	{/if}
 
@@ -238,7 +241,17 @@
 
 		<div class="flex flex-wrap items-center gap-4">
 			{#if twoTiers}
-				<ToggleGroup.Root type="single" variant="outline" bind:value={tab}>
+				<!-- A single toggle group reports '' when the open tab is clicked again; stay on it. -->
+				<ToggleGroup.Root
+					type="single"
+					variant="outline"
+					bind:value={
+						() => tab,
+						(value: string | string[] | undefined) => {
+							if (value === '0' || value === '1') tab = value;
+						}
+					}
+				>
 					{#each [0, 1] as const as tier (tier)}
 						<ToggleGroup.Item value={String(tier)} class="relative px-4" data-tier={tier}>
 							{tierLabel(tier)}
@@ -263,8 +276,8 @@
 		</div>
 
 		{#if blockerMessages.length > 0}
-			<div class="space-y-1 text-xs text-destructive" data-testid="blockers">
-				{#each blockerMessages as message (message)}
+			<div class="space-y-1 text-xs text-destructive" data-testid="blockers" role="status">
+				{#each blockerMessages as message, index (index)}
 					<p>{message}</p>
 				{/each}
 			</div>

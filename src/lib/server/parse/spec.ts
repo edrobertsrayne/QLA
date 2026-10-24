@@ -293,11 +293,11 @@ export async function fetchSpecPdf(url: URL, useNativePdf: boolean): Promise<Ing
 	}
 
 	// Count pages before extracting text, so an oversize specification never
-	// pays for the extraction the page cap exists to bound. pdf.js detaches the
-	// buffer it reads, so the count works on a copy.
+	// pays for the extraction the page cap exists to bound. countPdfPages
+	// copies its input, so bytes stays whole for extraction.
 	let pageCount: number;
 	try {
-		pageCount = await countPdfPages(bytes.slice());
+		pageCount = await countPdfPages(bytes);
 	} catch (error) {
 		throw new SpecUnreadableError(
 			'The specification PDF could not be read. Re-export it without password protection and try again.',

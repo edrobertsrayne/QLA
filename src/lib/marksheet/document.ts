@@ -573,19 +573,6 @@ export function entriesOfStudent(
 	return student.tier === null ? [] : tierEntries(document, student.tier);
 }
 
-/**
- * Whether a student's mark on an entry counts towards a figure for them: only
- * on the tier they sit. A student with no tier has no paper to count against.
- */
-export function isCountedMark(
-	document: MarksheetDocument,
-	student: StoredStudent,
-	entryId: string
-): boolean {
-	if (student.tier === null) return false;
-	return entryTierOf(document, entryId) === student.tier;
-}
-
 /** The tier name a student's report shows, or null when they have no tier or it has no name. */
 export function studentTierName(
 	document: MarksheetDocument,
@@ -616,22 +603,20 @@ export function sameProse(a: ReportProse, b: ReportProse): boolean {
 }
 
 /**
- * How many marks the document holds towards a figure: a student's marks on the
- * tier they sit, and every mark of a student with no tier. Marks on the other
- * tier are kept, but not counted.
+ * How many marks the document holds: every stored mark whose entry is on a
+ * tier, whether or not its student sits that tier. What a wipe discards and a
+ * backup file carries. A mark whose entry no tier holds is not counted: it can
+ * no longer be reached or shown.
  */
-export function markCount(document: MarksheetDocument): number {
-	let counted = 0;
-	for (const [studentId, byEntry] of Object.entries(document.marks)) {
-		const student = document.students.find((candidate) => candidate.id === studentId);
-		if (student === undefined) continue;
+export function storedMarkCount(document: MarksheetDocument): number {
+	const entryIds = new Set(allEntries(document).map((entry) => entry.id));
+	let stored = 0;
+	for (const byEntry of Object.values(document.marks)) {
 		for (const entryId of Object.keys(byEntry)) {
-			const tier = entryTierOf(document, entryId);
-			if (tier === null) continue;
-			if (student.tier === null || student.tier === tier) counted += 1;
+			if (entryIds.has(entryId)) stored += 1;
 		}
 	}
-	return counted;
+	return stored;
 }
 
 /**

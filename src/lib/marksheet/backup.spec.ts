@@ -70,7 +70,7 @@ describe('backupState', () => {
 		});
 	});
 
-	it('counts only marks on the tier a student sits', () => {
+	it('counts every stored mark the file holds, on either tier', () => {
 		const document = marksheet({
 			tiers: [
 				tier({ breakdown: { entries: [entry('entry-1', '1a', '1')], warnings: [] } }),
@@ -86,8 +86,11 @@ describe('backupState', () => {
 			}
 		});
 
-		// student-1's Foundation mark is kept but uncounted; student-2's mark counts.
-		expect(readBackup(JSON.stringify(document))?.summary.marks).toBe(2);
+		// student-1's Foundation mark is off-tier, but the backup carries it: a
+		// restore must bring it back, so the summary counts it as stored work.
+		const restored = readBackup(JSON.stringify(document));
+		expect(restored?.summary.marks).toBe(3);
+		expect(restored?.document.marks).toEqual(document.marks);
 	});
 });
 

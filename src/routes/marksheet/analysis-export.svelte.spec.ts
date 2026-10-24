@@ -55,7 +55,7 @@ async function openAnalysis() {
 }
 
 describe('analysis export', () => {
-	it('follows the open tier tab with today’s analysis CSV', async () => {
+	it('follows the open tier tab with that tier’s analysis CSV', async () => {
 		seedTwoTierAnalysis();
 		openAnalysisAt();
 		await openAnalysis();
@@ -63,7 +63,7 @@ describe('analysis export', () => {
 		const tier1 = captureDownload();
 		await page.getByRole('button', { name: 'Download CSV' }).click();
 
-		expect(tier1.filename()).toMatch(/^qla-analysis-10x-ph1-\d{4}-\d\d-\d\d\.csv$/);
+		expect(tier1.filename()).toMatch(/^qla-analysis-10x-ph1-higher-\d{4}-\d\d-\d\d\.csv$/);
 		const higher = parseCsv(await tier1.text());
 		expect(higher.map((row) => row[0]).slice(1)).toEqual(['1a', '1b', '1c', '1d']);
 		expect(higher[2][0]).toBe('1b');
@@ -76,6 +76,7 @@ describe('analysis export', () => {
 		const tier2 = captureDownload();
 		await page.getByRole('button', { name: 'Download CSV' }).click();
 
+		expect(tier2.filename()).toMatch(/^qla-analysis-10x-ph1-foundation-\d{4}-\d\d-\d\d\.csv$/);
 		const foundation = parseCsv(await tier2.text());
 		expect(foundation.map((row) => row[0]).slice(1)).toEqual(['8a', '8b', '8c', '8d']);
 		expect(foundation[1][6]).toBe('50');
@@ -165,44 +166,47 @@ describe('analysis export', () => {
 		expect(marksheetStore().document?.lastExportedAt).toBeNull();
 	});
 
-	it('prints the open tab with green unfolded, then folds it back', async () => {
+	it('prints every band from the folded page, without unfolding the screen', async () => {
 		seedSingleTierExport();
 		openAnalysisAt();
 		await openAnalysis();
-		expect(document.querySelector('[data-entry-id="entry-green"]')).toBeNull();
 
-		let printed = '';
-		const print = vi.spyOn(window, 'print').mockImplementation(() => {
-			printed = document.body.textContent ?? '';
-		});
+		const green = document.querySelector<HTMLElement>('[data-entry-id="entry-green"]');
+		// Green is folded on screen but in the page, for the print styles to reveal.
+		expect(green).not.toBeNull();
+		expect(green?.checkVisibility()).toBe(false);
+		expect(green?.closest('[class~="print:block"]')).not.toBeNull();
+
+		const print = vi.spyOn(window, 'print').mockImplementation(() => {});
 
 		await page.getByRole('button', { name: 'Print' }).click();
 
 		await vi.waitFor(() => expect(print).toHaveBeenCalledTimes(1));
-		expect(printed).toContain('Green question');
-		// What was folded on screen is folded again once the print is handed over.
-		expect(document.querySelector('[data-entry-id="entry-green"]')).toBeNull();
+		// Printing changes nothing on screen: the fold is the print stylesheet's to open.
+		expect(green?.checkVisibility()).toBe(false);
 	});
 
-	it('sends the open tier tab to the PDF route, green unfolded and no other tier', async () => {
+	it('sends the open tier tab to the PDF route, green included and no other tier', async () => {
 		seedTwoTierAnalysis();
 		const stub = stubPdfFetch();
 		openAnalysisAt('?tier=0');
 		await openAnalysis();
-		expect(document.querySelector('[data-entry-id="e-a"]')).toBeNull();
+		const green = document.querySelector<HTMLElement>('[data-entry-id="e-a"]');
+		expect(green).not.toBeNull();
+		expect(green?.checkVisibility()).toBe(false);
 		const file = captureDownload();
 
 		await page.getByRole('button', { name: 'Download PDF' }).click();
 
 		await vi.waitFor(() =>
-			expect(file.filename()).toMatch(/^qla-analysis-10x-ph1-\d{4}-\d\d-\d\d\.pdf$/)
+			expect(file.filename()).toMatch(/^qla-analysis-10x-ph1-higher-\d{4}-\d\d-\d\d\.pdf$/)
 		);
 		const [html] = sentHtml(stub);
 		expect(html).toContain('Shared one');
 		expect(html).toContain('Shared two');
 		expect(html).not.toContain('Foundation one');
-		// The screen is left as the teacher had it.
-		expect(document.querySelector('[data-entry-id="e-a"]')).toBeNull();
+		// The screen is left as the teacher had it: the green row is still folded there.
+		expect(green?.checkVisibility()).toBe(false);
 		expect(marksheetStore().document?.lastExportedAt).toBeNull();
 	});
 
@@ -216,7 +220,7 @@ describe('analysis export', () => {
 		await page.getByRole('button', { name: 'Download PDF' }).click();
 
 		await vi.waitFor(() =>
-			expect(file.filename()).toMatch(/^qla-analysis-10x-ph1-\d{4}-\d\d-\d\d\.pdf$/)
+			expect(file.filename()).toMatch(/^qla-common-questions-10x-ph1-\d{4}-\d\d-\d\d\.pdf$/)
 		);
 		const [html] = sentHtml(stub);
 		expect(html).toContain('Common questions — Higher and Foundation');
@@ -225,7 +229,7 @@ describe('analysis export', () => {
 		expect(html).not.toContain('Red — below 40%');
 	});
 
-	it('gives a single-tier assessment today’s analysis CSV and PDF', async () => {
+	it('gives a single-tier assessment its analysis CSV and PDF', async () => {
 		seedSingleTierExport();
 		openAnalysisAt();
 		await openAnalysis();
@@ -233,7 +237,7 @@ describe('analysis export', () => {
 		const csv = captureDownload();
 		await page.getByRole('button', { name: 'Download CSV' }).click();
 
-		expect(csv.filename()).toMatch(/^qla-analysis-10x-ph1-\d{4}-\d\d-\d\d\.csv$/);
+		expect(csv.filename()).toMatch(/^qla-analysis-10x-ph1-tier-1-\d{4}-\d\d-\d\d\.csv$/);
 		const rows = parseCsv(await csv.text());
 		expect(rows).toHaveLength(4);
 		expect(rows[1]).toEqual([
@@ -260,7 +264,7 @@ describe('analysis export', () => {
 		await page.getByRole('button', { name: 'Download PDF' }).click();
 
 		await vi.waitFor(() =>
-			expect(pdf.filename()).toMatch(/^qla-analysis-10x-ph1-\d{4}-\d\d-\d\d\.pdf$/)
+			expect(pdf.filename()).toMatch(/^qla-analysis-10x-ph1-tier-1-\d{4}-\d\d-\d\d\.pdf$/)
 		);
 		const [html] = sentHtml(stub);
 		for (const summary of ['Red question', 'Green question', 'Unmarked question']) {

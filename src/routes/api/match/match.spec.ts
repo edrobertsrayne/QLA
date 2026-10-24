@@ -3,11 +3,15 @@
 // Externally observable behaviour only: multipart in, `{ pairs, usage }` or
 // the error envelope out. The model is a stub transport (zero real calls);
 // every check that can refuse the call is exercised before the transport.
-// Synthetic PDFs come from the same builder the parse spec uses.
+// Synthetic PDFs come from the shared builder in `pdf.spec-helpers.ts`.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { POST } from './+server';
-import { MAX_ENTRIES, MAX_LABEL_LENGTH, MAX_SUMMARY_LENGTH } from '$lib/marksheet/report-limits';
+import {
+	MAX_MATCH_ENTRIES,
+	MAX_MATCH_LABEL_LENGTH,
+	MAX_MATCH_SUMMARY_LENGTH
+} from '$lib/match/limits';
 import {
 	resetStructuredTransport,
 	setStructuredTransport,
@@ -17,10 +21,12 @@ import {
 } from '$lib/server/openrouter';
 import { clearEnvForTests, setEnvForTests } from '$lib/server/parse/env';
 import { DEFAULT_MODEL_ID } from '$lib/server/parse/pdf';
+import { buildPdfBytes } from '$lib/server/parse/pdf.spec-helpers';
 import { MAX_FILE_BYTES, MAX_TOTAL_PAGES } from '$lib/server/parse/schema';
 
 const API_KEY = 'test-key';
 const USAGE = { promptTokens: 10, completionTokens: 5, totalTokens: 15, estCost: 0 };
+const ZERO_USAGE = { promptTokens: 0, completionTokens: 0, totalTokens: 0, estCost: 0 };
 
 interface Pair {
 	tier1Id: string;
@@ -43,48 +49,6 @@ interface Envelope {
 		retryAfter?: number;
 		checks?: { id: string; message: string }[];
 	};
-}
-
-function buildPdfBytes(pages: string[]): Uint8Array {
-	const enc = new TextEncoder();
-	let out = '%PDF-1.4\n';
-	const offsets: number[] = [0];
-	const count = pages.length;
-	const pageIds: number[] = [];
-	const contentIds: number[] = [];
-	for (let i = 0; i < count; i++) {
-		pageIds.push(3 + i * 2);
-		contentIds.push(4 + i * 2);
-	}
-	const fontId = 3 + count * 2;
-	const objects: string[] = [];
-	objects.push('1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n');
-	objects.push(
-		`2 0 obj<</Type/Pages/Kids[${pageIds.map((id) => `${id} 0 R`).join(' ')}]/Count ${count}>>endobj\n`
-	);
-	for (let i = 0; i < count; i++) {
-		objects.push(
-			`${pageIds[i]} 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents ${contentIds[i]} 0 R/Resources<</Font<</F1 ${fontId} 0 R>>>>>>endobj\n`
-		);
-		const safe = pages[i].replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-		const stream = `BT /F1 12 Tf 72 720 Td (${safe}) Tj ET`;
-		objects.push(
-			`${contentIds[i]} 0 obj<</Length ${enc.encode(stream).length}>>stream\n${stream}\nendstream\nendobj\n`
-		);
-	}
-	objects.push(`${fontId} 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n`);
-	for (const obj of objects) {
-		offsets.push(enc.encode(out).length);
-		out += obj;
-	}
-	const xrefPos = enc.encode(out).length;
-	const total = fontId + 1;
-	out += `xref\n0 ${total}\n0000000000 65535 f \n`;
-	for (let i = 1; i < total; i++) {
-		out += `${String(offsets[i] ?? 0).padStart(10, '0')} 00000 n \n`;
-	}
-	out += `trailer<</Size ${total}/Root 1 0 R>>\nstartxref\n${xrefPos}\n%%EOF`;
-	return enc.encode(out);
 }
 
 function pdfFile(name: string, pages: string[]): File {
@@ -194,6 +158,21 @@ describe('POST /api/match success', () => {
 		expect(status).toBe(200);
 		expect(json.pairs).toEqual([]);
 	});
+
+	it.each(['tier1Entries', 'tier2Entries'] as const)(
+		'answers an empty %s with no pairs and no model call',
+		async (field) => {
+			const form = matchForm();
+			writeEntries(form, field, []);
+
+			const { status, json } = await post(form);
+
+			expect(status).toBe(200);
+			expect(json.pairs).toEqual([]);
+			expect(json.usage).toEqual(ZERO_USAGE);
+			expect(calls).toHaveLength(0);
+		}
+	);
 });
 
 describe('POST /api/match model call', () => {
@@ -262,6 +241,16 @@ describe('POST /api/match model call', () => {
 		expect(calls[0]?.modelId).toBe('google/gemini-3.1-flash-lite');
 	});
 
+	it('falls back to the default model when the model field is blank', async () => {
+		const form = matchForm();
+		form.append('model', '   ');
+
+		const { status } = await post(form);
+
+		expect(status).toBe(200);
+		expect(calls[0]?.modelId).toBe(DEFAULT_MODEL_ID);
+	});
+
 	it('reports a missing server key as a non-retryable 500 without calling the transport', async () => {
 		setEnvForTests('OPENROUTER_API_KEY', '');
 
@@ -275,8 +264,8 @@ describe('POST /api/match model call', () => {
 });
 
 describe('POST /api/match request validation', () => {
-	const longId = 'q'.repeat(MAX_LABEL_LENGTH + 1);
-	const longSummary = 's'.repeat(MAX_SUMMARY_LENGTH + 1);
+	const longId = 'q'.repeat(MAX_MATCH_LABEL_LENGTH + 1);
+	const longSummary = 's'.repeat(MAX_MATCH_SUMMARY_LENGTH + 1);
 
 	const cases: Array<[string, (form: FormData) => void, string]> = [
 		['a missing Tier 1 document', (form) => form.delete('tier1Document'), 'tier1Document'],
@@ -290,14 +279,19 @@ describe('POST /api/match request validation', () => {
 			'tier1Entries'
 		],
 		[
-			`${MAX_ENTRIES + 1} entries in one tier`,
+			`${MAX_MATCH_ENTRIES + 1} entries in one tier`,
 			(form) =>
 				writeEntries(
 					form,
 					'tier1Entries',
-					Array.from({ length: MAX_ENTRIES + 1 }, (_, i) => entry(`q${i}`, 1))
+					Array.from({ length: MAX_MATCH_ENTRIES + 1 }, (_, i) => entry(`q${i}`, 1))
 				),
 			'tier1Entries'
+		],
+		[
+			`a model over ${MAX_MATCH_LABEL_LENGTH} characters`,
+			(form) => form.append('model', longId),
+			'model'
 		],
 		[
 			'an unknown entry key',
@@ -315,7 +309,7 @@ describe('POST /api/match request validation', () => {
 			'tier1Entries[0].id'
 		],
 		[
-			`an id over ${MAX_LABEL_LENGTH} characters`,
+			`an id over ${MAX_MATCH_LABEL_LENGTH} characters`,
 			(form) => writeEntries(form, 'tier1Entries', [{ ...TIER1_ENTRIES[0], id: longId }]),
 			'tier1Entries[0].id'
 		],
@@ -325,7 +319,7 @@ describe('POST /api/match request validation', () => {
 			'tier1Entries[0].questionNumber'
 		],
 		[
-			`a question number over ${MAX_LABEL_LENGTH} characters`,
+			`a question number over ${MAX_MATCH_LABEL_LENGTH} characters`,
 			(form) =>
 				writeEntries(form, 'tier1Entries', [{ ...TIER1_ENTRIES[0], questionNumber: longId }]),
 			'tier1Entries[0].questionNumber'
@@ -336,7 +330,7 @@ describe('POST /api/match request validation', () => {
 			'tier1Entries[0].summary'
 		],
 		[
-			`a summary over ${MAX_SUMMARY_LENGTH} characters`,
+			`a summary over ${MAX_MATCH_SUMMARY_LENGTH} characters`,
 			(form) => writeEntries(form, 'tier1Entries', [{ ...TIER1_ENTRIES[0], summary: longSummary }]),
 			'tier1Entries[0].summary'
 		],
@@ -351,7 +345,7 @@ describe('POST /api/match request validation', () => {
 			'tier1Entries[0].commandWord'
 		],
 		[
-			`a command word over ${MAX_LABEL_LENGTH} characters`,
+			`a command word over ${MAX_MATCH_LABEL_LENGTH} characters`,
 			(form) => writeEntries(form, 'tier1Entries', [{ ...TIER1_ENTRIES[0], commandWord: longId }]),
 			'tier1Entries[0].commandWord'
 		],
@@ -392,13 +386,57 @@ describe('POST /api/match request validation', () => {
 
 	it('accepts entries with nullable fields set to null', async () => {
 		const form = matchForm();
+		const nullEntry = { ...TIER1_ENTRIES[0], specPoint: null, commandWord: null, marks: null };
+		writeEntries(form, 'tier1Entries', [nullEntry]);
+
+		const { status } = await post(form);
+
+		expect(status).toBe(200);
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.data).toEqual({
+			tier1: { documents: ['tier1.pdf'], entries: [nullEntry] },
+			tier2: { documents: ['tier2.pdf'], entries: TIER2_ENTRIES }
+		});
+	});
+
+	it('accepts exactly the entry cap in each tier', async () => {
+		const form = matchForm();
 		writeEntries(form, 'tier1Entries', [
-			{ ...TIER1_ENTRIES[0], specPoint: null, commandWord: null, marks: null }
+			...TIER1_ENTRIES,
+			...Array.from({ length: MAX_MATCH_ENTRIES - TIER1_ENTRIES.length }, (_, i) =>
+				entry(`x${i}`, 1)
+			)
+		]);
+		writeEntries(form, 'tier2Entries', [
+			...TIER2_ENTRIES,
+			...Array.from({ length: MAX_MATCH_ENTRIES - TIER2_ENTRIES.length }, (_, i) =>
+				entry(`y${i}`, 1)
+			)
 		]);
 
 		const { status } = await post(form);
 
 		expect(status).toBe(200);
+		expect(calls).toHaveLength(1);
+		const data = calls[0]?.data as { tier1: { entries: unknown[] }; tier2: { entries: unknown[] } };
+		expect(data.tier1.entries).toHaveLength(MAX_MATCH_ENTRIES);
+		expect(data.tier2.entries).toHaveLength(MAX_MATCH_ENTRIES);
+	});
+
+	it('rejects a request body that is not multipart', async () => {
+		const request = new Request('http://localhost/api/match', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: '{}'
+		});
+
+		const response = await POST({ request } as unknown as Parameters<typeof POST>[0]);
+		const json = (await response.json()) as Envelope;
+
+		expect(response.status).toBe(400);
+		expect(json.error?.code).toBe('INVALID_MATCH_REQUEST');
+		expect(json.error?.field).toBe('');
+		expect(calls).toHaveLength(0);
 	});
 
 	it('rejects a non-PDF document before any model call', async () => {
@@ -444,10 +482,11 @@ describe('POST /api/match request validation', () => {
 	});
 
 	it('rejects both PDFs over the shared page ceiling before any model call', async () => {
-		const pages = Math.ceil((MAX_TOTAL_PAGES + 1) / 2);
+		const first = Math.ceil((MAX_TOTAL_PAGES + 1) / 2);
+		const second = MAX_TOTAL_PAGES + 1 - first;
 		const form = matchForm();
-		form.set('tier1Document', pdfWithPages('tier1.pdf', pages));
-		form.set('tier2Document', pdfWithPages('tier2.pdf', pages));
+		form.set('tier1Document', pdfWithPages('tier1.pdf', first));
+		form.set('tier2Document', pdfWithPages('tier2.pdf', second));
 
 		const { status, json } = await post(form);
 
@@ -458,9 +497,11 @@ describe('POST /api/match request validation', () => {
 	});
 
 	it('accepts exactly the shared page ceiling', async () => {
+		const first = Math.ceil(MAX_TOTAL_PAGES / 2);
+		const second = MAX_TOTAL_PAGES - first;
 		const form = matchForm();
-		form.set('tier1Document', pdfWithPages('tier1.pdf', MAX_TOTAL_PAGES / 2));
-		form.set('tier2Document', pdfWithPages('tier2.pdf', MAX_TOTAL_PAGES / 2));
+		form.set('tier1Document', pdfWithPages('tier1.pdf', first));
+		form.set('tier2Document', pdfWithPages('tier2.pdf', second));
 
 		const { status } = await post(form);
 
@@ -477,6 +518,24 @@ describe('POST /api/match request validation', () => {
 		expect(status).toBe(400);
 		expect(json.error?.code).toBe('MATCH_NEEDS_NATIVE_PDF');
 		expect(json.error?.retryable).toBe(false);
+		expect(calls).toHaveLength(0);
+	});
+
+	it('refuses a text-only model before either PDF is read', async () => {
+		const form = matchForm();
+		form.set('tier1Document', new File(['not a pdf'], 'fake.pdf', { type: 'application/pdf' }));
+		form.set(
+			'tier2Document',
+			new File(['also not a pdf'], 'fake2.pdf', { type: 'application/pdf' })
+		);
+		form.append('model', 'openai/text-only-model');
+
+		const { status, json } = await post(form);
+
+		// The capability check depends only on the model id, so it outranks a
+		// PDF that could never have been ingested for this model anyway.
+		expect(status).toBe(400);
+		expect(json.error?.code).toBe('MATCH_NEEDS_NATIVE_PDF');
 		expect(calls).toHaveLength(0);
 	});
 });
@@ -499,32 +558,67 @@ describe('POST /api/match local pair checks', () => {
 
 	it('drops a pair whose label is repeated within its tier', async () => {
 		const form = matchForm();
-		writeEntries(form, 'tier1Entries', [entry('1a', 2), entry('1a', 2)]);
-		stubOutput({ pairs: [{ tier1Id: '1a', tier2Id: '8a' }] });
+		writeEntries(form, 'tier1Entries', [entry('1a', 2), entry('1a', 2), entry('1b', 3)]);
+		stubOutput({
+			pairs: [
+				{ tier1Id: '1a', tier2Id: '8a' },
+				{ tier1Id: '1b', tier2Id: '8b' }
+			]
+		});
 
 		const { json } = await post(form);
 
-		expect(json.pairs).toEqual([]);
+		expect(json.pairs).toEqual([{ tier1Id: '1b', tier2Id: '8b' }]);
 	});
 
 	it('drops a pair whose entry has null marks', async () => {
 		const form = matchForm();
-		writeEntries(form, 'tier1Entries', [entry('1a', null)]);
-		stubOutput({ pairs: [{ tier1Id: '1a', tier2Id: '8a' }] });
+		writeEntries(form, 'tier1Entries', [entry('1a', null), entry('1b', 3)]);
+		stubOutput({
+			pairs: [
+				{ tier1Id: '1a', tier2Id: '8a' },
+				{ tier1Id: '1b', tier2Id: '8b' }
+			]
+		});
 
 		const { json } = await post(form);
 
-		expect(json.pairs).toEqual([]);
+		expect(json.pairs).toEqual([{ tier1Id: '1b', tier2Id: '8b' }]);
 	});
 
 	it('drops a pair whose marks differ', async () => {
 		const form = matchForm();
-		writeEntries(form, 'tier2Entries', [entry('8a', 3)]);
-		stubOutput({ pairs: [{ tier1Id: '1a', tier2Id: '8a' }] });
+		writeEntries(form, 'tier2Entries', [entry('8a', 3), entry('8b', 3)]);
+		stubOutput({
+			pairs: [
+				{ tier1Id: '1a', tier2Id: '8a' },
+				{ tier1Id: '1b', tier2Id: '8b' }
+			]
+		});
 
 		const { json } = await post(form);
 
-		expect(json.pairs).toEqual([]);
+		expect(json.pairs).toEqual([{ tier1Id: '1b', tier2Id: '8b' }]);
+	});
+
+	it('keeps pairs whose labels exist in both tiers', async () => {
+		const form = matchForm();
+		writeEntries(form, 'tier1Entries', [entry('1a', 2), entry('1b', 3)]);
+		writeEntries(form, 'tier2Entries', [entry('1a', 2), entry('1b', 3)]);
+		stubOutput({
+			pairs: [
+				{ tier1Id: '1a', tier2Id: '1a' },
+				{ tier1Id: '1b', tier2Id: '1b' }
+			]
+		});
+
+		const { status, json } = await post(form);
+
+		expect(status).toBe(200);
+		expect(json.pairs).toEqual([
+			{ tier1Id: '1a', tier2Id: '1a' },
+			{ tier1Id: '1b', tier2Id: '1b' }
+		]);
 	});
 
 	it('keeps the first claim when an entry is proposed twice', async () => {

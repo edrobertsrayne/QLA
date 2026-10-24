@@ -9,20 +9,23 @@
 
 import { isBreakdown, isRecord } from '$lib/parse/is-breakdown.js';
 import { isRunStoppingCode } from '$lib/marksheet/report-errors.js';
+import type { TierParse } from '$lib/marksheet/create-assessment.js';
+import {
+	MAX_MATCH_ENTRIES,
+	MAX_MATCH_LABEL_LENGTH,
+	MAX_MATCH_SUMMARY_LENGTH
+} from '$lib/match/limits.js';
 import type { Breakdown, ParseUsage, ParseWarning } from '$lib/server/parse/schema.js';
 
 // The multipart field names and per-file cap are the parse route's contract
 // (src/lib/server/parse/schema.ts). They are repeated here because a client
-// module cannot import that server-only path.
+// module cannot import that server-only path. The matching caps come from the
+// same module the match route reads them from, so the two cannot drift.
 const ASSESSMENT_PAPER_FIELD = 'assessmentPaper';
 const MARKSCHEME_FIELD = 'markscheme';
 const MODEL_OVERRIDE_FIELD = 'modelOverride';
 const SPEC_URL_FIELD = 'specUrl';
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
-/** The matching route's per-field caps (src/lib/server/match.ts contract). */
-const MAX_MATCH_LABEL_LENGTH = 120;
-const MAX_MATCH_SUMMARY_LENGTH = 300;
-const MAX_MATCH_ENTRIES = 200;
 
 export type StepStatus = 'idle' | 'running' | 'done' | 'failed';
 export type MatchStatus = 'idle' | 'running' | 'done' | 'failed' | 'skipped';
@@ -38,23 +41,6 @@ export interface StepError {
 export interface MatchPair {
 	tier1Id: string;
 	tier2Id: string;
-}
-
-/** One tier's successful parse, kept whole until Open breakdown. */
-export interface ParsedTier {
-	tierName: string | null;
-	breakdown: Breakdown;
-	warnings: ParseWarning[];
-	filenames: string[];
-	usage: ParseUsage;
-}
-
-/** What the store needs from one tier at creation time. */
-export interface UploadTierResult {
-	tierName: string | null;
-	breakdown: Breakdown;
-	warnings: ParseWarning[];
-	filenames: string[];
 }
 
 /** A tier and input the other tier has, so this tier needs one too. */
@@ -257,7 +243,7 @@ export class TierSlot {
 	markschemeError = $state<string | null>(null);
 	parse = $state<StepStatus>('idle');
 	error = $state<StepError | null>(null);
-	parsed = $state<ParsedTier | null>(null);
+	parsed = $state<TierParse | null>(null);
 
 	get hasFile(): boolean {
 		return this.paper !== null || this.markscheme !== null;
@@ -423,20 +409,24 @@ export class UploadRun {
 		this.phase = 'done';
 	}
 
+	/**
+	 * Leave a stopped run for the form. The files stay, so the teacher can
+	 * change the model or specification and run again; every result that
+	 * belonged to the stopped run is dropped.
+	 */
+	abandon(): void {
+		if (this.phase !== 'stopped') return;
+		this.resetResults();
+		this.phase = 'form';
+	}
+
 	/** Every tier's parse, as the store's createFromAssessment takes them. */
-	tierResults(): UploadTierResult[] | null {
-		const results: UploadTierResult[] = [];
-		for (const tier of this.tiers) {
-			const parsed = tier.parsed;
-			if (parsed === null) return null;
-			results.push({
-				tierName: parsed.tierName,
-				breakdown: parsed.breakdown,
-				warnings: parsed.warnings,
-				filenames: parsed.filenames
-			});
-		}
-		return results;
+	tierResults(): [TierParse] | [TierParse, TierParse] | null {
+		const [first, second] = this.tiers;
+		if (first === undefined || first.parsed === null) return null;
+		if (second === undefined) return [first.parsed];
+		if (second.parsed === null) return null;
+		return [first.parsed, second.parsed];
 	}
 
 	private resetResults(): void {
@@ -501,8 +491,7 @@ export class UploadRun {
 			warnings: parsed.warnings,
 			filenames: [tier.paper?.name, tier.markscheme?.name].filter(
 				(name): name is string => name !== undefined
-			),
-			usage: parsed.usage
+			)
 		};
 		this.usage = addUsage(this.usage, parsed.usage);
 		tier.parse = 'done';
@@ -558,11 +547,9 @@ export class UploadRun {
 			const error = await this.attemptMatch();
 			if (error === null) return;
 			this.matchError = error;
-			if (isRunStoppingCode(error.code)) {
-				this.stopRun(error);
-				return;
-			}
-			if (!error.retryable) {
+			// A match failure never costs a parse: both tiers are already in
+			// hand, so the teacher continues to review and pairs by hand.
+			if (isRunStoppingCode(error.code) || !error.retryable) {
 				this.match = 'failed';
 				this.matchPairs = [];
 				this.pairs = 0;
@@ -644,7 +631,7 @@ interface MatchCallEntry {
 	commandWord: string | null;
 }
 
-function matchEntries(parsed: ParsedTier): MatchCallEntry[] {
+function matchEntries(parsed: TierParse): MatchCallEntry[] {
 	const entries: MatchCallEntry[] = [];
 	for (const question of parsed.breakdown.questions) {
 		// The parse guard checks the array only; a warned field can still be

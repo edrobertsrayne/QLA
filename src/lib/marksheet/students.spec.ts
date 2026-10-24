@@ -66,12 +66,18 @@ describe('sortStudentsByName', () => {
 });
 
 describe('newStudent', () => {
-	it('makes a present, unmarked student on the tier they sit', () => {
+	it('makes a present, unmarked student on the tier they sit, or waiting for one', () => {
 		expect(newStudent({ firstName: 'Ada', surname: 'Lovelace' }, 1)).toMatchObject({
 			firstName: 'Ada',
 			surname: 'Lovelace',
 			absent: false,
 			tier: 1
+		});
+		expect(newStudent({ firstName: 'Grace', surname: 'Hopper' }, null)).toMatchObject({
+			firstName: 'Grace',
+			surname: 'Hopper',
+			absent: false,
+			tier: null
 		});
 	});
 });

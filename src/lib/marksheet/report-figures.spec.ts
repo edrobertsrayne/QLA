@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { confirmed, entry, student, tier } from './fixtures.spec-helpers.js';
-import { reportFiguresFor } from './report-figures.js';
+import { droppedNoMarks, reportFiguresFor } from './report-figures.js';
 
 function documentWith(aoDescriptions: Record<string, string>) {
 	return confirmed({
@@ -36,6 +36,22 @@ describe('By skill rows', () => {
 });
 
 describe('report figures', () => {
+	it('claims no marks were dropped only for a paper that offers marks', () => {
+		const noTier = confirmed({
+			students: [student('no-tier', 'Ada', 'Lovelace', false, null)]
+		});
+
+		const figures = reportFiguresFor(noTier, 'no-tier');
+
+		expect(figures).toMatchObject({ total: 0, available: 0, entries: [] });
+		expect(droppedNoMarks(figures)).toBe(false);
+
+		// A paper with marks, all gained: the only time the line is true.
+		const gainedThem = documentWith({});
+		gainedThem.marks['student-1'] = { 'entry-1': 4, 'entry-2': 2 };
+		expect(droppedNoMarks(reportFiguresFor(gainedThem, 'student-1'))).toBe(true);
+	});
+
 	it('read the student’s own tier’s entries only', () => {
 		const document = confirmed({
 			tiers: [
