@@ -15,7 +15,8 @@
 	import MinusCircleIcon from '@lucide/svelte/icons/circle-minus';
 	import type { Snippet } from 'svelte';
 	import { count } from '$lib/prose.js';
-	import { isFileProblem, type StepError, type UploadRun } from './run.svelte.js';
+	import { isFileProblem, type UploadRun } from './run.svelte.js';
+	import type { ApiFailure } from '$lib/api-error.js';
 
 	interface Props {
 		run: UploadRun;
@@ -37,7 +38,7 @@
 	label: string,
 	state: StepState,
 	detail: string | null,
-	error: StepError | null,
+	error: ApiFailure | null,
 	action: Snippet | null
 )}
 	<li class="flex gap-3">
@@ -58,7 +59,7 @@
 			<p class={['font-medium', state === 'idle' && 'text-muted-foreground']}>{label}</p>
 			{#if detail}<p class="text-muted-foreground">{detail}</p>{/if}
 			{#if error}
-				<p class="text-destructive">{error.message} ({error.code})</p>
+				<p class="text-destructive">{error.message} ({error.code ?? 'REQUEST_FAILED'})</p>
 			{/if}
 			{#if action}
 				{@render action()}

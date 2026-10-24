@@ -488,6 +488,23 @@ describe('upload page run', () => {
 		expect(api.parseCalls).toHaveLength(1);
 	});
 
+	it('stops the run when the server marks a model failure non-retryable', async () => {
+		stubApi({ parse: () => apiError('MODEL_ERROR', 'The model call failed.', false, 500) });
+
+		render(Page);
+		await uploadPaper('higher.pdf');
+		await page.getByRole('button', { name: 'Run' }).click();
+
+		// The server decides: MODEL_ERROR used to be guessed retryable by the
+		// client, so this now fails the run instead of offering Retry.
+		await expect.element(page.getByTestId('fatal-panel')).toHaveTextContent('MODEL_ERROR');
+		await expect.element(page.getByText('The model call failed.')).toBeVisible();
+		await expect
+			.element(page.getByRole('button', { name: 'Retry', exact: true }))
+			.not.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Back to upload' })).toBeVisible();
+	});
+
 	it('lets Escape abandon a stopped run', async () => {
 		stubApi({ parse: () => apiError('MODEL_RETRYABLE', 'Provider busy', true, 502) });
 

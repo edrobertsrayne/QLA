@@ -13,7 +13,7 @@
 
 <Alert variant="destructive" data-testid="fatal-panel" aria-live="polite">
 	<OctagonXIcon />
-	<AlertTitle>Run failed ({fatal.code})</AlertTitle>
+	<AlertTitle>Run failed ({fatal.code ?? 'REQUEST_FAILED'})</AlertTitle>
 	<AlertDescription>
 		<p>{fatal.message}</p>
 		{#if retryable}

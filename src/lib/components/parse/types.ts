@@ -1,5 +1,5 @@
 export interface FatalError {
-	code: string;
+	code: string | null;
 	message: string;
 	retryable?: boolean;
 }

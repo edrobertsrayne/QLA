@@ -7,6 +7,7 @@
 // temporary matching failure gets. It stores nothing; the page creates the
 // document only when the teacher chooses Open breakdown.
 
+import { ApiFailure, failureFrom } from '$lib/api-error.js';
 import { isBreakdown, isRecord } from '$lib/parse/is-breakdown.js';
 import { isRunStoppingCode } from '$lib/marksheet/report-errors.js';
 import type { TierParse } from '$lib/marksheet/create-assessment.js';
@@ -31,12 +32,6 @@ export type StepStatus = 'idle' | 'running' | 'done' | 'failed';
 export type MatchStatus = 'idle' | 'running' | 'done' | 'failed' | 'skipped';
 export type RunPhase = 'form' | 'running' | 'stopped' | 'done';
 
-export interface StepError {
-	code: string;
-	message: string;
-	retryable: boolean;
-}
-
 /** One proposed common question, still as parse labels. */
 export interface MatchPair {
 	tier1Id: string;
@@ -54,12 +49,6 @@ const FILE_PROBLEM_CODES: Record<string, true> = {
 	PDF_UNREADABLE: true,
 	FILE_TOO_BIG: true,
 	INVALID_FILE_TYPE: true
-};
-const TEMPORARY_CODES: Record<string, true> = {
-	MODEL_RETRYABLE: true,
-	MODEL_ERROR: true,
-	MALFORMED_MODEL_OUTPUT: true,
-	REQUEST_FAILED: true
 };
 
 const ZERO_USAGE: ParseUsage = {
@@ -79,8 +68,8 @@ function addUsage(total: ParseUsage, usage: ParseUsage): ParseUsage {
 }
 
 /** Whether the tier's own file is the problem, so the way out is replacing it. */
-export function isFileProblem(error: StepError): boolean {
-	return FILE_PROBLEM_CODES[error.code] === true;
+export function isFileProblem(error: ApiFailure): boolean {
+	return FILE_PROBLEM_CODES[error.code ?? ''] === true;
 }
 
 function checkPdf(file: File): string | null {
@@ -185,16 +174,6 @@ function readMatchSuccess(value: unknown): MatchSuccess | null {
 	return { pairs, usage };
 }
 
-function readStepError(value: unknown): StepError | null {
-	if (!isRecord(value)) return null;
-	const error = value['error'];
-	if (!isRecord(error)) return null;
-	const code = error['code'];
-	const message = error['message'];
-	if (typeof code !== 'string' || typeof message !== 'string') return null;
-	return { code, message, retryable: error['retryable'] === true };
-}
-
 async function readBody(response: Response): Promise<unknown> {
 	try {
 		return await response.json();
@@ -203,36 +182,12 @@ async function readBody(response: Response): Promise<unknown> {
 	}
 }
 
-function requestFailed(error: unknown): StepError {
-	return {
+/** The one failure with no response: the request itself never reached the server. */
+function requestFailed(error: unknown, fallback: string): ApiFailure {
+	return new ApiFailure(error instanceof Error ? error.message : fallback, {
 		code: 'REQUEST_FAILED',
-		message: error instanceof Error ? error.message : 'The run could not be completed.',
 		retryable: true
-	};
-}
-
-function parseStepError(body: unknown): StepError {
-	const error = readStepError(body);
-	if (error === null) {
-		return {
-			code: 'REQUEST_FAILED',
-			message: 'The run could not be completed.',
-			retryable: true
-		};
-	}
-	return { ...error, retryable: error.retryable || TEMPORARY_CODES[error.code] === true };
-}
-
-function matchStepError(body: unknown): StepError {
-	const error = readStepError(body);
-	if (error === null) {
-		return {
-			code: 'REQUEST_FAILED',
-			message: 'The matching call could not be completed.',
-			retryable: true
-		};
-	}
-	return { ...error, retryable: error.retryable || TEMPORARY_CODES[error.code] === true };
+	});
 }
 
 /** One tier's place in the form: its files, its parse status and what it read. */
@@ -242,7 +197,7 @@ export class TierSlot {
 	paperError = $state<string | null>(null);
 	markschemeError = $state<string | null>(null);
 	parse = $state<StepStatus>('idle');
-	error = $state<StepError | null>(null);
+	error = $state<ApiFailure | null>(null);
 	parsed = $state<TierParse | null>(null);
 
 	get hasFile(): boolean {
@@ -270,13 +225,13 @@ export class UploadRun {
 	specUrl = $state('');
 	specUrlError = $state<string | null>(null);
 	match = $state<MatchStatus>('idle');
-	matchError = $state<StepError | null>(null);
+	matchError = $state<ApiFailure | null>(null);
 	pairs = $state<number | null>(null);
 	matchPairs = $state<MatchPair[]>([]);
 	/** A non-retryable matching failure's reason, kept for the review's notice. */
 	notice = $state<string | null>(null);
 	/** A run-stopping error: shown with today's FatalAlert; nothing is kept. */
-	fatal = $state<StepError | null>(null);
+	fatal = $state<ApiFailure | null>(null);
 	usage = $state<ParseUsage>({ ...ZERO_USAGE });
 
 	get twoTiers(): boolean {
@@ -462,25 +417,24 @@ export class UploadRun {
 		try {
 			response = await fetch('/api/parse', { method: 'POST', body: form });
 		} catch (error) {
-			tier.error = requestFailed(error);
+			tier.error = requestFailed(error, 'The run could not be completed.');
+			tier.parse = 'failed';
+			return;
+		}
+
+		if (!response.ok) {
+			tier.error = await failureFrom(response, 'The run could not be completed.');
 			tier.parse = 'failed';
 			return;
 		}
 
 		const body = await readBody(response);
-		if (!response.ok) {
-			tier.error = parseStepError(body);
-			tier.parse = 'failed';
-			return;
-		}
-
 		const parsed = readParseSuccess(body);
 		if (parsed === null) {
-			tier.error = {
-				code: 'MALFORMED_MODEL_OUTPUT',
-				message: "The model's response was not a valid breakdown. Please try again.",
-				retryable: true
-			};
+			tier.error = new ApiFailure(
+				"The model's response was not a valid breakdown. Please try again.",
+				{ code: 'MALFORMED_MODEL_OUTPUT', retryable: true }
+			);
 			tier.parse = 'failed';
 			return;
 		}
@@ -521,7 +475,7 @@ export class UploadRun {
 	}
 
 	/** The run is over and keeps nothing: today's fatal panel is the way back. */
-	private stopRun(error: StepError): void {
+	private stopRun(error: ApiFailure): void {
 		this.fatal = error;
 		this.phase = 'form';
 		this.match = 'idle';
@@ -549,7 +503,7 @@ export class UploadRun {
 			this.matchError = error;
 			// A match failure never costs a parse: both tiers are already in
 			// hand, so the teacher continues to review and pairs by hand.
-			if (isRunStoppingCode(error.code) || !error.retryable) {
+			if ((error.code !== null && isRunStoppingCode(error.code)) || !error.retryable) {
 				this.match = 'failed';
 				this.matchPairs = [];
 				this.pairs = 0;
@@ -563,7 +517,7 @@ export class UploadRun {
 		this.phase = 'stopped';
 	}
 
-	private async attemptMatch(): Promise<StepError | null> {
+	private async attemptMatch(): Promise<ApiFailure | null> {
 		const [first, second] = this.tiers;
 		const firstParsed = first?.parsed;
 		const secondParsed = second?.parsed;
@@ -577,11 +531,10 @@ export class UploadRun {
 			firstDocument === null ||
 			secondDocument === null
 		) {
-			return {
+			return new ApiFailure('Both tiers must be parsed before matching.', {
 				code: 'INVALID_MATCH_REQUEST',
-				message: 'Both tiers must be parsed before matching.',
 				retryable: false
-			};
+			});
 		}
 
 		const form = new FormData();
@@ -595,19 +548,20 @@ export class UploadRun {
 		try {
 			response = await fetch('/api/match', { method: 'POST', body: form });
 		} catch (error) {
-			return requestFailed(error);
+			return requestFailed(error, 'The matching call could not be completed.');
+		}
+
+		if (!response.ok) {
+			return failureFrom(response, 'The matching call could not be completed.');
 		}
 
 		const body = await readBody(response);
-		if (!response.ok) return matchStepError(body);
-
 		const matched = readMatchSuccess(body);
 		if (matched === null) {
-			return {
+			return new ApiFailure('The matching answer could not be read. Please try again.', {
 				code: 'INVALID_MODEL_OUTPUT',
-				message: 'The matching answer could not be read. Please try again.',
 				retryable: true
-			};
+			});
 		}
 
 		this.usage = addUsage(this.usage, matched.usage);
