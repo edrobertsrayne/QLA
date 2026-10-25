@@ -47,7 +47,10 @@ this ADR records, not deferred to a future cache effort:
   to 5, each re-validated the same way, with redirects never auto-followed
   by the underlying fetch), is rejected if it falls in loopback,
   link-local, private (RFC1918), carrier-grade-NAT, unique-local, or
-  unspecified address space.
+  unspecified address space. The connection is made to that checked
+  address (the socket's `lookup` returns it), never to one the HTTP client
+  resolves again, so DNS rebinding cannot swap in a private address; TLS
+  still verifies against the URL's hostname.
 - Every network-level failure — blocked address, unreachable host, non-OK
   status, refused redirect — surfaces the same generic message, so a caller
   cannot use response differences to probe which internal ports are open

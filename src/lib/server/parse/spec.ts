@@ -21,8 +21,11 @@
 // redirect, non-OK status — surfaces the same generic message, so a caller
 // cannot use response differences to fingerprint internal ports.
 //
+// The connection goes to the address that passed that check, never to one the
+// HTTP client resolves for itself (DNS rebinding); see `spec-fetch.ts`.
+//
 // Tests inject behaviour via `setSpecFetch` and `setDnsLookup`; production
-// uses global `fetch` and Node's resolver.
+// uses `pinnedFetch` and Node's resolver.
 
 import { lookup as nodeDnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
@@ -35,6 +38,7 @@ import {
 } from './schema';
 import { countPdfPages, parsePdfBytes, PdfUnreadableError } from './pdf';
 import type { IngestedDocument } from './model';
+import { pinnedFetch, type CheckedAddress, type SpecFetch } from './spec-fetch';
 
 /** Generic message for every network-level failure (blocked, unreachable, non-OK, bad redirect). */
 const DOWNLOAD_FAILED_MESSAGE =
@@ -64,19 +68,16 @@ export class SpecUnreadableError extends Error {
 	}
 }
 
-/** Fetch seam for the spec download (tests inject a mocked fetch). */
-export type SpecFetch = (url: string, init?: RequestInit) => Promise<Response>;
-
-let specFetch: SpecFetch = (url, init) => fetch(url, init);
+let specFetch: SpecFetch = pinnedFetch;
 
 /** Test seam: replace the spec fetch implementation. */
 export function setSpecFetch(fn: SpecFetch): void {
 	specFetch = fn;
 }
 
-/** Restore the default global-fetch implementation. */
+/** Restore the default address-pinned implementation. */
 export function resetSpecFetch(): void {
-	specFetch = (url, init) => fetch(url, init);
+	specFetch = pinnedFetch;
 }
 
 /** DNS lookup seam for the SSRF guard (tests inject fake resolutions). */
@@ -123,19 +124,21 @@ function isBlockedIpv6(address: string): boolean {
 }
 
 /**
- * Reject a spec URL (original or redirect target) whose hostname or resolved
- * address falls in loopback/link-local/private/unique-local/unspecified
- * space, before any connection is attempted. Throws the same generic
- * `SpecUnreadableError` as every other network-level failure so a caller
- * cannot tell a blocked address apart from an unreachable or erroring one.
+ * The address to connect to for a spec URL (original or redirect target), or
+ * a rejection when its hostname or any resolved address falls in
+ * loopback/link-local/private/unique-local/unspecified space, before any
+ * connection is attempted. The caller connects to the returned address and
+ * never resolves the host again. Throws the same generic `SpecUnreadableError`
+ * as every other network-level failure so a caller cannot tell a blocked
+ * address apart from an unreachable or erroring one.
  */
-async function assertPublicAddress(url: URL): Promise<void> {
+async function resolvePublicAddress(url: URL): Promise<CheckedAddress> {
 	const hostname = url.hostname.toLowerCase();
 	const literalFamily = isIP(hostname);
 	if (literalFamily) {
 		const blocked = literalFamily === 6 ? isBlockedIpv6(hostname) : isBlockedIpv4(hostname);
 		if (blocked) throw new SpecUnreadableError(DOWNLOAD_FAILED_MESSAGE);
-		return;
+		return { address: hostname, family: literalFamily };
 	}
 	if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
 		throw new SpecUnreadableError(DOWNLOAD_FAILED_MESSAGE);
@@ -152,6 +155,7 @@ async function assertPublicAddress(url: URL): Promise<void> {
 	if (resolved.length === 0 || blocked) {
 		throw new SpecUnreadableError(DOWNLOAD_FAILED_MESSAGE);
 	}
+	return resolved[0];
 }
 
 /**
@@ -162,13 +166,13 @@ async function assertPublicAddress(url: URL): Promise<void> {
 async function fetchValidated(url: URL): Promise<Response> {
 	let current = url;
 	for (let hop = 0; ; hop += 1) {
-		await assertPublicAddress(current);
+		const address = await resolvePublicAddress(current);
 
 		let response: Response;
 		try {
 			response = await specFetch(current.toString(), {
+				address,
 				headers: { Accept: 'application/pdf' },
-				redirect: 'manual',
 				signal: AbortSignal.timeout(SPEC_FETCH_TIMEOUT_MS)
 			});
 		} catch (error) {
