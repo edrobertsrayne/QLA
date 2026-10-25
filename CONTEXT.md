@@ -21,7 +21,7 @@ A QLA-generated record of one class's marks, per student per question, built in 
 _Avoid_: Markscheme, gradebook, markbook
 
 **Local student id**:
-The stable identifier a marksheet uses to tie a student's marks to their name, so renaming a student or inserting one mid-list never reassigns marks. Generated on the teacher's device and never sent anywhere: no student identifier of any kind crosses to the server.
+The stable identifier a marksheet uses to tie a student's marks to their name, so renaming a student or inserting one mid-list never reassigns marks. Generated on the teacher's device and never sent to a model: no student identifier of any kind appears in a model call. The one exception to the server never seeing student data is PDF export, which sends the rendered report or analysis (student names and feedback included) to the server to render and persists nothing; see [ADR 0003](docs/adr/0003-pdfs-rendered-by-server-side-chromium.md).
 _Avoid_: Pseudonym, student UUID
 
 **Assessment**:
