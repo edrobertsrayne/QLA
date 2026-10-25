@@ -10,6 +10,5 @@
 	running={flow.run.running}
 	models={flow.models}
 	bind:modelOverride={flow.modelOverride}
-	bind:modelCustom={flow.modelCustom}
 	onwrite={(ids) => flow.writeNew(ids)}
 />

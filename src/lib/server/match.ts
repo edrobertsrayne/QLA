@@ -20,6 +20,7 @@ import {
 	readString,
 	rejectUnknownKeys
 } from './request-fields.js';
+import { readModelOverride } from './parse/models';
 
 /** One breakdown entry as the matching call sees it: the parse label plus what the model compares. */
 export interface MatchEntry {
@@ -242,7 +243,7 @@ function readModel(form: FormData): string | undefined {
 	if (value === null) return undefined;
 	if (value instanceof File) fail(MODEL_FIELD, 'Must be a string.');
 	const model = readString(value, MODEL_FIELD, { max: MAX_MATCH_LABEL_LENGTH }).trim();
-	return model === '' ? undefined : model;
+	return model === '' ? undefined : readModelOverride(model, MODEL_FIELD);
 }
 
 /**

@@ -104,10 +104,10 @@ describe('POST /api/topic-names success', () => {
 	it('resolves the model override over the env default', async () => {
 		setEnvForTests('OPENROUTER_MODEL', 'env/model');
 
-		const { json } = await post(body({ model: 'custom/override' }));
+		const { json } = await post(body({ model: 'google/gemini-3.1-flash-lite' }));
 
-		expect(json.model).toBe('custom/override');
-		expect(calls[0]?.modelId).toBe('custom/override');
+		expect(json.model).toBe('google/gemini-3.1-flash-lite');
+		expect(calls[0]?.modelId).toBe('google/gemini-3.1-flash-lite');
 	});
 
 	it('falls back to the shared default with neither', async () => {
@@ -237,6 +237,8 @@ describe('POST /api/topic-names input validation (no model spend)', () => {
 		['unknown top-level key', body({ extra: 1 }), 'extra'],
 		['non-string model', body({ model: 5 }), 'model'],
 		['blank model', body({ model: '  ' }), 'model'],
+		['model outside the curated list', body({ model: 'vendor/not-curated' }), 'model'],
+		['10,000-character model', body({ model: 'm'.repeat(10_000) }), 'model'],
 		['non-string paperLabel', body({ paperLabel: 5 }), 'paperLabel'],
 		['paperLabel over 120', body({ paperLabel: 'x'.repeat(121) }), 'paperLabel'],
 		['codes not a list', body({ codes: 'no' }), 'codes'],

@@ -33,7 +33,7 @@ describe('ModelSelect.svelte', () => {
 		await expect.element(page.getByRole('listbox')).not.toBeInTheDocument();
 	});
 
-	it('shows an explicit empty state alongside the custom model option when a search matches nothing', async () => {
+	it('shows an explicit empty state when a search matches nothing', async () => {
 		render(ModelSelect, { models });
 
 		await page.getByRole('combobox', { name: 'Model override' }).click();
@@ -43,21 +43,7 @@ describe('ModelSelect.svelte', () => {
 		await expect
 			.element(page.getByText('No models match “zzz-no-such-model”.'))
 			.toBeInTheDocument();
-		const options = page.getByRole('option');
-		expect(options.elements()).toHaveLength(1);
-		await expect.element(page.getByRole('option', { name: /Custom model/ })).toBeInTheDocument();
-	});
-
-	it('lets a user enter a custom model id', async () => {
-		render(ModelSelect, { models });
-
-		await page.getByRole('combobox', { name: 'Model override' }).click();
-		await page.getByRole('option', { name: /Custom model/ }).click();
-
-		const customInput = page.getByLabelText('Custom model id');
-		await expect.element(customInput).toBeInTheDocument();
-		await userEvent.type(customInput.element() as HTMLElement, 'vendor/my-model');
-		await expect.element(customInput).toHaveValue('vendor/my-model');
+		expect(page.getByRole('option').elements()).toHaveLength(0);
 	});
 
 	it('surfaces a load error with a retry action instead of an empty listbox', async () => {

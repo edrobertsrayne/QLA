@@ -1,3 +1,5 @@
+import { fail, readString } from '../request-fields';
+
 // Compatible-model catalogue for the Phase 1 Parse model override dropdown.
 //
 // The drop-down offers a small actively curated set (four current models
@@ -26,9 +28,16 @@ export const CURATED_MODELS = [
 /** The ids of the curated set. */
 export type CuratedModelId = (typeof CURATED_MODELS)[number]['id'];
 
-/** Whether `id` is one of the curated models (as opposed to a custom override). */
+/** Whether `id` is one of the curated models, the only ids a per-run override may name. */
 export function isCuratedModelId(id: string): id is CuratedModelId {
 	return Object.hasOwn(CURATED_PRICING, id);
+}
+
+/** A per-run model override from a request: a curated id, else an `InputError` naming `field`. */
+export function readModelOverride(value: unknown, field: string): CuratedModelId {
+	const id = readString(value, field, { nonBlank: 'Must be a non-blank string.' });
+	if (!isCuratedModelId(id)) fail(field, 'Must be one of the available models.');
+	return id;
 }
 
 /**

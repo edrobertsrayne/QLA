@@ -81,7 +81,8 @@ function stubApi(handlers: {
 	const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
 		const url =
 			typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-		if (url.includes('/api/models')) return json({ models: [] });
+		if (url.includes('/api/models'))
+			return json({ models: [{ id: 'vendor/model', name: 'Vendor model' }] });
 		if (url.includes('/api/parse')) {
 			if (!(init?.body instanceof FormData)) throw new Error('parse called without a form');
 			parseCalls.push(init.body);
@@ -346,11 +347,7 @@ describe('upload page run', () => {
 		await uploadMarkscheme('foundation-ms.pdf');
 
 		await page.getByRole('combobox', { name: 'Model override' }).click();
-		await page.getByRole('option', { name: /Custom model/ }).click();
-		await userEvent.type(
-			page.getByLabelText('Custom model id').element() as HTMLElement,
-			'vendor/model'
-		);
+		await page.getByRole('option', { name: /Vendor model/ }).click();
 
 		await page.getByRole('button', { name: 'Run' }).click();
 

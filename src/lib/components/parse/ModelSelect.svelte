@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { Input } from '$lib/components/ui/input';
 	import * as Command from '$lib/components/ui/command';
 	import * as Popover from '$lib/components/ui/popover';
 	import { cn } from '$lib/utils.js';
@@ -13,7 +12,6 @@
 
 	interface Props {
 		value?: string;
-		custom?: boolean;
 		models?: ModelOption[];
 		loading?: boolean;
 		loadError?: string | null;
@@ -22,7 +20,6 @@
 
 	let {
 		value = $bindable(''),
-		custom = $bindable(false),
 		models = [],
 		loading = false,
 		loadError = null,
@@ -32,12 +29,8 @@
 	let open = $state(false);
 	let search = $state('');
 	let triggerEl: HTMLButtonElement | null = $state(null);
-	let customInputEl: HTMLInputElement | null = $state(null);
-
-	const CUSTOM_ID = '__custom';
 
 	const selectedName = $derived.by(() => {
-		if (custom) return value === '' ? 'Custom model…' : value;
 		if (value === '') return 'Server default';
 		return models.find((m) => m.id === value)?.name ?? value;
 	});
@@ -45,23 +38,13 @@
 	function closeAndFocusTrigger(): void {
 		open = false;
 		search = '';
-		if (!custom) tick().then(() => triggerEl?.focus());
+		tick().then(() => triggerEl?.focus());
 	}
 
 	function choose(id: string): void {
-		if (id === CUSTOM_ID) {
-			custom = true;
-			closeAndFocusTrigger();
-			return;
-		}
 		value = id;
-		custom = false;
 		closeAndFocusTrigger();
 	}
-
-	$effect(() => {
-		if (custom) customInputEl?.focus();
-	});
 </script>
 
 <div class="relative" data-testid="model-select">
@@ -111,7 +94,7 @@
 						<Command.Item
 							value="Server default"
 							keywords={['OPENROUTER_MODEL', 'GPT-6 Luna', 'default']}
-							data-checked={value === '' && !custom}
+							data-checked={value === ''}
 							onSelect={() => choose('')}
 						>
 							<span class="min-w-0 flex-1">
@@ -125,7 +108,7 @@
 							<Command.Item
 								value={model.name}
 								keywords={[model.id]}
-								data-checked={model.id === value && !custom}
+								data-checked={model.id === value}
 								onSelect={() => choose(model.id)}
 							>
 								<span class="min-w-0 flex-1">
@@ -134,38 +117,9 @@
 								</span>
 							</Command.Item>
 						{/each}
-						<Command.Item
-							value="Custom model…"
-							keywords={['custom', 'vendor/model-id']}
-							forceMount
-							data-checked={custom}
-							onSelect={() => choose(CUSTOM_ID)}
-						>
-							<span class="min-w-0 flex-1">
-								<span class="block truncate font-medium">Custom model…</span>
-								<span class="block truncate text-xs text-muted-foreground">
-									Type any OpenRouter model id
-								</span>
-							</span>
-						</Command.Item>
 					</Command.List>
 				{/if}
 			</Command.Root>
 		</Popover.Content>
 	</Popover.Root>
-
-	{#if custom}
-		<div class="mt-2 space-y-1">
-			<Input
-				bind:ref={customInputEl}
-				placeholder="e.g. vendor/model-id"
-				bind:value
-				aria-label="Custom model id"
-			/>
-			<p class="text-xs text-muted-foreground">
-				Custom models run natively only when they support PDF input — otherwise text-only, with
-				diagram-heavy questions marked unverified.
-			</p>
-		</div>
-	{/if}
 </div>

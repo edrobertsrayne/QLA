@@ -289,6 +289,11 @@ describe('POST /api/match request validation', () => {
 			'tier1Entries'
 		],
 		[
+			'a model outside the curated list',
+			(form) => form.append('model', 'vendor/not-curated'),
+			'model'
+		],
+		[
 			`a model over ${MAX_MATCH_LABEL_LENGTH} characters`,
 			(form) => form.append('model', longId),
 			'model'
@@ -509,9 +514,9 @@ describe('POST /api/match request validation', () => {
 		expect(calls).toHaveLength(1);
 	});
 
-	it('refuses a model without native PDF support before any spend', async () => {
+	it('refuses a default model without native PDF support before any spend', async () => {
+		setEnvForTests('OPENROUTER_MODEL', 'openai/text-only-model');
 		const form = matchForm();
-		form.append('model', 'openai/text-only-model');
 
 		const { status, json } = await post(form);
 
@@ -522,13 +527,13 @@ describe('POST /api/match request validation', () => {
 	});
 
 	it('refuses a text-only model before either PDF is read', async () => {
+		setEnvForTests('OPENROUTER_MODEL', 'openai/text-only-model');
 		const form = matchForm();
 		form.set('tier1Document', new File(['not a pdf'], 'fake.pdf', { type: 'application/pdf' }));
 		form.set(
 			'tier2Document',
 			new File(['also not a pdf'], 'fake2.pdf', { type: 'application/pdf' })
 		);
-		form.append('model', 'openai/text-only-model');
 
 		const { status, json } = await post(form);
 

@@ -12,6 +12,7 @@ import {
 	MAX_SUMMARY_LENGTH
 } from '$lib/marksheet/report-limits.js';
 import { hasContactHook } from './report.js';
+import { readModelOverride } from './parse/models';
 import { fail, readList, readRecord, readString, rejectUnknownKeys } from './request-fields.js';
 
 /** One code needing a name: the normalised code and the summaries carrying it. */
@@ -68,9 +69,7 @@ export function validateTopicNamesBody(body: unknown): ValidTopicNameRequest {
 	rejectUnknownKeys(record, KNOWN_KEYS, '');
 
 	const model =
-		record['model'] === undefined
-			? undefined
-			: readString(record['model'], 'model', { nonBlank: 'Must be a non-blank string.' });
+		record['model'] === undefined ? undefined : readModelOverride(record['model'], 'model');
 	const paperLabel = readString(record['paperLabel'], 'paperLabel', { max: MAX_LABEL_LENGTH });
 	const rawCodes = readList(record['codes'], 'codes', {
 		min: 1,

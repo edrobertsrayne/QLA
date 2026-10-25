@@ -19,7 +19,6 @@
 	async function loadModels(): Promise<void> {
 		if (!(await models.load())) return;
 		if (
-			!run.modelCustom &&
 			run.modelOverride !== '' &&
 			!models.options.some((model) => model.id === run.modelOverride)
 		) {
@@ -37,8 +36,8 @@
 		<Card.Title>Options</Card.Title>
 		<Card.Description>
 			{run.twoTiers
-				? 'Used for both tiers. Pick a curated model with native PDF parsing, or choose Custom for any OpenRouter model id.'
-				: 'Pick a curated model with native PDF parsing, or choose Custom for any OpenRouter model id.'}
+				? 'Used for both tiers. Pick a curated model with native PDF parsing.'
+				: 'Pick a curated model with native PDF parsing.'}
 		</Card.Description>
 	</Card.Header>
 	<Card.Content>
@@ -47,7 +46,6 @@
 				<Label>Model override (optional)</Label>
 				<ModelSelect
 					bind:value={run.modelOverride}
-					bind:custom={run.modelCustom}
 					models={models.options}
 					loading={models.loading}
 					loadError={models.error}

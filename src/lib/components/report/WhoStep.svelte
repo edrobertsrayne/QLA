@@ -17,14 +17,12 @@
 		running,
 		models,
 		modelOverride = $bindable(),
-		modelCustom = $bindable(),
 		onwrite
 	}: {
 		roster: RosterRow[];
 		running: boolean;
 		models: ModelList;
 		modelOverride: string;
-		modelCustom: boolean;
 		onwrite: (ids: string[]) => void;
 	} = $props();
 
@@ -58,7 +56,6 @@
 		<Label>Model override (optional)</Label>
 		<ModelSelect
 			bind:value={modelOverride}
-			bind:custom={modelCustom}
 			models={models.options}
 			loading={models.loading}
 			loadError={models.error}

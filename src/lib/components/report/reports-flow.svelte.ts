@@ -34,7 +34,6 @@ export class ReportsFlow {
 	readonly reviewIds: string[];
 
 	modelOverride = $state('');
-	modelCustom = $state(false);
 	/** Pages the printer gets; null means not printing, so every visible page shows for measuring. */
 	printing = $state<string[] | null>(null);
 	/** The print copies of the visible pages, which a PDF is made from; set by the layout's `PrintRoot`. */
@@ -63,7 +62,6 @@ export class ReportsFlow {
 	}
 
 	writeNew(ids: string[]): void {
-		if (this.modelCustom) this.modelOverride = this.modelOverride.trim();
 		goToStep('writing');
 		this.run.start(ids, this.modelOverride);
 	}

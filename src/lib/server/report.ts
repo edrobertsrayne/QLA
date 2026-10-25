@@ -23,6 +23,7 @@ import {
 	readString,
 	rejectUnknownKeys
 } from './request-fields.js';
+import { readModelOverride } from './parse/models';
 
 /** One entry as the request carries it. */
 export interface ReportRequestEntry {
@@ -122,9 +123,7 @@ export function validateReportBody(body: unknown): ValidReportRequest {
 	rejectUnknownKeys(record, KNOWN_KEYS, '');
 
 	const model =
-		record['model'] === undefined
-			? undefined
-			: readString(record['model'], 'model', { nonBlank: 'Must be a non-blank string.' });
+		record['model'] === undefined ? undefined : readModelOverride(record['model'], 'model');
 	const paperLabel = readString(record['paperLabel'], 'paperLabel', { max: MAX_LABEL_LENGTH });
 	const rawEntries = readList(record['entries'], 'entries', {
 		min: 1,

@@ -92,7 +92,7 @@ export function usageFrom(
  * response. Curated model ids resolve to `CURATED_PRICING` in `models.ts` —
  * the same table the model picker's catalogue entry comes from, so the
  * estimate can never drift from that source (issue #17). Anything else
- * (a custom model id typed into the picker) gets one documented generic
+ * (an `OPENROUTER_MODEL` outside the curated set) gets one documented generic
  * rate — a mid-range guess, not real billing, just enough to keep a cost
  * hint present.
  */

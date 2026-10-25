@@ -221,7 +221,6 @@ export class UploadRun {
 	tiers = $state<TierSlot[]>([new TierSlot()]);
 	phase = $state<RunPhase>('form');
 	modelOverride = $state('');
-	modelCustom = $state(false);
 	specUrl = $state('');
 	specUrlError = $state<string | null>(null);
 	match = $state<MatchStatus>('idle');

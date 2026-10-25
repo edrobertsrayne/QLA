@@ -56,6 +56,7 @@ import {
 	SpecUrlError
 } from '$lib/server/parse/spec';
 import { getServerEnv } from '$lib/server/parse/env';
+import { isCuratedModelId } from '$lib/server/parse/models';
 
 /** The only failures the client may retry; every other code fails the run. */
 const RETRYABLE_CODES: Record<string, true> = {
@@ -135,6 +136,11 @@ export const POST: RequestHandler = async ({ request }) => {
 		typeof modelOverride === 'string' && modelOverride.trim() !== ''
 			? modelOverride.trim()
 			: undefined;
+	if (override !== undefined && !isCuratedModelId(override)) {
+		return error('MISSING_INPUT', 'The model must be one of the available models.', {
+			field: MODEL_OVERRIDE_FIELD
+		});
+	}
 	const modelId = resolveModelId(override);
 	// Custom ids outside the drop-down's native-PDF set degrade to text-only
 	// with a visible warning (the route attaches `engine: 'native'` only via

@@ -310,20 +310,38 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		expect(calls).toBe(0);
 	});
 
-	it('custom override without native support degrades to text-only with a warning', async () => {
+	it('a default model without native support degrades to text-only with a warning', async () => {
+		setEnvForTests('OPENROUTER_MODEL', 'openai/text-only-model');
 		let seen: ModelInput | undefined;
 		setModelTransport(async (input) => {
 			seen = input;
 			return stubResultWith(stubBreakdown());
 		});
 
-		const form = paperOnlyForm();
-		form.append('modelOverride', 'openai/text-only-model');
-		const { status, body } = await post(form);
+		const { status, body } = await post(paperOnlyForm());
 
 		expect(status).toBe(200);
 		expect(seen?.useNativePdf).toBe(false);
 		expect(body.warnings?.some((w) => w.code === DIAGRAM_UNVERIFIED_CODE)).toBe(true);
+	});
+
+	it.each([
+		['outside the curated list', 'vendor/not-curated'],
+		['10,000 characters long', 'm'.repeat(10_000)]
+	])('refuses an override %s with 400 before any model call', async (_name, override) => {
+		let calls = 0;
+		setModelTransport(async () => {
+			calls += 1;
+			return stubResultWith(stubBreakdown());
+		});
+		const form = paperOnlyForm();
+		form.append('modelOverride', override);
+
+		const { status, body } = await post(form);
+
+		expect(status).toBe(400);
+		expect(body.error?.code).toBe('MISSING_INPUT');
+		expect(calls).toBe(0);
 	});
 
 	it('supported override reaches the model with native PDF attached', async () => {
@@ -334,12 +352,12 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		});
 
 		const form = paperOnlyForm();
-		form.append('modelOverride', 'openai/gpt-4o-mini');
+		form.append('modelOverride', 'google/gemini-3.1-flash-lite');
 		const { status, body } = await post(form);
 
 		expect(status).toBe(200);
 		expect(seen?.useNativePdf).toBe(true);
-		expect(seen?.modelId).toBe('openai/gpt-4o-mini');
+		expect(seen?.modelId).toBe('google/gemini-3.1-flash-lite');
 		// pdf.js detaches the buffer it extracts, so the native copy must be
 		// encoded first; an empty one is silently useless to the model.
 		const decoded = Buffer.from(seen?.paper?.pdfBase64 ?? '', 'base64').toString('latin1');
