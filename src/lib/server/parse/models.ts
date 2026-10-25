@@ -16,12 +16,20 @@ export interface CompatibleModel {
  * The curated set, in display order: default anchor first, then cheap →
  * capable. Every entry passes the `supportsNativePdf()` regex gate.
  */
-export const CURATED_MODELS: CompatibleModel[] = [
+export const CURATED_MODELS = [
 	{ id: 'openai/gpt-6-luna', name: 'GPT-6 Luna' },
 	{ id: 'anthropic/claude-haiku-5.5', name: 'Claude Haiku 5.5' },
 	{ id: 'google/gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite' },
 	{ id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash' }
-];
+] as const satisfies readonly CompatibleModel[];
+
+/** The ids of the curated set. */
+export type CuratedModelId = (typeof CURATED_MODELS)[number]['id'];
+
+/** Whether `id` is one of the curated models (as opposed to a custom override). */
+export function isCuratedModelId(id: string): id is CuratedModelId {
+	return Object.hasOwn(CURATED_PRICING, id);
+}
 
 /**
  * Canonical per-1M-token USD prices for the curated set — the single source
@@ -31,7 +39,10 @@ export const CURATED_MODELS: CompatibleModel[] = [
  * drop-down itself, which only shows id + name, but keyed by the same ids
  * as `CURATED_MODELS` so the two can never drift apart for a shared model.
  */
-export const CURATED_PRICING: Record<string, { promptPrice: number; completionPrice: number }> = {
+export const CURATED_PRICING: Record<
+	CuratedModelId,
+	{ promptPrice: number; completionPrice: number }
+> = {
 	'openai/gpt-6-luna': { promptPrice: 0.1, completionPrice: 0.5 },
 	'anthropic/claude-haiku-5.5': { promptPrice: 0.1, completionPrice: 0.5 },
 	'google/gemini-3.1-flash-lite': { promptPrice: 0.25, completionPrice: 1.5 },

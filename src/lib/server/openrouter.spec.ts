@@ -388,14 +388,6 @@ describe('live structured transport', () => {
 
 // Moved here with the shared transport (issue #122): `estimateCost` prices
 // every caller's usage, so its checks live beside the one HTTP path.
-describe('CURATED_PRICING', () => {
-	it('has an entry for every curated model id', () => {
-		for (const model of CURATED_MODELS) {
-			expect(CURATED_PRICING[model.id]).toBeDefined();
-		}
-	});
-});
-
 describe('estimateCost', () => {
 	it('prices the default model from CURATED_PRICING, not the generic rate', () => {
 		const { promptPrice, completionPrice } = CURATED_PRICING[DEFAULT_MODEL_ID];

@@ -19,9 +19,13 @@ import { fenceDocuments } from '../fence';
 import { pdfFilePart, type PdfFilePart } from '../openrouter';
 import { AO_DESCRIPTION_TARGET_WORDS, type ParseWarning } from './schema';
 import { getServerEnv } from './env';
+import { CURATED_MODELS } from './models';
 
-/** Default model for every OpenRouter call when no per-run override or OPENROUTER_MODEL is given. */
-export const DEFAULT_MODEL_ID = 'openai/gpt-6-luna';
+/**
+ * Default model for every OpenRouter call when no per-run override or
+ * OPENROUTER_MODEL is given: the curated set's first entry.
+ */
+export const DEFAULT_MODEL_ID = CURATED_MODELS[0].id;
 
 /**
  * Bound on runaway parse output. Sized with headroom above the longest measured

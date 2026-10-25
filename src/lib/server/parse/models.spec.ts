@@ -3,18 +3,13 @@
 
 import { describe, expect, it } from 'vitest';
 import { CURATED_MODELS, getCompatibleModels } from './models';
-import { DEFAULT_MODEL_ID, supportsNativePdf } from './pdf';
+import { supportsNativePdf } from './pdf';
 
 describe('curated set', () => {
 	it('every curated model passes the parse-time native-PDF gate', () => {
 		for (const model of CURATED_MODELS) {
 			expect(supportsNativePdf(model.id)).toBe(true);
 		}
-	});
-
-	it('lists the shared default first, so it is priced and offered', () => {
-		expect(CURATED_MODELS[0]?.id).toBe(DEFAULT_MODEL_ID);
-		expect(supportsNativePdf(DEFAULT_MODEL_ID)).toBe(true);
 	});
 });
 

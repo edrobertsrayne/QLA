@@ -18,7 +18,7 @@
 // `setStructuredFetch`; production uses the live OpenRouter call.
 
 import { getServerEnv } from './parse/env';
-import { CURATED_PRICING } from './parse/models';
+import { CURATED_PRICING, isCuratedModelId } from './parse/models';
 import type { RunStoppingCode } from '$lib/marksheet/report-errors';
 import type { ParseUsage } from './parse/schema';
 import { fenceDocuments } from './fence';
@@ -99,9 +99,9 @@ export function usageFrom(
 const GENERIC_PRICE = { input: 0.3, output: 1.2 };
 
 function priceFor(modelId: string): { input: number; output: number } {
-	const curated = CURATED_PRICING[modelId];
-	if (curated) return { input: curated.promptPrice, output: curated.completionPrice };
-	return GENERIC_PRICE;
+	if (!isCuratedModelId(modelId)) return GENERIC_PRICE;
+	const { promptPrice, completionPrice } = CURATED_PRICING[modelId];
+	return { input: promptPrice, output: completionPrice };
 }
 
 /** Estimate run cost from token counts (display hint only, 4dp in the UI). */
