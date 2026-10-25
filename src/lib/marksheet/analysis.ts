@@ -26,10 +26,15 @@ export const GREEN_FROM = 0.7;
 /** What a facility index means, by fixed thresholds that are the same on every paper. */
 export type RagBand = 'red' | 'amber' | 'green';
 
-/** The band a facility index falls in. The thresholds are absolute, never relative to the class. */
+/**
+ * The band a facility index falls in, judged on the whole percentage a teacher
+ * reads so the colour never contradicts the number beside it. The thresholds are
+ * absolute, never relative to the class.
+ */
 export function facilityBand(facility: number): RagBand {
-	if (facility < RED_BELOW) return 'red';
-	if (facility < GREEN_FROM) return 'amber';
+	const percent = facilityPercent(facility);
+	if (percent < facilityPercent(RED_BELOW)) return 'red';
+	if (percent < facilityPercent(GREEN_FROM)) return 'amber';
 	return 'green';
 }
 

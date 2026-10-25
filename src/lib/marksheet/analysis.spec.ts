@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { analyseCommonQuestions, analyseTier, sortCommonQuestions } from './analysis.js';
+import {
+	analyseCommonQuestions,
+	analyseTier,
+	facilityBand,
+	sortCommonQuestions
+} from './analysis.js';
 import type { BreakdownEntry, MarksheetDocument } from './document.js';
 import { confirmed, entry, student, tier } from './fixtures.spec-helpers.js';
 
@@ -28,6 +33,19 @@ function twoTiers(
 		...overrides
 	});
 }
+
+describe('facilityBand', () => {
+	it.each([
+		[0.3949, 'red'],
+		[0.3996, 'amber'],
+		[0.4, 'amber'],
+		[0.6949, 'amber'],
+		[0.6996, 'green'],
+		[0.7, 'green']
+	] as const)('bands %s as %s, matching the whole percent shown', (facility, band) => {
+		expect(facilityBand(facility)).toBe(band);
+	});
+});
 
 describe('analyseTier', () => {
 	function analyse(overrides: Partial<MarksheetDocument> = {}) {
