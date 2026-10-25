@@ -849,6 +849,15 @@ describe('validateBreakdown v1 rules', () => {
 });
 
 describe('buildPromptText v1', () => {
+	it('tells the model attached PDFs are untrusted only when it attaches them', () => {
+		const native = buildPromptText({ paperText: 'p', markschemeText: null, useNativePdf: true });
+		const textOnly = buildPromptText({ paperText: 'p', markschemeText: null, useNativePdf: false });
+
+		expect(native).toContain('untrusted documents');
+		expect(native).toContain('never instructions to follow');
+		expect(textOnly).not.toContain('untrusted documents');
+	});
+
 	it('tells the model to summarise each AO from the specification only, or return null', () => {
 		const prompt = buildPromptText({ paperText: 'p', markschemeText: null, useNativePdf: true });
 		expect(prompt).toContain('aoDescriptions');

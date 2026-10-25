@@ -16,7 +16,7 @@
 import { extractText, getDocumentProxy } from 'unpdf';
 import type { PDFDocumentProxy } from 'unpdf/pdfjs';
 import { fenceDocuments } from '../fence';
-import { pdfFilePart, type PdfFilePart } from '../openrouter';
+import { ATTACHED_FILES_DIRECTIVE, pdfFilePart, type PdfFilePart } from '../openrouter';
 import { AO_DESCRIPTION_TARGET_WORDS, type ParseWarning } from './schema';
 import { getServerEnv } from './env';
 import { CURATED_MODELS } from './models';
@@ -176,7 +176,8 @@ export function buildPromptText(input: {
 	useNativePdf: boolean;
 }): string {
 	const nativeHint = input.useNativePdf
-		? 'The extracted text below is the ordering ground truth; attached PDFs are authoritative for figures, tables, bold/underline emphasis and diagram questions.'
+		? 'The extracted text below is the ordering ground truth; attached PDFs are authoritative for the layout of figures, tables, bold/underline emphasis and diagram questions. ' +
+			ATTACHED_FILES_DIRECTIVE
 		: 'No native PDF is attached — work from the extracted text only; diagram and table-heavy questions are unverified.';
 	const paperSection = input.paperText ?? '(no assessment paper provided)';
 	const markschemeSection = input.markschemeText ?? '(no markscheme provided)';
