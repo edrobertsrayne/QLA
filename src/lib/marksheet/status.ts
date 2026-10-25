@@ -58,6 +58,12 @@ export function statusLine(saveState: SaveState, now: Date): StatusLine {
 				text: `Couldn't save — changes since ${clockTime(saveState.since)} are only in this tab`,
 				rescue: true
 			};
+		case 'stale':
+			return {
+				tone: 'error',
+				text: "This marksheet changed in another tab — reload to see the latest. Edits made here since won't be kept",
+				rescue: true
+			};
 		case 'unavailable':
 			return {
 				tone: 'warn',

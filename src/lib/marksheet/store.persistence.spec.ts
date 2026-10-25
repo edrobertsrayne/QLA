@@ -500,6 +500,48 @@ describe('autosave', () => {
 		expect(store.saveState).toEqual({ kind: 'failed', since: NOW });
 	});
 
+	it('goes stale when another tab writes the marksheet, dropping a pending save and every later one', () => {
+		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(parsed()) });
+		const store = storeWith(storage);
+		store.load();
+		store.setPaperLabel('10X');
+		expect(store.saveState).toEqual({ kind: 'saving' });
+
+		store.storageChangedElsewhere(STORAGE_KEY);
+		vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+		store.setPaperLabel('10X/Ph1');
+		vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+		store.flush();
+
+		expect(store.saveState).toEqual({ kind: 'stale' });
+		expect(documentWrites(storage)).toEqual([]);
+	});
+
+	it.each([[STORAGE_KEY], [null]])(
+		'goes stale when the marksheet key is removed elsewhere (event key %s)',
+		(key) => {
+			const store = storeWith(fakeStorage({ [STORAGE_KEY]: JSON.stringify(parsed()) }));
+			store.load();
+
+			store.storageChangedElsewhere(key);
+
+			expect(store.saveState).toEqual({ kind: 'stale' });
+		}
+	);
+
+	it('ignores another tab changing an unrelated key', () => {
+		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(parsed()) });
+		const store = storeWith(storage);
+		store.load();
+		store.setPaperLabel('10X');
+
+		store.storageChangedElsewhere('mode-watcher-mode');
+		vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+
+		expect(store.saveState).toEqual({ kind: 'saved', at: NOW });
+		expect(documentWrites(storage)).toEqual([STORAGE_KEY]);
+	});
+
 	it('moves that moment on once a write lands, so a later refusal names the last one', () => {
 		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(parsed()) });
 		let refuse = false;

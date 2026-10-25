@@ -30,6 +30,12 @@ export type SaveState =
 	 * storage: everything after that moment lives only in this tab.
 	 */
 	| { kind: 'failed'; since: Date }
+	/**
+	 * Another tab has written the marksheet since this one last read it, so this
+	 * tab's copy is out of date. It never writes again, whatever the teacher
+	 * does: the next page load shows the other tab's version.
+	 */
+	| { kind: 'stale' }
 	| { kind: 'unavailable' };
 
 /** A stored document that could not be read, and where a copy of it was kept. */
@@ -150,7 +156,7 @@ export class DocumentPersistence {
 	/** The document changed: save it on the debounce, unless saving has stopped. */
 	changed(): void {
 		// A failed write stops autosave rather than retrying behind the teacher's back.
-		if (this.saveState.kind === 'failed' || this.saveState.kind === 'unavailable') return;
+		if (this.#writesStopped()) return;
 		this.saveState = { kind: 'saving' };
 		this.#cancelPending();
 		this.#cancelTimer = scheduleTimer(this.#deps.debounceMs, () => {
@@ -163,7 +169,9 @@ export class DocumentPersistence {
 	writeNow(): void {
 		this.#cancelPending();
 		const document = this.#deps.current();
-		if (!document || this.saveState.kind === 'unavailable') return;
+		if (!document || this.saveState.kind === 'unavailable' || this.saveState.kind === 'stale') {
+			return;
+		}
 		try {
 			this.#deps.storage.setItem(STORAGE_KEY, JSON.stringify(document));
 		} catch {
@@ -171,6 +179,18 @@ export class DocumentPersistence {
 			return;
 		}
 		this.#markSaved();
+	}
+
+	/**
+	 * Another tab changed storage. A write to, or removal of, the marksheet key
+	 * leaves this tab's copy stale; any other key is none of this tab's business.
+	 * A `null` key is the whole storage being cleared.
+	 */
+	changedElsewhere(key: string | null): void {
+		if (key !== null && key !== STORAGE_KEY) return;
+		if (this.saveState.kind === 'unavailable') return;
+		this.#cancelPending();
+		this.saveState = { kind: 'stale' };
 	}
 
 	/** Write anything pending now: a hidden or closing tab must not lose keystrokes. */
@@ -181,12 +201,20 @@ export class DocumentPersistence {
 	/** Remove the stored document. */
 	clear(): void {
 		this.#cancelPending();
+		// A stale tab leaves the other tab's document alone.
+		if (this.saveState.kind === 'stale') return;
 		try {
 			this.#deps.storage.removeItem(STORAGE_KEY);
 		} catch {
 			// Nothing to do: in-memory state is gone either way.
 		}
 		if (this.saveState.kind !== 'unavailable') this.#markSaved();
+	}
+
+	/** A refused write, no storage and a stale tab each stop autosave for good. */
+	#writesStopped(): boolean {
+		const { kind } = this.saveState;
+		return kind === 'failed' || kind === 'unavailable' || kind === 'stale';
 	}
 
 	#cancelPending(): void {

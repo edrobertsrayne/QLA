@@ -36,6 +36,8 @@ export function marksheetStore(): MarksheetStore {
 		if (document.visibilityState === 'hidden') store.flush();
 	});
 	window.addEventListener('pagehide', () => store.flush());
+	// `storage` fires only in the tabs that did not write.
+	window.addEventListener('storage', (event) => store.storageChangedElsewhere(event.key));
 	instance = store;
 	return store;
 }

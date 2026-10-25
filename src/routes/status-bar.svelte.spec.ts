@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { toast } from 'svelte-sonner';
-import type { MarksheetDocument } from '$lib/marksheet/document.js';
+import { STORAGE_KEY, type MarksheetDocument } from '$lib/marksheet/document.js';
 import { confirmed, parseRun, seed, student } from '$lib/marksheet/fixtures.spec-helpers.js';
 import { captureDownload } from '$lib/marksheet/download.spec-helpers.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
@@ -116,6 +116,23 @@ describe('status bar', () => {
 		expect(file.filename()).toMatch(/^qla-backup-10x-ph1-nov-mock-\d{4}-\d{2}-\d{2}\.json$/);
 		const handed = JSON.parse(await file.text()) as MarksheetDocument;
 		expect(handed.label).toBe('10X Ph1 — Nov mock');
+	});
+
+	it('turns red when another tab writes the marksheet, and stops saving', async () => {
+		seed(marksheet());
+		const screen = openShell();
+		await expect.element(page.getByTestId('save-line')).toHaveTextContent(/^All changes saved · /);
+		const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+		window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY }));
+		marksheetStore().setPaperLabel('10X Ph1 — Nov mock');
+
+		await expect
+			.element(page.getByTestId('save-line'))
+			.toHaveTextContent(/changed in another tab — reload to see the latest/);
+		expect(bar(screen).getAttribute('data-tone')).toBe('error');
+		await new Promise((done) => setTimeout(done, 700));
+		expect(setItem).not.toHaveBeenCalledWith(STORAGE_KEY, expect.anything());
 	});
 
 	it('stands amber from boot when the browser will keep nothing, and offers the work out', async () => {

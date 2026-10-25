@@ -818,6 +818,11 @@ export class MarksheetStore {
 		return document === null ? 0 : marksOverMax(document, entryId);
 	}
 
+	/** Another tab changed storage under `key` (`null` when it was all cleared): this tab may now be stale. */
+	storageChangedElsewhere(key: string | null): void {
+		this.#persistence.changedElsewhere(key);
+	}
+
 	/** Write anything pending now: a hidden or closing tab must not lose keystrokes. */
 	flush(): void {
 		this.#persistence.flush();

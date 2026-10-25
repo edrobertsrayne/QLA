@@ -84,6 +84,16 @@ describe('statusLine', () => {
 		expect(line.rescue).toBe(true);
 	});
 
+	it('reads a marksheet changed in another tab like a refused write, offering the work out', () => {
+		const line = statusLine({ kind: 'stale' }, NOW);
+
+		expect(line.tone).toBe('error');
+		expect(line.text).toContain('changed in another tab');
+		expect(line.text).toContain('reload');
+		expect(line.text).toContain("won't be kept");
+		expect(line.rescue).toBe(true);
+	});
+
 	it('warns that a browser keeping nothing loses the work with the tab', () => {
 		expect(statusLine({ kind: 'unavailable' }, NOW)).toEqual({
 			tone: 'warn',
