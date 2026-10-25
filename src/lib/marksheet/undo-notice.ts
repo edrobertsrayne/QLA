@@ -76,3 +76,21 @@ function destinationLabel(document: MarksheetDocument, tier: TierIndex | null): 
 	const name = document.tiers[tier]?.tierName?.trim() ?? '';
 	return name === '' ? `Tier ${tier + 1}` : name;
 }
+
+/**
+ * The document with `undoable`'s change taken back. A backup taken since the
+ * change is not taken back with it, nor is the change it holds: a moment the
+ * backup already covers is not unbacked.
+ */
+export function withChangeUndone(
+	document: MarksheetDocument,
+	undoable: Undoable
+): MarksheetDocument {
+	const restored = { ...undoable.before, lastExportedAt: document.lastExportedAt };
+	const marker = restored.firstUnbackedChangeAt;
+	const backedUpAt = restored.lastExportedAt;
+	if (marker !== null && backedUpAt !== null && Date.parse(marker) <= Date.parse(backedUpAt)) {
+		restored.firstUnbackedChangeAt = null;
+	}
+	return restored;
+}

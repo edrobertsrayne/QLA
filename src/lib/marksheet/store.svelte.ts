@@ -14,10 +14,23 @@ import {
 	trimOrNull,
 	type CreateFromAssessmentInput
 } from './create-assessment.js';
+import {
+	appendEntry,
+	commonQuestionsAfter,
+	insertEntryAfter,
+	moveEntry,
+	removeEntry
+} from './breakdown-commands.js';
+import {
+	addUnplacedStudents,
+	addUploadedStudents,
+	isTierTarget,
+	placeStudents,
+	removeStudent
+} from './student-commands.js';
 import { analyseTier, type MarksheetAnalysis } from './analysis.js';
 import {
 	assessmentBlockers,
-	entryName,
 	needsAttention,
 	questionBands,
 	type AssessmentBlockers,
@@ -38,10 +51,8 @@ import {
 	copyOfDocument,
 	dropUnreachable,
 	entryTierOf,
-	localId,
 	marksOnEntry,
 	marksOverMax,
-	otherTier,
 	pairOfEntry,
 	partnerIdOf,
 	putMark,
@@ -68,17 +79,14 @@ import {
 	type Unreadable
 } from './persistence.svelte.js';
 import {
-	newNames,
 	newStudent,
-	readName,
 	sortStudentsByName,
-	studentName,
 	type StudentName,
 	type StudentSortKey
 } from './students.js';
 import { keepWording, setReportEdit, writeReport } from './report-commands.js';
 import { clearBoundaries, setBoundaries } from './grades.js';
-import type { Undoable, UndoableChange } from './undo-notice.js';
+import { withChangeUndone, type Undoable, type UndoableChange } from './undo-notice.js';
 
 export interface MarksheetStoreDeps {
 	storage: DocumentStorage;
@@ -364,16 +372,9 @@ export class MarksheetStore {
 		const document = this.#editable();
 		if (!document) return null;
 
-		const tier = entryTierOf(document, entryId);
-		if (tier === null) return null;
-		const entries = document.tiers[tier].breakdown.entries;
-		const after = entries.findIndex((entry) => entry.id === entryId);
-		if (after === -1) return null;
-
-		const entry = this.#blankEntry(entries[after].questionNumber);
-		entries.splice(after + 1, 0, entry);
-		this.#mutated();
-		return entry.id;
+		const id = insertEntryAfter(document, entryId);
+		if (id !== null) this.#mutated();
+		return id;
 	}
 
 	/**
@@ -385,13 +386,10 @@ export class MarksheetStore {
 	appendEntry(tier: TierIndex): string | null {
 		const document = this.#editable();
 		if (!document) return null;
-		const stored = document.tiers[tier];
-		if (stored === undefined) return null;
 
-		const entry = this.#blankEntry('');
-		stored.breakdown.entries.push(entry);
-		this.#mutated();
-		return entry.id;
+		const id = appendEntry(document, tier);
+		if (id !== null) this.#mutated();
+		return id;
 	}
 
 	/**
@@ -401,27 +399,8 @@ export class MarksheetStore {
 	deleteEntry(entryId: string): boolean {
 		if (!this.#editable()) return false;
 		return this.#commit((document) => {
-			let removed: BreakdownEntry | undefined;
-			for (const stored of document.tiers) {
-				const entries = stored.breakdown.entries;
-				const index = entries.findIndex((entry) => entry.id === entryId);
-				if (index === -1) continue;
-				[removed] = entries.splice(index, 1);
-				stored.breakdown.warnings = stored.breakdown.warnings.filter(
-					(warning) => warning.questionId !== entryId
-				);
-				break;
-			}
-			if (removed === undefined) return null;
-
-			// What was recorded against the entry goes with it: nothing can reach it
-			// again, so it would sit in the document unread. A pair pointing at it
-			// would point at a question that is no longer there.
-			for (const byEntry of Object.values(document.marks)) delete byEntry[entryId];
-			document.commonQuestions = document.commonQuestions.filter(
-				(pair) => pair.tier1EntryId !== entryId && pair.tier2EntryId !== entryId
-			);
-			return { kind: 'entry-removal', name: entryName(removed) };
+			const name = removeEntry(document, entryId);
+			return name === null ? null : { kind: 'entry-removal', name };
 		});
 	}
 
@@ -434,42 +413,10 @@ export class MarksheetStore {
 	setCommonQuestion(tier: TierIndex, entryId: string, partnerId: string | null): void {
 		const document = this.#editable();
 		if (!document) return;
-		if (entryTierOf(document, entryId) !== tier) return;
-
-		const current = pairOfEntry(document, tier, entryId);
-		if (partnerId === null) {
-			if (current === null) return;
-			this.#commit((commitDocument) => {
-				commitDocument.commonQuestions = commitDocument.commonQuestions.filter(
-					(pair) => pair.tier1EntryId !== entryId && pair.tier2EntryId !== entryId
-				);
-				return { kind: 'common-question' };
-			});
-			return;
-		}
-
-		const other = otherTier(tier);
-		const partner = tierEntries(document, other).find((entry) => entry.id === partnerId);
-		const entry = tierEntries(document, tier).find((candidate) => candidate.id === entryId);
-		if (entry === undefined || partner === undefined) return;
-		if (entry.marks === null || partner.marks === null) return;
-		if (entry.marks !== partner.marks) return;
-		const partnerPair = pairOfEntry(document, other, partnerId);
-		if (partnerPair !== null && partnerPair !== current) return;
-
-		const pairedId =
-			current === null ? null : tier === 0 ? current.tier2EntryId : current.tier1EntryId;
-		if (pairedId === partnerId) return;
-
+		const pairs = commonQuestionsAfter(document, tier, entryId, partnerId);
+		if (pairs === null) return;
 		this.#commit((commitDocument) => {
-			commitDocument.commonQuestions = commitDocument.commonQuestions.filter(
-				(pair) => pair.tier1EntryId !== entryId && pair.tier2EntryId !== entryId
-			);
-			commitDocument.commonQuestions.push(
-				tier === 0
-					? { tier1EntryId: entryId, tier2EntryId: partnerId }
-					: { tier1EntryId: partnerId, tier2EntryId: entryId }
-			);
+			commitDocument.commonQuestions = pairs;
 			return { kind: 'common-question' };
 		});
 	}
@@ -483,14 +430,7 @@ export class MarksheetStore {
 		const document = this.document;
 		if (!undoable || !document) return false;
 
-		// A backup taken since the change is not taken back with it, nor is the
-		// change it holds: a moment the backup already covers is not unbacked.
-		this.document = { ...undoable.before, lastExportedAt: document.lastExportedAt };
-		const marker = this.document.firstUnbackedChangeAt;
-		const backedUpAt = this.document.lastExportedAt;
-		if (marker !== null && backedUpAt !== null && Date.parse(marker) <= Date.parse(backedUpAt)) {
-			this.document.firstUnbackedChangeAt = null;
-		}
+		this.document = withChangeUndone(document, undoable);
 		this.#mutated();
 		return true;
 	}
@@ -500,15 +440,7 @@ export class MarksheetStore {
 		const document = this.#editable();
 		if (!document) return false;
 
-		const tier = entryTierOf(document, entryId);
-		if (tier === null) return false;
-		const entries = document.tiers[tier].breakdown.entries;
-		const from = entries.findIndex((entry) => entry.id === entryId);
-		const to = from + offset;
-		if (from === -1 || to < 0 || to >= entries.length) return false;
-
-		const [entry] = entries.splice(from, 1);
-		entries.splice(to, 0, entry);
+		if (!moveEntry(document, entryId, offset)) return false;
 		this.#mutated();
 		return true;
 	}
@@ -566,17 +498,7 @@ export class MarksheetStore {
 	 * assessment, is refused: no document is ever left in an unreadable shape.
 	 */
 	setStudentTier(studentId: string, tier: TierIndex | null): boolean {
-		const document = this.document;
-		if (!document) return false;
-		if (tier !== null && document.tiers[tier] === undefined) return false;
-		if (tier === null && document.tiers.length === 1) return false;
-
-		return this.#commit((commitDocument) => {
-			const student = commitDocument.students.find((candidate) => candidate.id === studentId);
-			if (student === undefined || student.tier === tier) return null;
-			student.tier = tier;
-			return { kind: 'student-tier', name: studentName(student), to: tier };
-		});
+		return this.setStudentsTier([studentId], tier);
 	}
 
 	/**
@@ -585,41 +507,13 @@ export class MarksheetStore {
 	 */
 	setStudentsTier(studentIds: readonly string[], tier: TierIndex | null): boolean {
 		const document = this.document;
-		if (!document) return false;
-		if (tier !== null && document.tiers[tier] === undefined) return false;
-		if (tier === null && document.tiers.length === 1) return false;
-
-		let moved = 0;
-		let movedName: string | null = null;
-		return this.#commit((commitDocument) => {
-			for (const student of commitDocument.students) {
-				if (!studentIds.includes(student.id) || student.tier === tier) continue;
-				student.tier = tier;
-				moved += 1;
-				movedName = studentName(student);
-			}
-			if (moved === 0) return null;
-			return {
-				kind: 'student-tier',
-				name: moved === 1 && movedName !== null ? movedName : `${moved} students`,
-				to: tier
-			};
-		});
+		if (!document || !isTierTarget(document, tier)) return false;
+		return this.#commit((commitDocument) => placeStudents(commitDocument, studentIds, tier));
 	}
 
 	/** Remove a student, taking their marks with them, one undo away. */
 	removeStudent(studentId: string): boolean {
-		return this.#commit((document) => {
-			const students = document.students;
-			const index = students.findIndex((student) => student.id === studentId);
-			if (index === -1) return null;
-			const [student] = students.splice(index, 1);
-
-			// Marks and a report whose student is gone can never be read again, so they go too.
-			delete document.marks[studentId];
-			delete document.reports[studentId];
-			return { kind: 'student-removal', name: studentName(student) };
-		});
+		return this.#commit((document) => removeStudent(document, studentId));
 	}
 
 	/** Put the class in order by one name part. The stored array is display order. */
@@ -665,16 +559,7 @@ export class MarksheetStore {
 		this.pasteRefusal = null;
 		let result = emptyPasteResult();
 		this.#commit((document) => {
-			for (const row of rows) {
-				const name = readName(row[0] ?? '');
-				if (name === null) continue;
-				document.students.push(newStudent(name, null));
-				result = {
-					...result,
-					changed: true,
-					studentsAdded: result.studentsAdded + 1
-				};
-			}
+			result = addUnplacedStudents(document, rows);
 			return result.changed ? { kind: 'mark-paste' } : null;
 		});
 		this.pasteNotice = result.changed ? result : null;
@@ -695,14 +580,7 @@ export class MarksheetStore {
 
 		let result = emptyPasteResult();
 		this.#commit((commitDocument) => {
-			const { added, skipped } = newNames(commitDocument.students, names);
-			commitDocument.students.push(...added.map((name) => newStudent(name, target)));
-			result = {
-				...result,
-				changed: added.length > 0,
-				studentsAdded: added.length,
-				duplicatesSkipped: skipped
-			};
+			result = addUploadedStudents(commitDocument, names, target);
 			return result.changed ? { kind: 'mark-paste' } : null;
 		});
 		this.pasteNotice = result.changed ? result : null;
@@ -940,21 +818,6 @@ export class MarksheetStore {
 	wipe(): void {
 		this.#persistence.clear();
 		this.#adopt(null);
-	}
-
-	/** An entry the teacher adds: nothing claimed, everything to fill in. */
-	#blankEntry(questionNumber: string): BreakdownEntry {
-		return {
-			id: localId(),
-			label: '',
-			questionNumber,
-			marks: null,
-			summary: '',
-			specPoint: null,
-			commandWord: null,
-			ao: null,
-			original: null
-		};
 	}
 
 	/**
