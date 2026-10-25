@@ -22,7 +22,6 @@
 		type TierIndex
 	} from '$lib/marksheet/document.js';
 	import {
-		belowLabelOf,
 		boundariesFrom,
 		formatPercent,
 		marksToPercent,
@@ -30,14 +29,17 @@
 		percentIssues,
 		percentToMarks,
 		boundariesOf,
-		boundaryIssues,
 		gradeOf,
 		GRADE_SCALES,
+		workingCopyOf
+	} from '$lib/marksheet/grades.js';
+	import {
+		belowLabelOf,
+		boundaryIssues,
 		isUnused,
-		workingCopyOf,
 		type BoundaryIssue,
 		type BoundaryRow
-	} from '$lib/marksheet/grades.js';
+	} from '$lib/marksheet/boundary-rules.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import { isEligible } from '$lib/marksheet/report-eligibility.js';
 	import { cn } from '$lib/utils.js';

@@ -9,6 +9,7 @@
 
 import type { AssessmentObjective } from '$lib/parse/assessment-objectives.js';
 import { isRecord } from '$lib/parse/is-breakdown.js';
+import { boundariesAreValid } from './boundary-rules.js';
 import { fromVersion2, parseVersion2Document } from './document-v2.js';
 import {
 	DEFAULT_BELOW_LOWEST_LABEL,
@@ -276,13 +277,15 @@ function parseTier(value: unknown): StoredTier | null {
 	) {
 		return null;
 	}
+	const belowLowestLabel = rawBelowLowest ?? DEFAULT_BELOW_LOWEST_LABEL;
+	if (boundaries !== null && !boundariesAreValid(boundaries, belowLowestLabel)) return null;
 	return {
 		tierName,
 		sourceFilenames: [...sourceFilenames],
 		parsedAt,
 		breakdown,
 		boundaries,
-		belowLowestLabel: rawBelowLowest ?? DEFAULT_BELOW_LOWEST_LABEL
+		belowLowestLabel
 	};
 }
 
@@ -397,6 +400,15 @@ function parseDocumentValue(value: unknown): MarksheetDocument | null {
 	return document === null ? null : fromVersion2(document);
 }
 
+/** Entry ids, across every tier, and student ids are each unique: lookups and the marks maps rely on it. */
+function hasUniqueIds(document: MarksheetDocument): boolean {
+	const entryIds = allEntries(document).map((entry) => entry.id);
+	return (
+		new Set(entryIds).size === entryIds.length &&
+		new Set(document.students.map((student) => student.id)).size === document.students.length
+	);
+}
+
 /** The one validator: parse stored (or restored) document text, or null when unreadable. */
 export function parseStoredDocument(raw: string): MarksheetDocument | null {
 	let value: unknown;
@@ -405,7 +417,8 @@ export function parseStoredDocument(raw: string): MarksheetDocument | null {
 	} catch {
 		return null;
 	}
-	return parseDocumentValue(value);
+	const document = parseDocumentValue(value);
+	return document !== null && hasUniqueIds(document) ? document : null;
 }
 
 /**

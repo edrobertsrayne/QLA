@@ -7,6 +7,7 @@
 // tiers cannot quietly change how an old document is read.
 
 import { isRecord } from '$lib/parse/is-breakdown.js';
+import { boundariesAreValid } from './boundary-rules.js';
 import type {
 	AoDescriptions,
 	GradeBoundary,
@@ -120,6 +121,7 @@ export function parseVersion2Document(
 		return null;
 	}
 	const belowLowestLabel = rawBelowLowest ?? DEFAULT_BELOW_LOWEST_LABEL;
+	if (boundaries !== null && !boundariesAreValid(boundaries, belowLowestLabel)) return null;
 
 	const rawBreakdown = value['breakdown'];
 	if (!isRecord(rawBreakdown)) return null;

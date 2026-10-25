@@ -38,7 +38,9 @@ function isEntryValues(value: unknown): value is EntryValues {
 	if (!isRecord(value)) return false;
 	const { label, questionNumber, marks, summary, specPoint, commandWord, ao } = value;
 	if (typeof label !== 'string' || typeof questionNumber !== 'string') return false;
-	if (marks !== null && !(typeof marks === 'number' && Number.isInteger(marks))) return false;
+	if (marks !== null && !(typeof marks === 'number' && Number.isInteger(marks) && marks >= 1)) {
+		return false;
+	}
 	if (typeof summary !== 'string') return false;
 	if (!isStringOrNull(specPoint) || !isStringOrNull(commandWord)) return false;
 	return ao === null || isAssessmentObjective(ao);

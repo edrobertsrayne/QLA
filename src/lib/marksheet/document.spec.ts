@@ -221,6 +221,105 @@ describe('reading a stored document', () => {
 	});
 });
 
+describe('reading a document that breaks an invariant', () => {
+	const unreadable = (document: MarksheetDocument) => parseStoredDocument(JSON.stringify(document));
+
+	it('refuses two entries sharing an id, within a tier or across tiers', () => {
+		const within = confirmed({
+			tiers: [
+				tier({
+					breakdown: { entries: [entry('e', '1a', '1'), entry('e', '1b', '1')], warnings: [] }
+				})
+			]
+		});
+		const across = twoTier();
+		across.tiers[1].breakdown.entries[0].id = 'tier-1-entry';
+
+		expect(unreadable(within)).toBeNull();
+		expect(unreadable(across)).toBeNull();
+	});
+
+	it('refuses two students sharing an id', () => {
+		const document = confirmed({
+			students: [student('s', 'Ada', 'Lovelace'), student('s', 'Alan', 'Turing')]
+		});
+
+		expect(unreadable(document)).toBeNull();
+	});
+
+	it.each([0, -3])('refuses an entry with %i marks, and a parse recording them', (marks) => {
+		const own = confirmed({
+			tiers: [tier({ breakdown: { entries: [entry('e', '1a', '1', { marks })], warnings: [] } })]
+		});
+		const recorded = confirmed({
+			tiers: [
+				tier({
+					breakdown: {
+						entries: [entry('e', '1a', '1', { original: { ...ORIGIN, marks } })],
+						warnings: []
+					}
+				})
+			]
+		});
+
+		expect(unreadable(own)).toBeNull();
+		expect(unreadable(recorded)).toBeNull();
+	});
+
+	it('still reads an entry with unknown marks', () => {
+		const document = confirmed({
+			tiers: [
+				tier({ breakdown: { entries: [entry('e', '1a', '1', { marks: null })], warnings: [] } })
+			]
+		});
+
+		expect(read(document)).toEqual(document);
+	});
+
+	it.each([
+		[
+			'not descending',
+			[
+				{ label: '5', minimum: 20 },
+				{ label: '4', minimum: 30 }
+			]
+		],
+		[
+			'repeating a minimum',
+			[
+				{ label: '5', minimum: 20 },
+				{ label: '4', minimum: 20 }
+			]
+		],
+		[
+			'repeating a label',
+			[
+				{ label: '5', minimum: 30 },
+				{ label: ' 5 ', minimum: 20 }
+			]
+		],
+		['using the below-lowest label', [{ label: 'U', minimum: 30 }]]
+	])('refuses grade boundaries %s', (_why, boundaries) => {
+		expect(unreadable(confirmed({ tiers: [tier({ boundaries })] }))).toBeNull();
+	});
+
+	it('still reads boundaries above the current paper total, and none at all', () => {
+		const high = confirmed({
+			tiers: [
+				tier({
+					boundaries: [
+						{ label: '9', minimum: 500 },
+						{ label: '8', minimum: 400 }
+					]
+				})
+			]
+		});
+
+		expect(read(high)).toEqual(high);
+		expect(read(confirmed({ tiers: [tier({ boundaries: [] })] })).tiers[0].boundaries).toEqual([]);
+	});
+});
+
 describe('reading a version 2 document', () => {
 	it('converts it to version 3 field by field', () => {
 		const document = readVersion2({
