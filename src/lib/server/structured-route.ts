@@ -11,7 +11,7 @@ import {
 	type StructuredModelInput,
 	type StructuredModelResult
 } from './openrouter';
-import { InputError } from './request-fields';
+import { InputError, readCappedText } from './request-fields';
 
 const INVALID_OUTPUT_CODE = 'INVALID_MODEL_OUTPUT';
 
@@ -72,8 +72,8 @@ export async function readRequest<T>(
 	noun: string,
 	validate: (body: unknown) => T
 ): Promise<T | Response> {
-	const text = await request.text();
-	if (new TextEncoder().encode(text).byteLength > STRUCTURED_MAX_BODY_BYTES) {
+	const text = await readCappedText(request, STRUCTURED_MAX_BODY_BYTES);
+	if (text === null) {
 		return invalidInput(code, 413, `The ${noun} request is too large.`);
 	}
 	let body: unknown;

@@ -7,6 +7,7 @@
 
 import type { RequestHandler } from './$types';
 import { MAX_PDF_HTML_BYTES, PdfBusyError, PdfTimeoutError, renderPdf } from '$lib/server/pdf';
+import { readCappedText } from '$lib/server/request-fields';
 import { failure } from '$lib/server/structured-route';
 
 const INVALID_INPUT_CODE = 'INVALID_PDF_INPUT';
@@ -19,30 +20,8 @@ function tooLarge(): Response {
 	});
 }
 
-/** The body as text, or null once it passes the cap: never read past the cap, whatever the headers say. */
-async function readCappedText(request: Request): Promise<string | null> {
-	const declared = Number(request.headers.get('content-length'));
-	if (declared > MAX_PDF_HTML_BYTES) return null;
-	if (!request.body) return '';
-	const reader = request.body.getReader();
-	const decoder = new TextDecoder();
-	let text = '';
-	let received = 0;
-	for (;;) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		received += value.byteLength;
-		if (received > MAX_PDF_HTML_BYTES) {
-			await reader.cancel();
-			return null;
-		}
-		text += decoder.decode(value, { stream: true });
-	}
-	return text + decoder.decode();
-}
-
 export const POST: RequestHandler = async ({ request }) => {
-	const html = await readCappedText(request);
+	const html = await readCappedText(request, MAX_PDF_HTML_BYTES);
 	if (html === null) return tooLarge();
 	if (html.trim() === '') {
 		return failure(400, {
