@@ -63,7 +63,7 @@ export interface ParseWarning {
 	message: string;
 }
 
-/** What the run spent. Token counts are zero for the stubbed transport. */
+/** What the run spent: token counts and the estimated cost. */
 export interface ParseUsage {
 	promptTokens: number;
 	completionTokens: number;

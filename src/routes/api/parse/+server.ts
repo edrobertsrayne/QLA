@@ -19,7 +19,8 @@ import {
 	MODEL_OVERRIDE_FIELD,
 	SPEC_URL_FIELD,
 	INVALID_SPEC_URL_CODE,
-	SPEC_UNREADABLE_CODE
+	SPEC_UNREADABLE_CODE,
+	type ParseUsage
 } from '$lib/server/parse/schema';
 import {
 	applyAoDescriptionChecks,
@@ -78,9 +79,6 @@ function statusFor(code: string): number {
 			return 400;
 		case 'FILE_TOO_BIG':
 			return 413;
-		case 'MISSING_API_KEY':
-		case 'MALFORMED_MODEL_OUTPUT':
-			return 500;
 		default:
 			return 500;
 	}
@@ -192,8 +190,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 	}
 
-	let rawJson: string | undefined;
-	let usage;
+	let outcome: { parsed: unknown; usage: ParseUsage } | undefined;
 	const modelBase = {
 		modelOverride: override,
 		modelId,
@@ -211,29 +208,19 @@ export const POST: RequestHandler = async ({ request }) => {
 			return error(MODEL_ERROR_CODE, 'The model call failed. Please try again.');
 		}
 		try {
-			JSON.parse(result.rawJson);
-			rawJson = result.rawJson;
-			usage = result.usage;
+			outcome = { parsed: JSON.parse(result.rawJson), usage: result.usage };
 			break;
 		} catch {
-			if (attempt === 2) {
-				return error(
-					'MALFORMED_MODEL_OUTPUT',
-					'The model returned output that could not be parsed. Please try again.'
-				);
-			}
+			// One retry on unparseable output; a second failure answers below.
 		}
 	}
-
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(rawJson as string);
-	} catch {
+	if (!outcome) {
 		return error(
 			'MALFORMED_MODEL_OUTPUT',
 			'The model returned output that could not be parsed. Please try again.'
 		);
 	}
+	const { parsed, usage } = outcome;
 
 	// Warnings never block: the breakdown goes back intact with HTTP 200.
 	const warnings = validateBreakdown(parsed);
