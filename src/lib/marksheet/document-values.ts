@@ -100,7 +100,7 @@ function parseWarning(value: unknown): StoredWarning | null {
 	const { questionId, code, message } = value;
 	if (!isStringOrNull(questionId)) return null;
 	if (typeof code !== 'string' || typeof message !== 'string') return null;
-	return { questionId: questionId as string | null, code, message };
+	return { questionId, code, message };
 }
 
 export function parseMarks(value: unknown): Record<string, Record<string, number>> | null {

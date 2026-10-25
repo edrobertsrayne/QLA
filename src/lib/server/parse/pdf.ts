@@ -63,6 +63,14 @@ export function supportsNativePdf(modelId: string): boolean {
 	return /gemini|claude|gpt-4o|gpt-4\.1|gpt-5|gpt-6|sonnet|opus|haiku/i.test(modelId);
 }
 
+/** pdf.js could not read the bytes it was given: the one failure that means a bad upload, not a bug. */
+export class PdfUnreadableError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = 'PdfUnreadableError';
+	}
+}
+
 /** Deterministic text extraction of one PDF. */
 export interface ParsedPdf {
 	textPerPage: string[];
@@ -71,8 +79,8 @@ export interface ParsedPdf {
 
 /**
  * Count a PDF's pages without extracting their text. The page ceiling can then
- * be enforced before the work of reading every page. Throws on unreadable
- * input — the route maps that to a 400 before any model call.
+ * be enforced before the work of reading every page. Throws `PdfUnreadableError` on
+ * unreadable input — the route maps that to a 400 before any model call.
  *
  * Loads a copy: pdf.js detaches the buffer it parses, and the document is
  * destroyed before returning, so the caller's bytes stay attached and no
@@ -85,7 +93,7 @@ export async function countPdfPages(bytes: Uint8Array): Promise<number> {
 		pdf = await getDocumentProxy(new Uint8Array(bytes));
 		pageCount = pdf.numPages;
 	} catch (error) {
-		throw new Error(
+		throw new PdfUnreadableError(
 			`PDF could not be read: ${error instanceof Error ? error.message : String(error)}`,
 			{ cause: error }
 		);
@@ -93,7 +101,7 @@ export async function countPdfPages(bytes: Uint8Array): Promise<number> {
 		if (pdf !== null) await pdf.loadingTask.destroy();
 	}
 	if (!Number.isInteger(pageCount) || pageCount < 1) {
-		throw new Error('PDF could not be read: no pages found.');
+		throw new PdfUnreadableError('PDF could not be read: no pages found.');
 	}
 	return pageCount;
 }
@@ -102,7 +110,7 @@ export async function countPdfPages(bytes: Uint8Array): Promise<number> {
  * Extract per-page text from raw PDF bytes.
  * Returns pages in order plus a `[p.N]`-marked concatenation for the prompt
  * (text is the ordering ground truth; the native PDF attach is authoritative
- * for figures/tables/emphasis). Throws on unreadable input — the route maps
+ * for figures/tables/emphasis). Throws `PdfUnreadableError` on unreadable input — the route maps
  * that to a 400 before any model call.
  */
 export async function parsePdfBytes(bytes: Uint8Array): Promise<ParsedPdf> {
@@ -113,7 +121,7 @@ export async function parsePdfBytes(bytes: Uint8Array): Promise<ParsedPdf> {
 		totalPages = result.totalPages;
 		text = result.text;
 	} catch (error) {
-		throw new Error(
+		throw new PdfUnreadableError(
 			`PDF could not be read: ${error instanceof Error ? error.message : String(error)}`,
 			{ cause: error }
 		);
@@ -122,7 +130,7 @@ export async function parsePdfBytes(bytes: Uint8Array): Promise<ParsedPdf> {
 		typeof page === 'string' ? page : String(page ?? '')
 	);
 	if (!Number.isInteger(totalPages) || totalPages < 1) {
-		throw new Error('PDF could not be read: no pages found.');
+		throw new PdfUnreadableError('PDF could not be read: no pages found.');
 	}
 	const textWithMarkers = textPerPage
 		.map((pageText, index) => `[p.${index + 1}]\n${pageText.trim()}`)

@@ -196,6 +196,10 @@ interface Theme {
 	questions: string[];
 }
 
+function isThemeList(value: unknown): value is Theme[] {
+	return Array.isArray(value) && value.every(isTheme);
+}
+
 function isTheme(value: unknown): value is Theme {
 	return (
 		isRecord(value) &&
@@ -229,17 +233,12 @@ export function checkFeedback(
 	output: unknown
 ): { strengths: string[]; areasForImprovement: string[] } | { failures: CheckFailure[] } {
 	const failures: CheckFailure[] = [];
-	if (
-		!isRecord(output) ||
-		!Array.isArray(output['strengths']) ||
-		!Array.isArray(output['areasForImprovement']) ||
-		!output['strengths'].every(isTheme) ||
-		!output['areasForImprovement'].every(isTheme)
-	) {
+	const { strengths, areasForImprovement: areas }: Record<string, unknown> = isRecord(output)
+		? output
+		: {};
+	if (!isThemeList(strengths) || !isThemeList(areas)) {
 		return { failures: [{ id: 'shape', message: 'Must hold strengths and areasForImprovement.' }] };
 	}
-	const strengths = output['strengths'] as Theme[];
-	const areas = output['areasForImprovement'] as Theme[];
 	if (strengths.length > 3)
 		failures.push({ id: 'strength-cap', message: 'Must hold at most 3 strengths.' });
 	if (areas.length > 2)

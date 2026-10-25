@@ -34,6 +34,7 @@ import { modelErrorResponse } from '$lib/server/structured-route';
 import {
 	buildDiagramUnverifiedWarning,
 	parsePdfBytes,
+	PdfUnreadableError,
 	resolveModelId,
 	supportsNativePdf
 } from '$lib/server/parse/pdf';
@@ -154,7 +155,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		let parsed;
 		try {
 			parsed = await parsePdfBytes(upload.bytes);
-		} catch {
+		} catch (parseError) {
+			if (!(parseError instanceof PdfUnreadableError)) throw parseError;
 			return error(PDF_UNREADABLE_CODE, PDF_UPLOAD_MESSAGES.unreadable);
 		}
 		const document: IngestedDocument = {
@@ -179,14 +181,14 @@ export const POST: RequestHandler = async ({ request }) => {
 		try {
 			specUrl = parseSpecUrl(specUrlText);
 		} catch (specError) {
-			if (specError instanceof SpecUrlError) return error(specError.code, specError.message);
-			return error(INVALID_SPEC_URL_CODE, 'The specification link is not a valid URL.');
+			if (!(specError instanceof SpecUrlError)) throw specError;
+			return error(specError.code, specError.message);
 		}
 		try {
 			specDoc = await fetchSpecPdf(specUrl, useNativePdf);
 		} catch (specError) {
-			if (specError instanceof SpecUnreadableError) return error(specError.code, specError.message);
-			return error(SPEC_UNREADABLE_CODE, 'The specification could not be downloaded.');
+			if (!(specError instanceof SpecUnreadableError)) throw specError;
+			return error(specError.code, specError.message);
 		}
 	}
 

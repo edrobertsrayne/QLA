@@ -80,7 +80,7 @@ export function validateBreakdown(breakdown: unknown): ParseWarning[] {
 
 		// marks: positive integer or null (null = unknowable from inputs).
 		const marks = question['marks'];
-		if (marks !== null && (!Number.isInteger(marks) || (marks as number) < 1)) {
+		if (marks !== null && (typeof marks !== 'number' || !Number.isInteger(marks) || marks < 1)) {
 			warn(label, 'INVALID_MARKS', `Question '${label}' marks must be a positive integer or null.`);
 		}
 

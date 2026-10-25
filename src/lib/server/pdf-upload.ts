@@ -4,7 +4,7 @@
 // uploads; returns data or a typed failure, never a `Response`, so each route
 // keeps its own status, codes and page-ceiling sentence.
 
-import { countPdfPages } from './parse/pdf';
+import { countPdfPages, PdfUnreadableError } from './parse/pdf';
 
 /** Per-file cap for uploaded PDFs, applied to each call's files. Fatal (413) when exceeded. */
 export const MAX_FILE_BYTES = 15 * 1024 * 1024;
@@ -105,7 +105,8 @@ export async function readPdfUploads(
 			let pageCount: number;
 			try {
 				pageCount = await countPdfPages(bytes);
-			} catch {
+			} catch (error) {
+				if (!(error instanceof PdfUnreadableError)) throw error;
 				return { ok: false, field, filename: file.name };
 			}
 

@@ -33,7 +33,7 @@ import {
 	SPEC_UNREADABLE_CODE,
 	INVALID_SPEC_URL_CODE
 } from './schema';
-import { countPdfPages, parsePdfBytes } from './pdf';
+import { countPdfPages, parsePdfBytes, PdfUnreadableError } from './pdf';
 import type { IngestedDocument } from './model';
 
 /** Generic message for every network-level failure (blocked, unreachable, non-OK, bad redirect). */
@@ -299,6 +299,7 @@ export async function fetchSpecPdf(url: URL, useNativePdf: boolean): Promise<Ing
 	try {
 		pageCount = await countPdfPages(bytes);
 	} catch (error) {
+		if (!(error instanceof PdfUnreadableError)) throw error;
 		throw new SpecUnreadableError(
 			'The specification PDF could not be read. Re-export it without password protection and try again.',
 			SPEC_UNREADABLE_CODE,
@@ -318,6 +319,7 @@ export async function fetchSpecPdf(url: URL, useNativePdf: boolean): Promise<Ing
 	try {
 		parsed = await parsePdfBytes(bytes);
 	} catch (error) {
+		if (!(error instanceof PdfUnreadableError)) throw error;
 		throw new SpecUnreadableError(
 			'The specification PDF could not be read. Re-export it without password protection and try again.',
 			SPEC_UNREADABLE_CODE,
