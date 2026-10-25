@@ -140,9 +140,10 @@ export function trimPasteGrid(rows: readonly (readonly string[])[]): string[][] 
  * the anchor's entry onwards. Rows line up with that tier's students, and a
  * pasted row past the class becomes a student on that tier.
  *
- * Pasted columns past the last entry are clipped. A cell that is not a whole
- * number is refused on its own and leaves the sheet as it was, while an empty
- * cell clears a mark — the same rules as typing, applied a block at a time.
+ * Pasted columns past the last entry are clipped. Every valid cell is applied.
+ * A cell that is not a whole number is skipped and reported in `refused`,
+ * leaving that cell's existing mark as it was, while an empty cell clears a
+ * mark — the same rules as typing, applied a block at a time.
  */
 export function applyPaste(
 	document: MarksheetDocument,
