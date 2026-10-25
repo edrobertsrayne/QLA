@@ -23,8 +23,11 @@ import { getServerEnv } from './env';
 /** Default model for every OpenRouter call when no per-run override or OPENROUTER_MODEL is given. */
 export const DEFAULT_MODEL_ID = 'openai/gpt-6-luna';
 
-/** Guardrail: cap completion so a full GCSE paper completes in one run. */
-export const OPENROUTER_MAX_TOKENS = 4000;
+/**
+ * Bound on runaway parse output. Sized with headroom above the longest measured
+ * Foundation papers (about 3,900 completion tokens for a QP + MS pair).
+ */
+export const OPENROUTER_MAX_TOKENS = 16000;
 
 /** Warning code for the text-only degradation path. */
 export const DIAGRAM_UNVERIFIED_CODE = 'DIAGRAM_UNVERIFIED';

@@ -103,7 +103,7 @@ describe('live parse transport', () => {
 		const payload = JSON.parse(String(call?.init?.body)) as Record<string, unknown>;
 		expect(payload.model).toBe(MODEL_ID);
 		expect(payload.max_tokens).toBe(OPENROUTER_MAX_TOKENS);
-		expect(payload.max_tokens).toBe(4000);
+		expect(payload.max_tokens).toBe(16000);
 		expect(payload.plugins).toEqual([{ id: 'file-parser', pdf: { engine: 'native' } }]);
 		expect(call?.init?.headers).toMatchObject({
 			'HTTP-Referer': 'https://qla.local/parse',
