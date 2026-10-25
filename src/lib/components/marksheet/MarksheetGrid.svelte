@@ -53,7 +53,7 @@
 		tier,
 		onViewAnalysis
 	}: {
-		/** The open tier, or null while the teacher is placing students. */
+		/** The open tier, or null while the teacher is placing students. The parent keys the grid by it. */
 		tier: TierIndex | null;
 		onViewAnalysis: (entryId: string | null) => void;
 	} = $props();
@@ -100,20 +100,16 @@
 	});
 
 	/**
-	 * The grid's view state, remade when the open tier changes: a cursor, an open
-	 * editor, a refusal or a half-typed name from another paper means nothing on
-	 * this one.
+	 * The grid's view state. The grid is mounted afresh for each tier, so a cursor,
+	 * an open editor, a refusal or a half-typed name from another paper never
+	 * reaches this one.
 	 */
-	const sheet = $derived.by(() => {
-		void tier;
-		const state = $state<SheetState>({
-			cursor: null,
-			editing: null,
-			refusal: null,
-			adding: false,
-			newName: ''
-		});
-		return state;
+	const sheet = $state<SheetState>({
+		cursor: null,
+		editing: null,
+		refusal: null,
+		adding: false,
+		newName: ''
 	});
 	/** The grid's own element, so a cell is looked for only where it can be. */
 	let gridRoot: HTMLDivElement | undefined;

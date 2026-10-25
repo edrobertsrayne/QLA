@@ -90,5 +90,7 @@
 		<TierTabs {tab} onTab={(next) => (tab = next)} />
 	{/if}
 
-	<MarksheetGrid {tier} onViewAnalysis={openAnalysis} />
+	{#key tier}
+		<MarksheetGrid {tier} onViewAnalysis={openAnalysis} />
+	{/key}
 </main>
