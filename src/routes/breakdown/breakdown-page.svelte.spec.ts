@@ -884,3 +884,107 @@ describe('breakdown page', () => {
 			.toHaveTextContent('changing a pair only changes the common-questions analysis');
 	});
 });
+
+describe('keyboard focus in the breakdown table', () => {
+	/** Bands 1 = [1a, 1b, 1c] and 2 = [2a, 2b], with whatever marks the test enters. */
+	function seedBands(marks: MarksheetDocument['marks'] = {}) {
+		seed(
+			parsed({
+				tiers: [
+					tier({
+						breakdown: {
+							entries: [
+								entry('e1a', '1a', '1'),
+								entry('e1b', '1b', '1'),
+								entry('e1c', '1c', '1'),
+								entry('e2a', '2a', '2'),
+								entry('e2b', '2b', '2')
+							],
+							warnings: []
+						}
+					})
+				],
+				students: [student('student-1', 'Ada', 'Lovelace')],
+				marks
+			})
+		);
+		return openPage(BreakdownPage);
+	}
+
+	/** The accessible name of the control holding the keyboard. */
+	function focusedName(): string | null {
+		return document.activeElement?.getAttribute('aria-label') ?? null;
+	}
+
+	it.each([
+		['the first entry of a band', '1a', 'Move 1a down'],
+		['an entry in the middle of a band', '1b', 'Move 1b down']
+	])('keeps the keyboard on Move down after moving %s', async (_where, _label, button) => {
+		seedBands();
+
+		await page.getByRole('button', { name: button }).click();
+
+		await vi.waitFor(() => expect(focusedName()).toBe(button));
+	});
+
+	it('hands the keyboard to the other Move button once an entry reaches the bottom', async () => {
+		seedBands();
+
+		await page.getByRole('button', { name: 'Move 2a down' }).click();
+
+		await vi.waitFor(() => expect(focusedName()).toBe('Move 2a up'));
+	});
+
+	it('hands the keyboard to the other Move button once an entry reaches the top', async () => {
+		seedBands();
+		await page.getByRole('button', { name: 'Move 1b up' }).click();
+
+		await vi.waitFor(() => expect(focusedName()).toBe('Move 1b down'));
+	});
+
+	it('does not remount a band when its first entry moves', async () => {
+		seedBands();
+		const header = page.getByLabelText('Question number for band 1').element();
+
+		await page.getByRole('button', { name: 'Move 1a down' }).click();
+		await vi.waitFor(() => expect(focusedName()).toBe('Move 1a down'));
+
+		expect(page.getByLabelText('Question number for band 1').element()).toBe(header);
+	});
+
+	it('puts the keyboard on the Delete button of the entry that took the place deleted', async () => {
+		seedBands();
+
+		await page.getByRole('button', { name: 'Delete 1a' }).click();
+
+		await vi.waitFor(() => expect(focusedName()).toBe('Delete 1b'));
+	});
+
+	it('puts the keyboard on the previous entry’s Delete button when the last one is deleted', async () => {
+		seedBands();
+
+		await page.getByRole('button', { name: 'Delete 2b' }).click();
+
+		await vi.waitFor(() => expect(focusedName()).toBe('Delete 2a'));
+	});
+
+	it('does the same when the delete is confirmed in the marks warning', async () => {
+		seedBands({ 'student-1': { e1b: 3 } });
+
+		await page.getByRole('button', { name: 'Delete 1b' }).click();
+		await page.getByRole('button', { name: 'Delete 1b and 1 mark' }).click();
+
+		await vi.waitFor(() => expect(focusedName()).toBe('Delete 1c'));
+	});
+
+	it('puts the keyboard on Add entry once every entry is deleted', async () => {
+		seed(documentOf([entry('only', '1a', '1')]));
+		openPage(BreakdownPage);
+
+		await page.getByRole('button', { name: 'Delete 1a' }).click();
+
+		await vi.waitFor(() =>
+			expect(document.activeElement?.textContent).toContain('Add entry at end')
+		);
+	});
+});

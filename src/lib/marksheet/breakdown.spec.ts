@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	BandKeys,
 	assessmentBlockers,
 	bandName,
 	confirmationBlockers,
@@ -39,6 +40,48 @@ function entry(
 		...overrides
 	};
 }
+
+describe('BandKeys', () => {
+	const keysOf = (keys: BandKeys, entries: BreakdownEntry[]) =>
+		keys.keyed(questionBands(entries)).map(({ key }) => key);
+	const a = entry('a', '1a', '1');
+	const b = entry('b', '1b', '1');
+	const c = entry('c', '2a', '2');
+
+	it('gives each band its own key, and the same keys when asked again', () => {
+		const keys = new BandKeys();
+
+		const first = keysOf(keys, [a, b, c]);
+
+		expect(new Set(first).size).toBe(2);
+		expect(keysOf(keys, [a, b, c])).toEqual(first);
+	});
+
+	it('keeps a band’s key when its first entry moves or is deleted', () => {
+		const keys = new BandKeys();
+		const [band1, band2] = keysOf(keys, [a, b, c]);
+
+		expect(keysOf(keys, [b, a, c])).toEqual([band1, band2]);
+		expect(keysOf(keys, [b, c])).toEqual([band1, band2]);
+	});
+
+	it('keeps a band’s key when its only entry is renumbered', () => {
+		const keys = new BandKeys();
+		const [band1, band2] = keysOf(keys, [a, c]);
+
+		expect(keysOf(keys, [{ ...a, questionNumber: '3' }, c])).toEqual([band1, band2]);
+	});
+
+	it('gives a band split off another a key of its own', () => {
+		const keys = new BandKeys();
+		const [whole] = keysOf(keys, [a, b]);
+
+		const [kept, split] = keysOf(keys, [a, { ...b, questionNumber: '2' }]);
+
+		expect(kept).toBe(whole);
+		expect(split).not.toBe(whole);
+	});
+});
 
 describe('questionBands', () => {
 	it('runs contiguous entries of one question number together', () => {

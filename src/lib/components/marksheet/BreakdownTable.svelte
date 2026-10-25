@@ -23,6 +23,7 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Table from '$lib/components/ui/table';
 	import {
+		BandKeys,
 		bandName,
 		entryEdits,
 		entryName,
@@ -46,7 +47,9 @@
 	const store = marksheetStore();
 	/** One tier's entries: the open tab is the only one on screen. */
 	const entries = $derived(store.entriesOf(tier));
-	const bands = $derived(store.bandsOf(tier));
+	/** Keeps a band's key through the edits that change its first entry or its number. */
+	const bandKeys = new BandKeys();
+	const keyedBands = $derived(bandKeys.keyed(store.bandsOf(tier)));
 	const warnings = $derived(store.tiers[tier]?.breakdown.warnings ?? []);
 	const twoTiers = $derived(store.tierCount === 2);
 	/** The other tier's number, as the Common with Tier N heading says it. */
@@ -126,6 +129,43 @@
 		focusEntry(id, 'label');
 	}
 
+	/** The Add entry at end button: where the keyboard goes when the last row is deleted. */
+	let addEntryButton = $state<HTMLButtonElement | null>(null);
+
+	/** Put the keyboard on one of a row's action buttons, once the table has settled. */
+	function focusAction(entryId: string, action: 'move-up' | 'move-down' | 'delete'): void {
+		document
+			.querySelector<HTMLElement>(`[data-entry="${entryId}"] [data-action="${action}"]`)
+			?.focus();
+	}
+
+	/**
+	 * Move an entry, and keep the keyboard on its Move button: the rows are
+	 * reordered, which blurs whatever was focused. An entry that has reached the
+	 * top or bottom has a disabled button there, so the other one takes the focus.
+	 */
+	async function moveEntry(entry: BreakdownEntry, direction: -1 | 1): Promise<void> {
+		store.moveEntry(entry.id, direction);
+		await tick();
+		const place = entries.findIndex((candidate) => candidate.id === entry.id);
+		const atEnd = direction === -1 ? place === 0 : place === entries.length - 1;
+		const same = direction === -1 ? 'move-up' : 'move-down';
+		focusAction(entry.id, atEnd ? (direction === -1 ? 'move-down' : 'move-up') : same);
+	}
+
+	/**
+	 * Delete an entry, and put the keyboard on the Delete button of whichever row
+	 * took its place, else the one before it, else the Add entry button.
+	 */
+	async function deleteEntry(entry: BreakdownEntry): Promise<void> {
+		const place = entries.indexOf(entry);
+		store.deleteEntry(entry.id);
+		await tick();
+		const next = entries[place] ?? entries[place - 1];
+		if (next) focusAction(next.id, 'delete');
+		else addEntryButton?.focus();
+	}
+
 	/** Scroll to an entry's row and put the cursor in one of its fields. */
 	export function focusEntry(entryId: string, field: EditableField): void {
 		const row = document.querySelector<HTMLElement>(`[data-entry="${entryId}"]`);
@@ -169,7 +209,7 @@
 	 */
 	function askDelete(entry: BreakdownEntry): void {
 		if (store.marksOnEntry(entry.id) === 0) {
-			store.deleteEntry(entry.id);
+			void deleteEntry(entry);
 			return;
 		}
 		pendingDelete = entry;
@@ -179,7 +219,7 @@
 	function confirmDelete(): void {
 		const entry = pendingDelete;
 		pendingDelete = null;
-		if (entry !== null) store.deleteEntry(entry.id);
+		if (entry !== null) void deleteEntry(entry);
 	}
 
 	/** What the band is: a whole question, subquestions of one, or a row to number. */
@@ -198,7 +238,8 @@
 				size="icon-xs"
 				disabled={place === 0}
 				aria-label={`Move ${entryName(entry)} up`}
-				onclick={() => store.moveEntry(entry.id, -1)}
+				data-action="move-up"
+				onclick={() => void moveEntry(entry, -1)}
 			>
 				<ArrowUpIcon class="size-3.5" />
 			</Button>
@@ -207,7 +248,8 @@
 				size="icon-xs"
 				disabled={place === entries.length - 1}
 				aria-label={`Move ${entryName(entry)} down`}
-				onclick={() => store.moveEntry(entry.id, 1)}
+				data-action="move-down"
+				onclick={() => void moveEntry(entry, 1)}
 			>
 				<ArrowDownIcon class="size-3.5" />
 			</Button>
@@ -224,6 +266,7 @@
 				size="icon-xs"
 				class="text-destructive"
 				aria-label={`Delete ${entryName(entry)}`}
+				data-action="delete"
 				onclick={() => askDelete(entry)}
 			>
 				<Trash2Icon class="size-3.5" />
@@ -418,7 +461,7 @@
 		</Table.Header>
 		<Table.Body>
 			{#if banded}
-				{#each bands as band (band.entries[0].id)}
+				{#each keyedBands as { band, key } (key)}
 					<Table.Row data-testid="band-row" class="bg-muted/30 hover:bg-muted/30">
 						<Table.Cell />
 						<Table.Cell colspan={6 + (twoTiers ? 1 : 0)} class="py-1.5 text-xs">
@@ -481,7 +524,12 @@
 	</Table.Root>
 </div>
 
-<Button variant="outline" size="sm" onclick={() => addRow(() => store.appendEntry(tier))}>
+<Button
+	bind:ref={addEntryButton}
+	variant="outline"
+	size="sm"
+	onclick={() => addRow(() => store.appendEntry(tier))}
+>
 	<PlusIcon class="size-4" /> Add entry at end
 </Button>
 

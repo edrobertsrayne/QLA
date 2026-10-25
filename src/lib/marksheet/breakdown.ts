@@ -53,6 +53,37 @@ export function questionBands(entries: readonly BreakdownEntry[]): QuestionBand[
 }
 
 /**
+ * Keys for a table's bands that survive the edits a teacher makes under them:
+ * moving or deleting a band's first entry, or renumbering a band's only entry.
+ * A band keeps the key of an entry it already held, so its rows are never
+ * remounted — which would drop the keyboard — just because the band's first
+ * entry, or its question number, changed. Asking again with the same bands
+ * answers the same keys.
+ */
+export class BandKeys {
+	#keyOfEntry = new Map<string, number>();
+	#next = 0;
+
+	keyed(bands: readonly QuestionBand[]): { band: QuestionBand; key: number }[] {
+		const claimed = new Set<number>();
+		const keyed = bands.map((band) => {
+			const held = band.entries
+				.map((entry) => this.#keyOfEntry.get(entry.id))
+				.find((key) => key !== undefined && !claimed.has(key));
+			const key = held ?? this.#next++;
+			claimed.add(key);
+			return { band, key };
+		});
+		this.#keyOfEntry = new Map(
+			keyed.flatMap(({ band, key }) =>
+				band.entries.map((entry): [string, number] => [entry.id, key])
+			)
+		);
+		return keyed;
+	}
+}
+
+/**
  * Whether a band is one undivided question: a single entry labelled with its
  * own question number (`3`), rather than subquestions under a stem.
  */
