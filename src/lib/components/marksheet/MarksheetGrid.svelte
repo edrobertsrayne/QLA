@@ -240,18 +240,31 @@
 		}
 
 		if (key === 'Enter' || key === 'Tab') {
-			event.preventDefault();
 			sheet.refusal = commitMarkEdit();
 			// A refused cell is left where it is, with the keyboard still on it, so
 			// the message beside the grid is about the cell in front of the teacher.
 			if (sheet.refusal) {
+				event.preventDefault();
 				focusCell(student.id, entry.id);
 				return;
 			}
-			moveTo(
+			const next =
 				activeCell &&
-					step(activeCell, shape, key === 'Enter' ? 'down' : event.shiftKey ? 'previous' : 'next')
-			);
+				step(activeCell, shape, key === 'Enter' ? 'down' : event.shiftKey ? 'previous' : 'next');
+			if (
+				key === 'Tab' &&
+				next &&
+				next.studentId === activeCell?.studentId &&
+				next.entryId === activeCell.entryId
+			) {
+				// Tab past the last cell, or Shift+Tab before the first, leaves the grid.
+				// The keyboard goes back to the cell first: a closing editor is about to
+				// leave the page, and the browser tabs on from wherever focus is.
+				focusCell(student.id, entry.id);
+				return;
+			}
+			event.preventDefault();
+			moveTo(next);
 			return;
 		}
 

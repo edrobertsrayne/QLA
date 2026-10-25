@@ -102,6 +102,59 @@ describe('mark entry', () => {
 		expect(focusedCell()).toBe(markCell(screen, 'student-1', 'entry-2'));
 	});
 
+	describe('Tab at the ends of the grid', () => {
+		/** Whether the keyboard has left the mark cells for some other control. */
+		function leftTheMarkCells(): boolean {
+			const active = document.activeElement;
+			return (
+				active !== null &&
+				active !== document.body &&
+				!active.matches('[data-testid="mark-cell"], [data-testid="mark-editor"]')
+			);
+		}
+
+		it('leaves the grid on Tab from the last mark cell', async () => {
+			const screen = openGrid();
+			await userEvent.click(markCell(screen, 'student-2', 'entry-2'));
+
+			await userEvent.keyboard('{Tab}');
+
+			expect(leftTheMarkCells()).toBe(true);
+		});
+
+		it('stores an open edit on the last cell, then leaves the grid', async () => {
+			const screen = openGrid();
+			await userEvent.click(markCell(screen, 'student-2', 'entry-2'));
+			await userEvent.keyboard('3');
+			await expect.element(page.getByTestId('mark-editor')).toHaveValue('3');
+
+			await userEvent.keyboard('{Tab}');
+
+			expect(marksheetStore().document?.marks).toEqual({ 'student-2': { 'entry-2': 3 } });
+			expect(leftTheMarkCells()).toBe(true);
+		});
+
+		it('leaves the grid on Shift+Tab from the first mark cell', async () => {
+			const screen = openGrid();
+			await userEvent.click(markCell(screen, 'student-1', 'entry-1'));
+
+			await userEvent.keyboard('{Shift>}{Tab}{/Shift}');
+
+			expect(leftTheMarkCells()).toBe(true);
+		});
+
+		it('keeps a refused edit on the last cell instead of leaving', async () => {
+			const screen = openGrid();
+			await userEvent.click(markCell(screen, 'student-2', 'entry-2'));
+			await userEvent.keyboard('2.5');
+
+			await userEvent.keyboard('{Tab}');
+
+			expect(focusedCell()).toBe(markCell(screen, 'student-2', 'entry-2'));
+			expect(marksheetStore().document?.marks).toEqual({});
+		});
+	});
+
 	it('moves the cursor with the arrow keys, entering nothing', async () => {
 		const screen = openGrid();
 
