@@ -11,8 +11,8 @@ import { chromium, type Browser } from 'playwright';
 /** The largest HTML body the PDF route reads: a whole class of reports is well under it. */
 export const MAX_PDF_HTML_BYTES = 8 * 1024 * 1024;
 
-/** A PDF render may take this long before it is abandoned. */
-const PDF_RENDER_TIMEOUT_MS = 30_000;
+/** A PDF render, from taking a slot to releasing it, may take this long before it is abandoned. */
+export const PDF_RENDER_TIMEOUT_MS = 30_000;
 
 /** At most this many renders run at once; each holds a browser context and a copy of the HTML. */
 export const MAX_CONCURRENT_PDF_RENDERS = 2;
@@ -35,10 +35,21 @@ export class PdfTimeoutError extends Error {
 
 let browser: Promise<Browser> | null = null;
 
+let launchBrowser: () => Promise<Browser> = () => chromium.launch();
+
+/** Replace the browser launcher, so a spec can hang or fail a launch. */
+export function setBrowserLauncher(launcher: () => Promise<Browser>): void {
+	launchBrowser = launcher;
+}
+
+export function resetBrowserLauncher(): void {
+	launchBrowser = () => chromium.launch();
+}
+
 /** The shared browser, launched on first use and again if it has gone away. */
 function sharedBrowser(): Promise<Browser> {
 	if (browser) return browser;
-	const launched = chromium.launch();
+	const launched = launchBrowser();
 	browser = launched;
 	launched.then(
 		(instance) =>
@@ -52,6 +63,13 @@ function sharedBrowser(): Promise<Browser> {
 	return launched;
 }
 
+/** Forget the shared browser, so the next render launches a fresh one, and close it best-effort. */
+function dropSharedBrowser(): void {
+	const dropped = browser;
+	browser = null;
+	dropped?.then((instance) => instance.close()).catch(() => {});
+}
+
 /** Close the shared browser, so a process or a spec can exit cleanly. */
 export async function closePdfBrowser(): Promise<void> {
 	const closing = browser;
@@ -59,18 +77,34 @@ export async function closePdfBrowser(): Promise<void> {
 	if (closing) await (await closing).close();
 }
 
-/** One PDF of `html`: the page size the document asks for, A4 when it asks for none. */
+/**
+ * One PDF of `html`: the page size the document asks for, A4 when it asks for
+ * none. Everything from taking a slot to releasing it runs under one deadline,
+ * so a hung launch, context or close cannot hold the slot. At the deadline the
+ * render's cleanup carries on in the background.
+ */
 export async function renderPdf(html: string): Promise<Buffer> {
 	if (activeRenders >= MAX_CONCURRENT_PDF_RENDERS) throw new PdfBusyError();
 	activeRenders++;
+	const progress = { drawing: false };
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const deadline = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => {
+			// A hang outside drawing means the browser itself is not answering. A slow
+			// page leaves the browser, and any other render using it, alone.
+			if (!progress.drawing) dropSharedBrowser();
+			reject(new PdfTimeoutError());
+		}, PDF_RENDER_TIMEOUT_MS);
+	});
 	try {
-		return await render(html);
+		return await Promise.race([render(html, progress), deadline]);
 	} finally {
+		clearTimeout(timer);
 		activeRenders--;
 	}
 }
 
-async function render(html: string): Promise<Buffer> {
+async function render(html: string, progress: { drawing: boolean }): Promise<Buffer> {
 	const context = await (
 		await sharedBrowser()
 	).newContext({ javaScriptEnabled: false, offline: true, serviceWorkers: 'block' });
@@ -78,19 +112,11 @@ async function render(html: string): Promise<Buffer> {
 		// Offline already refuses the network; routing makes the refusal explicit.
 		await context.route('**/*', (route) => route.abort());
 		const page = await context.newPage();
-		const draw = async (): Promise<Buffer> => {
-			await page.setContent(html);
-			return page.pdf({ preferCSSPageSize: true, format: 'A4', printBackground: true });
-		};
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		const deadline = new Promise<never>((_, reject) => {
-			timer = setTimeout(() => reject(new PdfTimeoutError()), PDF_RENDER_TIMEOUT_MS);
-		});
-		try {
-			return await Promise.race([draw(), deadline]);
-		} finally {
-			clearTimeout(timer);
-		}
+		progress.drawing = true;
+		await page.setContent(html);
+		const pdf = await page.pdf({ preferCSSPageSize: true, format: 'A4', printBackground: true });
+		progress.drawing = false;
+		return pdf;
 	} finally {
 		await context.close();
 	}
