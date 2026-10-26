@@ -76,6 +76,10 @@ _Avoid_: Group, section, bare "band" next to RAG colours
 The proportion of a question or subquestion's available marks that its students actually gained (mean mark ÷ available marks) — the measure Phase 2's analysis ranks and RAG-colours to surface poorly answered questions. Computed per breakdown entry over the students who sit its tier, excluding absent students, unmarked cells and marks above the entry's available marks. A **common question** also gets a pooled facility index over both tiers' students, shown beside each tier's own and the gap between them.
 _Avoid_: Difficulty, average score, success rate, % marks
 
+**Topic facility**:
+One tier's facility index for a specification point or an assessment objective: marks gained out of marks available across every breakdown entry of that tier carrying it, counted over the same marks as each entry's own facility index. An entry with several specification points counts toward each; an entry with none counts only toward its assessment objective. RAG-banded like any facility index. The teacher's class-level view only; never shown in a report.
+_Avoid_: Class roll-up, topic average, topic score
+
 **RAG band**:
 Red, Amber or Green, given to a share of available marks by fixed absolute thresholds that are the same on every paper — never relative to the class. Given to a class's facility index in analysis, and to a student's own mark on a breakdown entry or own roll-up figure in a report; never to a student's total mark.
 _Avoid_: Grade, rating, percentile
@@ -89,7 +93,7 @@ A breakdown entry whose coverage is below 100%; it is still banded, over the mar
 _Avoid_: Provisional, incomplete
 
 **Analysis**:
-Every breakdown entry's facility index and RAG band, recomputed whenever a mark, an absent flag, a student's tier, the class or the breakdown changes. Always current; there is no run step and no out-of-date state. Per breakdown entry only — never pooled per question. Each tier's entries are analysed over that tier's students; a common question additionally gets a pooled facility index over both tiers' students, shown beside each tier's own and the gap between them.
+Every breakdown entry's facility index and RAG band, plus each tier's topic facility per specification point and assessment objective, recomputed whenever a mark, an absent flag, a student's tier, the class or the breakdown changes. Always current; there is no run step and no out-of-date state. Never pooled per question. Each tier's entries are analysed over that tier's students; a common question additionally gets a pooled facility index over both tiers' students, shown beside each tier's own and the gap between them.
 _Avoid_: Report, results, snapshot, regenerate
 
 **Class**:
@@ -153,7 +157,7 @@ A report whose generated feedback was written from a different generation input 
 _Avoid_: Stale, expired, invalid
 
 **Roll-up**:
-One student's marks summed by specification point (marks gained out of available, across every breakdown entry of the student's own tier carrying that specification point) and separately by assessment objective. An entry with no specification point counts only toward its assessment objective. A student with no tier has no roll-up. Never class-wide.
+One student's marks summed by specification point (marks gained out of available, across every breakdown entry of the student's own tier carrying that specification point) and separately by assessment objective. An entry with no specification point counts only toward its assessment objective. A student with no tier has no roll-up. Never class-wide: the class-level figure is **topic facility**.
 _Avoid_: Topic summary, aggregate, spec breakdown
 
 **Topic name**:
