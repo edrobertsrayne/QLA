@@ -2,7 +2,8 @@
 	One tier's analysis: today's band sections — red, amber, green folded, not
 	scored — worst first within each, every line drawn on the track chart. A
 	common question carries its partner's label, the other tier's faint dot and
-	the pooled bar, so the comparison is visible without leaving the tier.
+	the pooled bar, so the comparison is visible without leaving the tier. Below
+	them, the class's figures by topic and assessment objective, weakest first.
 -->
 <script lang="ts">
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
@@ -14,10 +15,12 @@
 		RED_BELOW,
 		type CommonQuestionAnalysis,
 		type EntryAnalysis,
-		type RagBand
+		type RagBand,
+		type TopicFacility
 	} from '$lib/marksheet/analysis.js';
 	import { entryName } from '$lib/marksheet/breakdown.js';
 	import { otherTier, type TierIndex } from '$lib/marksheet/document.js';
+	import { count } from '$lib/prose.js';
 	import { cn } from '$lib/utils.js';
 	import { ANALYSIS_TICKS, BAND_TEXT } from './analysis-style.js';
 	import AnalysisTrack from './AnalysisTrack.svelte';
@@ -25,6 +28,8 @@
 	interface Props {
 		/** The tier's entries worst first within each band, as the analysis orders them. */
 		rows: EntryAnalysis[];
+		/** The tier's figures by topic and AO, weakest first. */
+		topics?: TopicFacility[];
 		/** Green is the band a teacher is least likely to act on, so it starts folded. */
 		greenOpen?: boolean;
 		/** The entry the analysis was opened at, outlined and brought into sight. */
@@ -43,6 +48,7 @@
 
 	let {
 		rows,
+		topics = [],
 		greenOpen = $bindable(false),
 		highlight = null,
 		tier,
@@ -219,4 +225,62 @@
 		</h3>
 		{@render sectionRows(sections.notScored, 'Not-scored questions')}
 	</section>
+
+	{#if topics.length > 0}
+		<section data-testid="topic-facility">
+			<h3 class="mb-2 text-base font-semibold">
+				By topic
+				<span class="text-sm font-normal text-muted-foreground">({topics.length})</span>
+			</h3>
+			<p class="mb-2 text-xs text-muted-foreground">
+				Marks gained out of marks available across every question carrying the topic or objective,
+				weakest first.
+			</p>
+			<div class="overflow-hidden rounded-lg border" role="table" aria-label="Facility by topic">
+				<div
+					class="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-3 border-b px-3 py-1.5 text-xs text-muted-foreground"
+					role="row"
+				>
+					<span role="columnheader">Topic</span>
+					<span class="text-right" role="columnheader">Facility</span>
+				</div>
+				{#each topics as topic (`${topic.kind}:${topic.code}`)}
+					<div
+						class="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-3 border-b px-3 py-2 last:border-0"
+						role="row"
+						data-testid="topic-row"
+						data-topic={topic.code}
+					>
+						<div class="min-w-0" role="cell">
+							<div class="truncate text-sm font-medium">
+								{topic.name}
+								<span class="ml-1 text-[11px] font-normal text-muted-foreground">
+									{topic.kind === 'ao' ? 'AO' : count(topic.entries, 'entry', 'entries')}
+								</span>
+							</div>
+							{#if topic.description !== null}
+								<div class="truncate text-xs text-muted-foreground" title={topic.description}>
+									{topic.description}
+								</div>
+							{/if}
+						</div>
+						<div class="text-right tabular-nums" role="cell">
+							{#if topic.facility !== null && topic.band !== null}
+								<span
+									class={cn('font-semibold', BAND_TEXT[topic.band], topic.partMarked && 'italic')}
+								>
+									{facilityPercent(topic.facility)}%
+								</span>
+							{:else}
+								<span class="text-xs text-muted-foreground">Not scored</span>
+							{/if}
+							<div class="text-[11px] text-muted-foreground">
+								{topic.gained}/{topic.available} marks
+							</div>
+						</div>
+					</div>
+				{/each}
+			</div>
+		</section>
+	{/if}
 </div>

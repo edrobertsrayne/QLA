@@ -14,7 +14,11 @@
 	import PrinterIcon from '@lucide/svelte/icons/printer';
 	import { Button } from '$lib/components/ui/button';
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
-	import { analyseCommonQuestions, sortCommonQuestions } from '$lib/marksheet/analysis.js';
+	import {
+		analyseCommonQuestions,
+		analyseTopics,
+		sortCommonQuestions
+	} from '$lib/marksheet/analysis.js';
 	import type { AnalysisTab } from './analysis-tab.js';
 	import { otherTier, type TierIndex } from '$lib/marksheet/document.js';
 	import { exportAnalysisNow, marksheetStore } from '$lib/marksheet/index.js';
@@ -103,6 +107,8 @@
 	/** One tier's figures, or null while the common tab is open. */
 	const tierAnalysis = $derived(openTier === null ? null : store.analysisOf(openTier));
 	const tierRows = $derived(tierAnalysis?.ordered ?? []);
+	/** The same tier's figures by topic and AO, weakest first; the class-level view only. */
+	const topicRows = $derived(openTier === null ? [] : analyseTopics(store.document, openTier));
 	const commonRows = $derived(
 		sortCommonQuestions(
 			allCommon,
@@ -345,6 +351,7 @@
 	{:else}
 		<TierAnalysis
 			rows={tierRows}
+			topics={topicRows}
 			bind:greenOpen
 			{highlight}
 			tier={openTier}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	analyseCommonQuestions,
 	analyseTier,
+	analyseTopics,
 	facilityBand,
 	sortCommonQuestions
 } from './analysis.js';
@@ -705,5 +706,102 @@ describe('sortCommonQuestions', () => {
 
 		expect(sorted).not.toBe(input);
 		expect(input.map((row) => row.tier1.entry.id)).toEqual(['e1a', 'e1b', 'e1c', 'e1d']);
+	});
+});
+
+describe('analyseTopics', () => {
+	it('pools the marks of every entry carrying a specification point, weakest first', () => {
+		const document = oneTier(
+			[
+				entry('entry-1', '1a', '1', { marks: 4, specPoint: '3.2.1.4', ao: 'AO2' }),
+				entry('entry-2', '1b', '1', { marks: 2, specPoint: '3.2.1.4', ao: 'AO1' }),
+				entry('entry-3', '1c', '1', { marks: 5, specPoint: '4.1', ao: 'AO1' })
+			],
+			{
+				students: [student('student-1', 'Ada', 'Lovelace')],
+				marks: {
+					'student-1': { 'entry-1': 2, 'entry-2': 1, 'entry-3': 4 }
+				},
+				topicNames: { '3.2.1.4': 'Rates of reaction' }
+			}
+		);
+
+		const topics = analyseTopics(document, 0);
+		const rates = topics.find((row) => row.code === '3.2.1.4');
+		const unnamed = topics.find((row) => row.code === '4.1');
+
+		expect(rates).toMatchObject({
+			kind: 'specification',
+			name: 'Rates of reaction',
+			description: null,
+			gained: 3,
+			available: 6,
+			facility: 0.5,
+			band: 'amber',
+			entries: 2,
+			partMarked: false
+		});
+		// An unnamed code reads as itself rather than disappearing.
+		expect(unnamed?.name).toBe('4.1');
+		expect(unnamed?.facility).toBe(0.8);
+		// Weakest first: 3.2.1.4 and AO2 at 50%, then AO1 at 5/7, then 4.1 at 80%.
+		expect(topics.map((row) => row.code)).toEqual(['3.2.1.4', 'AO2', 'AO1', '4.1']);
+	});
+
+	it('adds a row per assessment objective, with the description the specification gave', () => {
+		const document = oneTier(
+			[
+				entry('entry-1', '1a', '1', { marks: 2, specPoint: null, ao: 'AO1' }),
+				entry('entry-2', '1b', '1', { marks: 2, specPoint: null, ao: 'AO1' })
+			],
+			{
+				students: [student('student-1', 'Ada', 'Lovelace')],
+				marks: { 'student-1': { 'entry-1': 1, 'entry-2': 0 } },
+				aoDescriptions: { AO1: 'Demonstrate knowledge' }
+			}
+		);
+
+		const [row] = analyseTopics(document, 0);
+
+		expect(row).toMatchObject({
+			kind: 'ao',
+			code: 'AO1',
+			name: 'AO1',
+			description: 'Demonstrate knowledge',
+			gained: 1,
+			available: 4,
+			facility: 0.25,
+			band: 'red',
+			entries: 2
+		});
+	});
+
+	it('leaves an entry with several codes out of no row, and one with none only in its AO row', () => {
+		const document = oneTier([
+			entry('entry-1', '1a', '1', { marks: 4, specPoint: '3.2.1.4, 4.1', ao: null })
+		]);
+
+		// No student has marked it, so each row exists with no figure.
+		const topics = analyseTopics(document, 0);
+
+		expect(topics.map((row) => row.code)).toEqual(['3.2.1.4', '4.1']);
+		expect(topics.every((row) => row.facility === null)).toBe(true);
+	});
+
+	it('marks a topic part-marked when any entry carrying it is', () => {
+		const document = oneTier([entry('entry-1', '1a', '1', { marks: 4, specPoint: '3.2.1.4' })], {
+			students: [student('student-1', 'Ada', 'Lovelace'), student('student-2', 'Grace', 'Hopper')],
+			marks: { 'student-1': { 'entry-1': 3 } }
+		});
+
+		expect(analyseTopics(document, 0)[0]).toMatchObject({
+			facility: 0.75,
+			band: 'green',
+			partMarked: true
+		});
+	});
+
+	it('has nothing before a marksheet exists', () => {
+		expect(analyseTopics(null, 0)).toEqual([]);
 	});
 });

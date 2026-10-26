@@ -10,6 +10,7 @@ import { entryName } from './breakdown.js';
 import {
 	isOverMax,
 	pairOfEntry,
+	specPointCodes,
 	tierEntries,
 	type BreakdownEntry,
 	type CommonQuestion,
@@ -65,6 +66,10 @@ export interface EntryAnalysis {
 	entry: BreakdownEntry;
 	/** Marks the facility is taken over: present, in range, not absent. */
 	counted: number;
+	/** Sum of the counted marks: what the entry's students gained. */
+	gained: number;
+	/** Marks those counted students could have gained (counted × available marks), 0 when not scored. */
+	available: number;
 	/** Mean of the counted marks, or null when there are none. */
 	mean: number | null;
 	/** Mean counted mark ÷ available marks, or null when the entry is not scored. */
@@ -168,6 +173,8 @@ function analyseEntry(
 	return {
 		entry,
 		counted,
+		gained: sum,
+		available: measurable ? counted * available : 0,
 		mean,
 		facility,
 		band: facility === null ? null : facilityBand(facility),
@@ -253,6 +260,108 @@ export function analyseTier(
 			invalid: analysed.filter((analysis) => analysis.overMax > 0).length
 		}
 	};
+}
+
+/** What a specification point or assessment objective's marks add up to on one tier. */
+export interface TopicFacility {
+	kind: 'specification' | 'ao';
+	/** The normalised specification code, or the assessment objective (AO1, …). */
+	code: string;
+	/** The teacher's topic name for a code, or the AO's code. */
+	name: string;
+	/** The AO description summarised from the specification, or null for a specification point. */
+	description: string | null;
+	/** Marks gained across the entries carrying it. */
+	gained: number;
+	/** Marks available across those entries, over the same counted marks. */
+	available: number;
+	/** Gained ÷ available, or null when no carrying entry has a figure. */
+	facility: number | null;
+	band: RagBand | null;
+	/** Breakdown entries carrying it. */
+	entries: number;
+	/** The figure rests on part of the class, as at least one entry's own figure does. */
+	partMarked: boolean;
+}
+
+/** One row as it is being added up. */
+interface TopicTotals {
+	kind: TopicFacility['kind'];
+	code: string;
+	name: string;
+	description: string | null;
+	gained: number;
+	available: number;
+	entries: number;
+	partMarked: boolean;
+}
+
+/** The order a topic's rows are read in: weakest first, and those with no figure last. */
+function weakestTopicFirst(a: TopicFacility, b: TopicFacility): number {
+	if (a.facility === null && b.facility === null) return 0;
+	if (a.facility === null) return 1;
+	if (b.facility === null) return -1;
+	return a.facility - b.facility;
+}
+
+/**
+ * One tier's figures by specification point and by assessment objective, on
+ * the class as it stands. Local arithmetic over the entries' counted marks:
+ * each entry counts once toward each distinct code and once toward its AO, so
+ * a code written on two entries pools both. Weakest first, so the topics to
+ * reteach come before the secure ones.
+ */
+export function analyseTopics(
+	document: MarksheetDocument | null,
+	tier: TierIndex
+): TopicFacility[] {
+	if (document === null) return [];
+	const totals = new Map<string, TopicTotals>();
+	const add = (
+		kind: TopicFacility['kind'],
+		code: string,
+		name: string,
+		description: string | null,
+		row: EntryAnalysis
+	): void => {
+		const key = `${kind}:${code}`;
+		const running = totals.get(key) ?? {
+			kind,
+			code,
+			name,
+			description,
+			gained: 0,
+			available: 0,
+			entries: 0,
+			partMarked: false
+		};
+		running.gained += row.gained;
+		running.available += row.available;
+		running.entries += 1;
+		running.partMarked ||= row.coverage.partMarked;
+		totals.set(key, running);
+	};
+
+	for (const row of analyseTier(document, tier).entries) {
+		for (const code of new Set(specPointCodes(row.entry.specPoint))) {
+			add('specification', code, document.topicNames[code]?.trim() || code, null, row);
+		}
+		const ao = row.entry.ao;
+		if (ao !== null) {
+			add('ao', ao, ao, document.aoDescriptions[ao] ?? null, row);
+		}
+	}
+
+	return [...totals.values()]
+		.map((row) => {
+			const facility = row.available > 0 ? row.gained / row.available : null;
+			return {
+				...row,
+				facility,
+				band: facility === null ? null : facilityBand(facility)
+			};
+		})
+		.sort(weakestTopicFirst);
 }
 
 /** The pooled figure for a pair: both tiers' marks over both tiers' students. */
