@@ -45,9 +45,16 @@ State what is out of scope. This prevents the agent from gold-plating or making 
 **Blocked by:** #<prototype>: build the variant its verdict comment records (only when split from a prototype ticket)
 **Summary:** one-line description of what needs to happen
 
+**Decisions (maintainer, during triage):**
+Only when triage settled choices with the maintainer. One bullet per decision, plus
+the ADR or `CONTEXT.md` term that records it. The brief is bound by these; where a
+linked prototype verdict disagrees, the verdict wins.
+
 **Current behavior:**
 Describe what happens now. For bugs, this is the broken behavior.
 For enhancements, this is the status quo the feature builds on.
+Name any claim from the issue that triage found already handled, so the agent
+scopes its work to what remains.
 
 **Desired behavior:**
 Describe what should happen after the agent's work is complete.
@@ -82,12 +89,16 @@ A **prototype ticket** is split off when an issue still carries a question only 
 **Fixed (variants must respect):**
 - Decisions already made in triage that every variant must honour
 
-**Variants:** how many, how different, where they run, and the maintainer's own idea included as one
+**Open (the maintainer settles these from the prototype):**
+- Each rule or behavior the maintainer chose to judge by trying it, with the options to offer. Only when there are such questions.
+
+**Variants:** how many, how different, where they run, and the maintainer's own idea included as one. Every variant carries a free-play control for each open question.
 
 **Every variant shows:** the states/cases each must render, and a free-play control between them
 
 **Done when:**
-- [ ] The maintainer has picked a variant, and the verdict (which one, and any tweaks) is recorded in a comment here
+- [ ] The maintainer has picked a variant (and a setting for each open question), and the verdict (which one, and any tweaks) is recorded in a comment here
+- [ ] `CONTEXT.md` and any ADR touched in triage match the verdict
 - [ ] The prototype is captured on a `prototype/<name>` branch, linked from here
 - [ ] This issue is closed, which unblocks #<parent>
 
