@@ -831,6 +831,25 @@ export class MarksheetStore {
 	}
 
 	/**
+	 * New class: discard the class and keep the assessment, so one paper is
+	 * marked for another class without paying to parse it again. The students,
+	 * their marks, their reports and the class name go; every tier's breakdown,
+	 * the common questions, topic names, AO descriptions and grade boundaries
+	 * stay. The class before comes back only from its backup, so no undo is
+	 * offered.
+	 */
+	newClass(): boolean {
+		const document = this.document;
+		if (!document || document.students.length === 0) return false;
+		document.students = [];
+		document.marks = {};
+		document.reports = {};
+		document.className = null;
+		this.#mutated();
+		return true;
+	}
+
+	/**
 	 * The document as a command may change it. A confirmed breakdown is
 	 * read-only, and the unlock that makes it editable again is an action of its
 	 * own — so every breakdown edit starts here.

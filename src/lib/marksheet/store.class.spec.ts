@@ -928,3 +928,61 @@ describe('what is on offer to undo', () => {
 		expect(scenario.remaining(store)).toEqual(scenario.expected);
 	});
 });
+
+describe('new class', () => {
+	/** The assessment a new class leaves alone, with a class on it to discard. */
+	function withClass() {
+		return openStore({
+			...twoTierBreakdown(),
+			breakdownConfirmedAt: NOW.toISOString(),
+			className: '10C1',
+			students: [
+				student('student-1', 'Ada', 'Lovelace', false, 0),
+				student('student-2', 'Grace', 'Hopper', false, 1)
+			],
+			marks: { 'student-1': { h1: 3 }, 'student-2': { f1: 2 } },
+			reports: {
+				'student-1': {
+					strengths: ['You explain clearly.'],
+					areasForImprovement: [],
+					edit: null,
+					input: { paperLabel: '10X Ph1', entries: [] },
+					model: 'openai/gpt-6-luna',
+					generatedAt: NOW.toISOString()
+				}
+			},
+			commonQuestions: [{ tier1EntryId: 'h1', tier2EntryId: 'f1' }],
+			topicNames: { '3.2.1.4': 'Rates of reaction' },
+			aoDescriptions: { AO2: 'Apply knowledge' }
+		});
+	}
+
+	it('discards the class and every mark, keeping the assessment', () => {
+		const { store, storage } = withClass();
+		const tiers = JSON.parse(JSON.stringify(store.tiers));
+		const pairs = [...store.commonQuestions];
+
+		expect(store.newClass()).toBe(true);
+
+		expect(store.students).toEqual([]);
+		expect(store.className).toBeNull();
+		expect(store.document?.marks).toEqual({});
+		expect(store.document?.reports).toEqual({});
+		// The paper, its pairs, its topic names and skill descriptions stay.
+		expect(store.tiers).toEqual(tiers);
+		expect(store.commonQuestions).toEqual(pairs);
+		expect(store.document?.topicNames).toEqual({ '3.2.1.4': 'Rates of reaction' });
+		expect(store.document?.aoDescriptions).toEqual({ AO2: 'Apply knowledge' });
+		// The class before comes back only from its backup.
+		expect(store.undoable).toBeNull();
+		store.flush();
+		expect(stored(storage).students).toEqual([]);
+	});
+
+	it('does nothing when there is no class to discard', () => {
+		const { store } = openStore({ breakdownConfirmedAt: NOW.toISOString() });
+
+		expect(store.newClass()).toBe(false);
+		expect(store.document?.className).toBeNull();
+	});
+});
