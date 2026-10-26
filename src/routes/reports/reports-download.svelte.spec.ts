@@ -115,7 +115,7 @@ describe('report PDF downloads', () => {
 		const stub = stubPdfFetch();
 		await openReports('/reports/review');
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
-		captureDownload();
+		const file = captureDownload();
 
 		await page.getByRole('button', { name: 'Download PDF' }).click();
 
@@ -126,6 +126,8 @@ describe('report PDF downloads', () => {
 
 		await dialog.getByRole('button', { name: 'Download anyway' }).click();
 		await vi.waitFor(() => expect(sentHtml(stub)).toHaveLength(1));
+		// The download lands inside this test, so it cannot leak into the next one's capture.
+		await vi.waitFor(() => expect(file.filename()).toMatch(/\.pdf$/));
 	});
 
 	it('shows progress, then an error toast and an unchanged page when the server fails', async () => {
