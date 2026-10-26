@@ -475,6 +475,47 @@ describe('autosave', () => {
 		expect(storage.getItem(STORAGE_KEY)).toBe(JSON.stringify(parsed()));
 	});
 
+	it('saves again when the teacher retries a refused write, then resumes autosave', () => {
+		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(parsed()) });
+		let refuse = true;
+		const store = storeWith(
+			refusingWrites(
+				storage,
+				(key) => refuse && key === STORAGE_KEY,
+				new Error('QuotaExceededError')
+			)
+		);
+		store.load();
+
+		store.setPaperLabel('10X');
+		vi.advanceTimersByTime(500);
+		expect(store.saveState.kind).toBe('failed');
+
+		// Typing while saving has stopped is still not written behind the teacher's back.
+		store.setPaperLabel('10X/Ph1');
+		vi.advanceTimersByTime(500);
+		expect(storage.getItem(STORAGE_KEY)).toBe(JSON.stringify(parsed()));
+
+		refuse = false;
+		store.retrySave();
+
+		expect(store.saveState.kind).toBe('saved');
+		expect(stored(storage).label).toBe('10X/Ph1');
+
+		// The autosave is running again, so the next change needs no retry.
+		store.setPaperLabel('10X/Ph2');
+		vi.advanceTimersByTime(500);
+		expect(stored(storage).label).toBe('10X/Ph2');
+	});
+
+	it('leaves the save state alone when there was no refused write to retry', () => {
+		const { store } = openStore();
+
+		store.retrySave();
+
+		expect(store.saveState.kind).toBe('saved');
+	});
+
 	it('names the moment the unsaved changes began when a write is refused', () => {
 		const storage = fakeStorage({ [STORAGE_KEY]: JSON.stringify(parsed()) });
 		let nowMs = NOW.getTime();

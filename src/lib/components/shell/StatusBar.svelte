@@ -62,6 +62,16 @@
 			class="size-2 rounded-full {TONES[line.tone].dot}"
 		></span>
 		<span data-testid="save-line">{line.text}</span>
+		{#if store.saveState.kind === 'failed'}
+			<Button
+				variant="link"
+				size="xs"
+				class="h-auto p-0 font-semibold text-inherit underline underline-offset-2"
+				onclick={() => store.retrySave()}
+			>
+				Retry save
+			</Button>
+		{/if}
 		{#if rescueable}
 			<Button
 				variant="link"

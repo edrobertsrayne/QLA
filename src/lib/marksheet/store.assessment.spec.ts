@@ -1,10 +1,24 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { entryEdits } from './breakdown.js';
 import { DOCUMENT_SCHEMA_VERSION, STORAGE_KEY } from './document.js';
 import { parseRun, parsed, question, tierParse } from './fixtures.spec-helpers.js';
 import { NOW, fakeStorage, refusingWrites, stored, storeWith } from './store.spec-helpers.js';
 
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
+
 describe('createFromAssessment', () => {
+	it('asks the browser to keep the document when it is first stored', () => {
+		const persist = vi.fn(async () => true);
+		vi.stubGlobal('navigator', { storage: { persist } });
+		const store = storeWith(fakeStorage());
+
+		store.createFromAssessment(parseRun());
+
+		expect(persist).toHaveBeenCalledTimes(1);
+	});
+
 	const input = parseRun({
 		tiers: [
 			tierParse({

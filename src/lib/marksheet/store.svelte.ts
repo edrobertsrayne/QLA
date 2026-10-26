@@ -77,6 +77,7 @@ import {
 import {
 	AUTOSAVE_DEBOUNCE_MS,
 	DocumentPersistence,
+	requestPersistentStorage,
 	type DocumentStorage,
 	type SaveState,
 	type Unreadable
@@ -240,6 +241,8 @@ export class MarksheetStore {
 		this.#adopt(assessmentFromParses(input, this.#now()));
 		this.runUsage = input.usage;
 		this.matchNotice = input.matchNotice ?? null;
+		// All of a marksheet lives in this browser from here: ask it to keep it.
+		requestPersistentStorage();
 		this.#persistence.writeNow();
 	}
 
@@ -714,6 +717,11 @@ export class MarksheetStore {
 	/** Write anything pending now: a hidden or closing tab must not lose keystrokes. */
 	flush(): void {
 		this.#persistence.flush();
+	}
+
+	/** Try a refused write again on the teacher's say; see `DocumentPersistence.retry`. */
+	retrySave(): void {
+		this.#persistence.retry();
 	}
 
 	/**

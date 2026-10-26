@@ -118,6 +118,30 @@ describe('status bar', () => {
 		expect(handed.label).toBe('10X Ph1 — Nov mock');
 	});
 
+	it('offers Retry save after a refused write, and resumes saving once it lands', async () => {
+		seed(marksheet());
+		const screen = openShell();
+		await expect.element(page.getByTestId('save-line')).toHaveTextContent(/^All changes saved · /);
+
+		const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new DOMException('quota', 'QuotaExceededError');
+		});
+		marksheetStore().setPaperLabel('10X Ph1 — Nov mock');
+		await expect.element(page.getByTestId('save-line')).toHaveTextContent(/^Couldn't save/);
+
+		const retry = page.getByRole('button', { name: 'Retry save' });
+		await expect.element(retry).toBeVisible();
+
+		setItem.mockRestore();
+		await retry.click();
+
+		await expect.element(page.getByTestId('save-line')).toHaveTextContent(/^All changes saved · /);
+		expect(bar(screen).getAttribute('data-tone')).toBe('ok');
+		expect(page.getByRole('button', { name: 'Retry save' }).query()).toBeNull();
+		// The change that was only in the tab is now in the browser's copy.
+		expect(localStorage.getItem(STORAGE_KEY)).toContain('10X Ph1 — Nov mock');
+	});
+
 	it('turns red when another tab writes the marksheet, and stops saving', async () => {
 		seed(marksheet());
 		const screen = openShell();

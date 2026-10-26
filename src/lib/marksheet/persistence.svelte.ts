@@ -102,6 +102,16 @@ function scheduleTimer(ms: number, run: () => void): () => void {
 	return () => clearTimeout(handle);
 }
 
+/**
+ * Ask the browser to keep this origin's storage rather than evict it under
+ * pressure. Best-effort and silent: the backup control is the real safety net,
+ * and a browser without the API (or one that says no) changes nothing here.
+ */
+export function requestPersistentStorage(): void {
+	if (typeof navigator === 'undefined' || navigator.storage?.persist === undefined) return;
+	void navigator.storage.persist().catch(() => undefined);
+}
+
 export class DocumentPersistence {
 	readonly #deps: PersistenceDeps;
 	#cancelTimer: (() => void) | null = null;
@@ -179,6 +189,17 @@ export class DocumentPersistence {
 			return;
 		}
 		this.#markSaved();
+	}
+
+	/**
+	 * Try the refused write again, on the teacher's say. On success the document
+	 * is saved and autosave resumes; on another refusal the state stays failed.
+	 * Only a refused write is retried: no storage and a stale tab are not fixed
+	 * by writing again.
+	 */
+	retry(): void {
+		if (this.saveState.kind !== 'failed') return;
+		this.writeNow();
 	}
 
 	/**
