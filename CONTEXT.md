@@ -125,7 +125,7 @@ How far one breakdown entry has been marked across its tier: non-absent students
 _Avoid_: Sample size, n
 
 **Backup**:
-A restorable copy of everything stored for the assessment: every tier's breakdown and grade boundaries, the marksheet, common questions, topic names, AO descriptions and reports, teacher edits included. The only thing that can bring them back after a new upload or lost browser storage.
+A restorable copy of everything stored for the assessment: every tier's breakdown and grade boundaries, the marksheet, common questions, topic names, AO descriptions and reports, teacher edits included. The only thing that can bring them back after a new upload, a new class or lost browser storage.
 _Avoid_: Save, export, download
 
 **Marks export**:
@@ -139,6 +139,10 @@ _Avoid_: Backup, save, download
 **New upload**:
 The destructive action that discards everything stored for the assessment (every tier, the marksheet, common questions, topic names, grade boundaries and reports) and returns to uploading fresh tiers. Only exists once something is stored.
 _Avoid_: Reset, clear, start over
+
+**New class**:
+The destructive action that discards the class (its students, their marks and reports, and the class name) and keeps the assessment: every tier's breakdown, common questions, topic names, AO descriptions and grade boundaries. Lets one paper be marked for another class without parsing it again; the class before comes back only from its backup. Only exists once the class has students.
+_Avoid_: Clear class, reset marks, template, reuse
 
 **Report**:
 One student's question-by-question account of an assessment, written to the student and handed back with the paper: the tier they sat (on a two-tier assessment), their total, grade and marks to next grade (when their tier has grade boundaries), their marks per breakdown entry of their own tier, their roll-up, and generated feedback. Only produced for a student who is not absent, has their tier set, has a mark on every breakdown entry of that tier, and has no mark above an entry's available marks. Distinct from **analysis**, which is the teacher's class-level view.
