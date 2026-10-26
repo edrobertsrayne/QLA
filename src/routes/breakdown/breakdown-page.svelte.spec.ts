@@ -129,7 +129,9 @@ describe('breakdown page', () => {
 			})
 		);
 
-		await expect.element(page.getByText(/This run: 30 tokens · \$0\.0010/)).toBeInTheDocument();
+		await expect
+			.element(page.getByText(/This run: 30 tokens · \$0\.0010 estimated/))
+			.toBeInTheDocument();
 	});
 
 	it('edits every field in place and autosaves', async () => {

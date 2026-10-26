@@ -52,13 +52,22 @@
 							size="sm"
 							variant={data.step === item.id ? 'default' : 'outline'}
 							aria-current={data.step === item.id ? 'step' : undefined}
-							disabled={item.locked}
-							title={item.locked ? 'Name every topic first' : undefined}
-							onclick={() => goToStep(item.id)}>{index + 1}. {item.label}</Button
+							aria-disabled={item.locked || undefined}
+							aria-describedby={item.locked ? 'locked-steps-reason' : undefined}
+							onclick={() => {
+								// A locked step stays focusable so its reason can be read;
+								// the click is what does nothing.
+								if (!item.locked) goToStep(item.id);
+							}}>{index + 1}. {item.label}</Button
 						>
 					</li>
 				{/each}
 			</ol>
+			{#if steps.some((item) => item.locked)}
+				<p id="locked-steps-reason" class="mt-1 text-xs text-muted-foreground">
+					Name every topic first to unlock the later steps.
+				</p>
+			{/if}
 		</nav>
 	</div>
 

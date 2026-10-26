@@ -79,7 +79,19 @@ describe('report step routes', () => {
 			const { router } = await openReports('/reports/review');
 			expect(router.path).toBe('/reports/topics');
 			expect(router.entries).toEqual(['/reports/topics']);
-			await expect.element(page.getByRole('button', { name: '2. Grades' })).toBeDisabled();
+
+			// Locked steps stay focusable so the reason can be read, and say why.
+			const grades = page.getByRole('button', { name: '2. Grades' });
+			await expect.element(grades).toHaveAttribute('aria-disabled', 'true');
+			await expect
+				.element(grades)
+				.toHaveAccessibleDescription('Name every topic first to unlock the later steps.');
+			expect(grades.element().hasAttribute('disabled')).toBe(false);
+
+			// Browsers refuse a real click on aria-disabled, as they should: the
+			// handler itself is what must do nothing.
+			grades.element().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+			expect(router.path).toBe('/reports/topics');
 		});
 
 		it('redirects Topic names on a paper with no topic codes', async () => {

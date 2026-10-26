@@ -160,7 +160,7 @@
 				</p>
 				{#if usage}
 					<p class="text-xs text-muted-foreground">
-						This run: {usage.totalTokens} tokens · ${usage.estCost.toFixed(4)}
+						This run: {usage.totalTokens} tokens · ${usage.estCost.toFixed(4)} estimated
 					</p>
 				{/if}
 			</div>

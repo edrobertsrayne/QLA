@@ -70,11 +70,12 @@ export interface ParseWarning {
 	message: string;
 }
 
-/** What the run spent: token counts and the estimated cost. */
+/** What the run spent: token counts and the estimated cost, never a billed charge. */
 export interface ParseUsage {
 	promptTokens: number;
 	completionTokens: number;
 	totalTokens: number;
+	/** Estimated from listed per-token prices; shown labelled as an estimate. */
 	estCost: number;
 }
 
