@@ -38,7 +38,7 @@ Five **state** roles:
 
 For a PR, the same states read against the attached code: `ready-for-agent` means a brief is attached and an agent should take the next step on the diff; `ready-for-human` means it's ready for a human to merge.
 
-Every triaged issue should carry exactly one category role and one state role. If state roles conflict, flag it and ask the maintainer before doing anything else.
+Every issue past `needs-triage` carries exactly one category role and one state role. When the issue you are triaging carries two state roles, ask the maintainer which stands before any other step.
 
 These are canonical role names. The actual label strings used in the issue tracker may differ. The mapping should have been provided to you. If not, tell the user to run `/setup-matt-pocock-skills`.
 
@@ -60,7 +60,7 @@ Query the issue tracker and present four buckets, oldest first:
 1. **Unlabeled**: never triaged.
 2. **`needs-triage`**: evaluation in progress.
 3. **`needs-info` with reporter activity since the last triage notes**: needs re-evaluation.
-4. **Label faults**: any open issue whose labels break the one-category, one-state rule: no category role, two state roles, or a category-like label the mapping doesn't define (e.g. `accessibility` standing in for `bug`). Name the fault and the label you'd apply.
+4. **Label faults**: issues past `needs-triage` (any other state role) whose labels break the one-category, one-state rule: zero or two category roles, zero or two state roles, or a category-like label outside the mapping (e.g. `accessibility` standing in for `bug`). On bucket 1-3 lines, note the same faults inline instead. Name each fault and the label you'd apply; apply it once the maintainer agrees.
 
 When PRs are in scope, include external PRs in these buckets and tag each line `[PR]` or `[issue]`. Discovery surfaces only *external* PRs (the tracker config defines who counts as external), so a collaborator's in-flight PR is not triage work. This filter is discovery-only; an explicitly named PR is always triaged regardless of author.
 
@@ -68,12 +68,12 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 ## Working through the queue
 
-When the maintainer says "next" or leaves the pick to you, take the open item with the highest **risk** first: data loss, then broken behavior, then accessibility, then features. Ties go to the oldest. Name the pick and the reason in one line, then triage it.
+When the maintainer says "next" or leaves the pick to you, take the item from buckets 1-4 with the highest **risk**: data loss first, then other `bug`s, then `enhancement`s. Ties go to the oldest. Name the pick and the reason in one line, then triage it.
 
 ## Triage a specific issue or PR
 
 1. **Gather context.** Read the full issue or PR (body, comments, labels, author, dates; for a PR, the diff too). Parse any prior triage notes so you don't re-ask resolved questions. Explore the codebase using the project's domain glossary. Run three checks, and report where you looked for each:
-   - (a) **Redundancy**: search for an existing implementation of the requested behavior by domain concept, not just the request's wording. If found, it's an already-implemented `wontfix` (step 5).
+   - (a) **Redundancy**: search for an existing implementation of the requested behavior by domain concept, not just the request's wording. Carry each hit into step 2 as an **already handled** verdict.
    - (b) **Prior rejection**: read `.out-of-scope/*.md` and surface any that resembles this request.
    - (c) **Prior decision**: check the request against the ADRs and `CONTEXT.md` terms in its area, and against any document it cites (confirm the document still exists). A conflict means the change needs a new ADR or a glossary edit, agreed with the maintainer, before any brief.
 
@@ -86,14 +86,14 @@ When the maintainer says "next" or leaves the pick to you, take the open item wi
    - the **alternatives** worth naming, each with its trade-off (a table works);
    - whether a prototype is needed (the prototype split in step 5).
 
-   Wait for direction.
+   The verdicts decide the state: every claim **already handled** → already-implemented `wontfix`; any **insufficient detail** that only the reporter can answer → `needs-info`; otherwise recommend the state for the claims that remain. Wait for direction.
 
 4. **Grill (if needed).** If the request needs fleshing out, call the Skill tool twice, for "grilling" and "domain-modeling", and grill it into shape a round of questions at a time, sharpening domain terms and updating `CONTEXT.md`/ADRs inline as decisions land.
 
 5. **Apply the outcome:**
-   - `ready-for-agent`: post an agent brief comment ([AGENT-BRIEF.md](AGENT-BRIEF.md)). When some claims came back **already handled**, the brief lists them under current behavior and scopes the work to what remains.
+   - **Prototype split**: first, if step 3 found a question only a runnable answer settles, follow "Prototype brief" in [AGENT-BRIEF.md](AGENT-BRIEF.md) instead of posting a plain agent brief.
+   - `ready-for-agent`: post an agent brief comment ([AGENT-BRIEF.md](AGENT-BRIEF.md)). Before posting, check it against that file's principles: no file paths or line numbers, every acceptance criterion independently testable, **Out of scope** filled, and every **already handled** claim named under current behavior. Revise until all four hold.
    - `ready-for-human`: same structure as an agent brief, but note why it can't be delegated (judgment calls, external access, design decisions, manual testing).
-   - **Prototype split**: before applying `ready-for-agent`, check whether the issue still carries a question only a runnable answer settles (look and feel, a state model you need to see, rules the maintainer wants to judge by trying them). A brief that has to stop and wait for the maintainer's pick is a prototype ticket in disguise. Split it: open a prototype ticket (the original's category plus `ready-for-human`; see the label mapping for how it relates to wayfinder prototypes; Prototype brief in [AGENT-BRIEF.md](AGENT-BRIEF.md)), give the original issue `ready-for-agent` with an agent brief covering everything already decided plus a **Blocked by** line, and link it as blocked by the prototype ticket through the tracker's blocking mechanism.
    - `needs-info`: post triage notes (template below).
    - For `wontfix`, close the issue, with the comment depending on *why*:
      - **Already implemented**: the change already exists in the codebase. Point to where it lives; do **not** write to `.out-of-scope/` (that KB is for *rejected* requests, not built ones).
@@ -101,7 +101,7 @@ When the maintainer says "next" or leaves the pick to you, take the open item wi
      - **Rejected (enhancement)**: write to `.out-of-scope/`, link to it from a comment, then close ([OUT-OF-SCOPE.md](OUT-OF-SCOPE.md)).
    - `needs-triage`: apply the role. Optional comment if there's partial progress.
 
-   Commit any `CONTEXT.md`, ADR or `.out-of-scope/` edit, following the repo's commit conventions, before posting a comment that links to it. A comment must link to something the reader can open: ask the maintainer before pushing, or link the commit.
+   Commit any `CONTEXT.md`, ADR or `.out-of-scope/` edit following the repo's commit conventions. Ask the maintainer to push it, or push with their go-ahead. Post a comment that links to the edit only once the commit is on the remote.
 
 ## Quick state override
 
@@ -110,6 +110,8 @@ If the maintainer says "move #42 to ready-for-agent", trust them and apply the r
 ## Needs-info template
 
 ```markdown
+> *This was generated by AI during triage.*
+
 ## Triage Notes
 
 **What we've established so far:**

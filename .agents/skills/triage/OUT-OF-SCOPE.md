@@ -93,8 +93,9 @@ The flow:
 2. Check if a matching `.out-of-scope/` file already exists
 3. If yes: append the new issue to the "Prior requests" list
 4. If no: create a new file with the concept name, decision, reason, and first prior request
-5. Post a comment on the issue explaining the decision and mentioning the `.out-of-scope/` file
-6. Close the issue with the `wontfix` label
+5. Commit the file and get it onto the remote (the commit rule at the end of SKILL.md step 5), so the link opens
+6. Post a comment on the issue explaining the decision and mentioning the `.out-of-scope/` file
+7. Close the issue with the `wontfix` label
 
 ## Updating or removing out-of-scope files
 
