@@ -2,10 +2,12 @@
 //
 // Input: assessment paper and/or markscheme PDF (at least one required),
 // plus an optional exam specification URL fetched server-side per run
-// (no cache). No spec validation: `specPoint` is an exact verbatim lift
-// from the markscheme or null — never inferred, even when a spec is given.
-// The spec's only other contribution is `aoDescriptions`: one short summary
-// per assessment objective, null when the spec does not define it.
+// (no cache). `specPoint` is transcribed verbatim from the markscheme; when
+// the markscheme prints none and a specification is attached, the model
+// proposes one from the specification's own codes and the route flags it
+// per entry (ADR 0005). The spec's other contribution is `aoDescriptions`:
+// one short summary per assessment objective, null when the spec does not
+// define it.
 
 import type { AssessmentObjective } from '$lib/parse/assessment-objectives.js';
 
@@ -23,7 +25,12 @@ export interface ParseQuestion {
 	marks: number | null;
 	/** 3–8 word summary of what the question or subquestion asks. */
 	summary: string;
-	/** Exact spec reference lifted verbatim from the markscheme, or null. Never inferred. */
+	/**
+	 * The exact spec reference the markscheme printed, or a proposal from the
+	 * attached specification when it printed none (flagged by a
+	 * SPEC_POINT_PROPOSED warning); null when neither gives one. Never a code
+	 * from the model's own knowledge.
+	 */
 	specPoint: string | null;
 	/** Verbatim command word from the paper, or null when absent. */
 	commandWord: string | null;

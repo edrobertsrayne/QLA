@@ -608,6 +608,71 @@ describe('POST /api/parse v1 prototype (stubbed model)', () => {
 		});
 	});
 
+	describe('proposed specification points', () => {
+		function withSpec(): FormData {
+			setSpecFetch(
+				async () =>
+					new Response(buildPdfBytes(['Specification topic code 4.6.2.1']) as unknown as BodyInit, {
+						status: 200
+					})
+			);
+			const form = paperOnlyForm();
+			form.append(SPEC_URL_FIELD, 'https://example.com/spec.pdf');
+			return form;
+		}
+
+		/** The stub with one code proposed from the spec, and one lifted from the markscheme. */
+		function withProposal(): unknown {
+			const base = stubBreakdown();
+			return {
+				...base,
+				questions: [
+					base.questions[0],
+					{ ...base.questions[1], specPoint: '4.6.2.1', specPointProposed: true },
+					base.questions[2]
+				]
+			};
+		}
+
+		it('keeps a code proposed from the attached specification and flags it per entry', async () => {
+			setModelTransport(async () => stubResultWith(withProposal()));
+
+			const { status, body } = await post(withSpec());
+
+			expect(status).toBe(200);
+			const proposed = body.warnings?.filter((warning) => warning.code === 'SPEC_POINT_PROPOSED');
+			expect(proposed).toHaveLength(1);
+			expect(proposed?.[0]?.questionId).toBe('1b');
+			expect(proposed?.[0]?.message).toContain('4.6.2.1');
+			// The flag is parse provenance, not part of the stored breakdown.
+			for (const question of body.breakdown?.questions ?? []) {
+				expect(question).not.toHaveProperty('specPointProposed');
+			}
+			expect(body.breakdown?.questions?.[1]?.['specPoint']).toBe('4.6.2.1');
+		});
+
+		it('leaves a markscheme code unflagged', async () => {
+			setModelTransport(async () =>
+				stubResultWith({ ...stubBreakdown(), questions: [stubBreakdown().questions[0]] })
+			);
+
+			const { body } = await post(withSpec());
+
+			expect(body.warnings).toEqual([]);
+			expect(body.breakdown?.questions?.[0]?.['specPoint']).toBe('4.6.1.1');
+		});
+
+		it('drops a proposed code when no specification is attached', async () => {
+			setModelTransport(async () => stubResultWith(withProposal()));
+
+			const { body } = await post(paperOnlyForm());
+
+			expect(body.warnings).toEqual([]);
+			expect(body.breakdown?.questions?.[1]?.['specPoint']).toBeNull();
+			expect(body.breakdown?.questions?.[1]).not.toHaveProperty('specPointProposed');
+		});
+	});
+
 	describe('tier name', () => {
 		it('carries the trimmed tier name the model read', async () => {
 			setModelTransport(async () =>
@@ -909,7 +974,7 @@ describe('buildPromptText v1', () => {
 			useNativePdf: true
 		});
 		expect(both).toContain('3-8 word');
-		expect(both).toContain('NEVER infer');
+		expect(both).toContain('NEVER a code from your own knowledge');
 		expect(both).toContain('AO1, AO2, AO3');
 		expect(both).toContain('--- specification text ---');
 		expect(both).toContain('(no specification provided)');
@@ -921,8 +986,9 @@ describe('buildPromptText v1', () => {
 			useNativePdf: true
 		});
 		expect(withSpec).toContain('specification topic code');
-		expect(withSpec).toContain('extra grounding only');
-		expect(withSpec).toContain('NEVER infer or guess, even when the specification');
+		expect(withSpec).toContain('may propose a specification point when the markscheme prints none');
+		expect(withSpec).toContain('NEVER a code from your own knowledge');
+		expect(withSpec).toContain('specPointProposed');
 
 		const paperOnly = buildPromptText({
 			paperText: 'paper',

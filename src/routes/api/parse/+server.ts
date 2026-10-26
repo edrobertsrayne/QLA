@@ -7,8 +7,9 @@
 // shared OpenRouter transport's timeout, usage on every response, one silent
 // retry on malformed JSON, and the shared status map for transport failures
 // (401/402/408/429/5xx). Every failure body says explicitly whether it is
-// retryable. Spec failures fail the run (400) before any model spend; the
-// spec never changes the verbatim specPoint rule.
+// retryable. Spec failures fail the run (400) before any model spend; when the
+// markscheme prints no specPoint, the attached specification supplies a
+// proposal that is flagged per entry (ADR 0005).
 
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -25,6 +26,7 @@ import {
 import {
 	applyAoDescriptionChecks,
 	applyQuestionNumberFallback,
+	applySpecPointProvenance,
 	applyTierNameCheck,
 	validateBreakdown
 } from '$lib/server/parse/validate';
@@ -232,6 +234,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Warnings never block: the breakdown goes back intact with HTTP 200.
 	const warnings = validateBreakdown(parsed);
+	warnings.push(...applySpecPointProvenance(parsed, specDoc !== undefined));
 	applyQuestionNumberFallback(parsed);
 	applyAoDescriptionChecks(parsed, specDoc !== undefined);
 	applyTierNameCheck(parsed);

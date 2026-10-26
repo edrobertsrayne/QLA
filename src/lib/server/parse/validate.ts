@@ -11,7 +11,7 @@
 import { MAX_AO_DESCRIPTION_WORDS, type AoDescription, type ParseWarning } from './schema';
 import { ASSESSMENT_OBJECTIVES } from '$lib/parse/assessment-objectives.js';
 import { isBreakdown, isRecord } from '$lib/parse/is-breakdown.js';
-import { MISSING_QUESTION_NUMBER } from '$lib/parse/parse-warnings.js';
+import { MISSING_QUESTION_NUMBER, SPEC_POINT_PROPOSED } from '$lib/parse/parse-warnings.js';
 
 export { isBreakdown };
 
@@ -139,6 +139,44 @@ export function applyQuestionNumberFallback(breakdown: unknown): void {
 		const id = question['id'];
 		if (typeof id === 'string' && id.trim() !== '') question['questionNumber'] = id;
 	}
+}
+
+/**
+ * Turn the model's `specPointProposed` flag into the per-entry warning ADR 0005
+ * asks for, and strip the flag so the stored breakdown keeps its v1 shape.
+ *
+ * A code the markscheme printed is used verbatim and unflagged; a code proposed
+ * from an attached specification is kept and flagged for the teacher to check.
+ * With no specification attached nothing can be proposed from, so a flagged
+ * code becomes null rather than reaching a report ungrounded.
+ */
+export function applySpecPointProvenance(breakdown: unknown, hasSpec: boolean): ParseWarning[] {
+	const warnings: ParseWarning[] = [];
+	if (!isRecord(breakdown)) return warnings;
+	const questions = breakdown['questions'];
+	if (!Array.isArray(questions)) return warnings;
+
+	for (const question of questions) {
+		if (!isRecord(question)) continue;
+		const proposed = question['specPointProposed'] === true;
+		delete question['specPointProposed'];
+		if (!proposed) continue;
+
+		const specPoint = question['specPoint'];
+		if (typeof specPoint !== 'string' || specPoint.trim() === '') continue;
+		if (!hasSpec) {
+			question['specPoint'] = null;
+			continue;
+		}
+		const rawId = question['id'];
+		const label = typeof rawId === 'string' && rawId.trim() !== '' ? rawId : null;
+		warnings.push({
+			questionId: label,
+			code: SPEC_POINT_PROPOSED,
+			message: `${label === null ? 'An entry' : `Entry '${label}'`} has no specification point in its markscheme; '${specPoint.trim()}' was proposed from the attached specification, so check it.`
+		});
+	}
+	return warnings;
 }
 
 /**

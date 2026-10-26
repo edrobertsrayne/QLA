@@ -70,8 +70,8 @@
 		<h1 class="text-2xl font-bold tracking-tight">Parse assessment paper</h1>
 		<p class="text-sm text-muted-foreground">
 			Attach an assessment paper and/or its markscheme PDF, then Run. You get one JSON entry per
-			marked question with marks, a short summary, spec point (exact lift or null), command word and
-			assessment objective.
+			marked question with marks, a short summary, spec point (lifted from the markscheme, or
+			proposed from an attached specification), command word and assessment objective.
 		</p>
 	</div>
 
