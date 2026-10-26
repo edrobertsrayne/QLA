@@ -40,7 +40,7 @@ _Avoid_: Shared question, overlap question, linked entry
 The exam paper itself (the questions), uploaded alongside and/or instead of its markscheme in Phase 1.
 
 **Specification point**:
-An exact spec reference transcribed verbatim from the markscheme (e.g. "3.2.1.4"). Null when the markscheme gives none. Never inferred or guessed in the prototype.
+An exact spec reference for a breakdown entry (e.g. "3.2.1.4"), transcribed verbatim from the markscheme. When the markscheme gives none and an exam specification is attached, the model proposes one from the specification's own codes, flagged for the teacher to check at breakdown review. Null otherwise: never supplied from the model's own knowledge (ADR 0005).
 _Avoid_: Spec code (use this term instead)
 
 **Question summary**:
@@ -57,7 +57,7 @@ One of hardcoded AO1 / AO2 / AO3 (shared across AQA/OCR GCSE and A-Level). Tagge
 A short, student-readable summary of an assessment objective (one phrase, about 10 words at most), lifted from the specification at parse, editable at breakdown review and shown beside the AO code in a report's By skill strip. Never inferred without a specification: with none attached, or one that does not define the AO, the AO has no description and the report shows the code alone. One set per assessment, shared by both tiers (so it travels in backups), display only: never sent to the report model, and editing one does not make any report out of date.
 
 **Exam specification**:
-The exam board's syllabus document defining topic/skill codes. Optional for the prototype — the teacher may attach a link to the specification PDF, fetched fresh per run as extra grounding; `specPoint` entries stay verbatim lifts from the markscheme, never inferred from the spec. The spec's one other contribution is the **AO description**; the spec itself is never stored.
+The exam board's syllabus document defining topic/skill codes. Optional for the prototype — the teacher may attach a link to the specification PDF, fetched fresh per run as extra grounding. When the markscheme gives no specification point for an entry, the model proposes one from the spec's codes; a markscheme reference always wins. The spec's one other contribution is the **AO description**; the spec itself is never stored.
 _Avoid_: Spec (informal shorthand is fine in conversation, not as a defined term)
 
 **Question**:

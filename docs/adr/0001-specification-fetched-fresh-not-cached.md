@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Its `specPoint` clause is superseded by ADR 0005.
 
 ## Context
 
