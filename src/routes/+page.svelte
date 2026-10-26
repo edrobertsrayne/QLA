@@ -38,6 +38,12 @@
 		tierTab = index;
 	}
 
+	/** A run in flight stops where it is; the files stay and nothing is stored. */
+	function cancelRun(): void {
+		run.cancel();
+		dialogOpen = false;
+	}
+
 	/** A stopped run leaves the form as it was: files kept, options unlocked. */
 	function backToUpload(): void {
 		run.abandon();
@@ -118,6 +124,7 @@
 		open={dialogOpen}
 		onReplaceFile={replaceFile}
 		onBackToUpload={backToUpload}
+		onCancel={cancelRun}
 		onOpenBreakdown={openBreakdown}
 	/>
 </main>

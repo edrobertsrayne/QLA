@@ -3,9 +3,11 @@
 // A single tier is today's run: one `/api/parse` call. Two tiers are parsed in
 // parallel, then one `/api/match` call proposes their common questions. The
 // class owns every state the dialog and the page render: each step's status,
-// the retry that keeps the other tier's parse, and the one silent retry a
-// temporary matching failure gets. It stores nothing; the page creates the
-// document only when the teacher chooses Open breakdown.
+// the three silent retries a temporary parse failure gets, the teacher's manual
+// retry that keeps the other tier's parse, the one silent retry a temporary
+// matching failure gets, and the cancel that aborts every call in flight. It
+// stores nothing; the page creates the document only when the teacher chooses
+// Open breakdown.
 
 import { ApiFailure, failureFrom } from '$lib/api-error.js';
 import { isBreakdown, isRecord } from '$lib/parse/is-breakdown.js';
@@ -27,6 +29,9 @@ const MARKSCHEME_FIELD = 'markscheme';
 const MODEL_OVERRIDE_FIELD = 'modelOverride';
 const SPEC_URL_FIELD = 'specUrl';
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
+
+/** How many times a tier's parse is retried without asking, after its first try. */
+export const PARSE_RETRIES = 3;
 
 export type StepStatus = 'idle' | 'running' | 'done' | 'failed';
 export type MatchStatus = 'idle' | 'running' | 'done' | 'failed' | 'skipped';
@@ -232,6 +237,12 @@ export class UploadRun {
 	/** A run-stopping error: shown with today's FatalAlert; nothing is kept. */
 	fatal = $state<ApiFailure | null>(null);
 	usage = $state<ParseUsage>({ ...ZERO_USAGE });
+	/**
+	 * The run in flight. Cancelling bumps it, so any call that settles later
+	 * finds itself out of date and writes nothing.
+	 */
+	#generation = 0;
+	#controller: AbortController | null = null;
 
 	get twoTiers(): boolean {
 		return this.tiers.length === 2;
@@ -334,16 +345,43 @@ export class UploadRun {
 		if (this.phase !== 'stopped' || this.match === 'failed') return;
 		if (!this.canRetry(index)) return;
 		this.phase = 'running';
-		await this.parseTier(index);
-		await this.afterParses();
+		const generation = this.#startRun();
+		await this.parseTier(index, generation);
+		if (generation !== this.#generation) return;
+		await this.afterParses(generation);
 	}
 
 	async run(): Promise<void> {
 		if (!this.canRun) return;
 		this.resetResults();
 		this.phase = 'running';
-		await Promise.all(this.tiers.map((_, index) => this.parseTier(index)));
-		await this.afterParses();
+		const generation = this.#startRun();
+		await Promise.all(this.tiers.map((_, index) => this.parseTier(index, generation)));
+		if (generation !== this.#generation) return;
+		await this.afterParses(generation);
+	}
+
+	/**
+	 * Stop a run in flight. Every request is aborted, the files stay selected
+	 * and nothing is stored; the teacher is back on the form with their options
+	 * unlocked. A call that had already reached the server may still be billed,
+	 * but its answer is dropped.
+	 */
+	cancel(): void {
+		if (this.phase !== 'running') return;
+		this.#generation += 1;
+		this.#controller?.abort();
+		this.#controller = null;
+		this.resetResults();
+		this.phase = 'form';
+	}
+
+	/** Begin a run: abort anything left over, and own the new run's signal. */
+	#startRun(): number {
+		this.#generation += 1;
+		this.#controller?.abort();
+		this.#controller = new AbortController();
+		return this.#generation;
 	}
 
 	async tryMatchAgain(): Promise<void> {
@@ -351,7 +389,8 @@ export class UploadRun {
 		this.matchPairs = [];
 		this.pairs = null;
 		this.notice = null;
-		await this.matchTiers();
+		const generation = this.#startRun();
+		await this.matchTiers(generation);
 	}
 
 	continueWithoutPairs(): void {
@@ -398,12 +437,29 @@ export class UploadRun {
 		}
 	}
 
-	private async parseTier(index: number): Promise<void> {
+	private async parseTier(index: number, generation: number): Promise<void> {
 		const tier = this.tiers[index];
-		if (tier === undefined) return;
+		const signal = this.#controller?.signal;
+		if (tier === undefined || signal === undefined) return;
 		tier.parse = 'running';
 		tier.error = null;
 
+		for (let attempt = 0; ; attempt++) {
+			const failure = await this.attemptParse(tier, signal);
+			if (generation !== this.#generation) return;
+			if (failure === null) return;
+			// A file problem needs a new file, not another call; anything the
+			// server marks non-retryable would fail the same way three more times.
+			if (attempt >= PARSE_RETRIES || isFileProblem(failure) || !failure.retryable) {
+				tier.error = failure;
+				tier.parse = 'failed';
+				return;
+			}
+		}
+	}
+
+	/** One parse call for a tier. Null means done; the failure is for the caller to retry or keep. */
+	private async attemptParse(tier: TierSlot, signal: AbortSignal): Promise<ApiFailure | null> {
 		const form = new FormData();
 		if (tier.paper !== null) form.append(ASSESSMENT_PAPER_FIELD, tier.paper);
 		if (tier.markscheme !== null) form.append(MARKSCHEME_FIELD, tier.markscheme);
@@ -414,28 +470,22 @@ export class UploadRun {
 
 		let response: Response;
 		try {
-			response = await fetch('/api/parse', { method: 'POST', body: form });
+			response = await fetch('/api/parse', { method: 'POST', body: form, signal });
 		} catch (error) {
-			tier.error = requestFailed(error, 'The run could not be completed.');
-			tier.parse = 'failed';
-			return;
+			return requestFailed(error, 'The run could not be completed.');
 		}
 
 		if (!response.ok) {
-			tier.error = await failureFrom(response, 'The run could not be completed.');
-			tier.parse = 'failed';
-			return;
+			return failureFrom(response, 'The run could not be completed.');
 		}
 
 		const body = await readBody(response);
 		const parsed = readParseSuccess(body);
 		if (parsed === null) {
-			tier.error = new ApiFailure(
-				"The model's response was not a valid breakdown. Please try again.",
-				{ code: 'MALFORMED_MODEL_OUTPUT', retryable: true }
-			);
-			tier.parse = 'failed';
-			return;
+			return new ApiFailure("The model's response was not a valid breakdown. Please try again.", {
+				code: 'MALFORMED_MODEL_OUTPUT',
+				retryable: true
+			});
 		}
 
 		tier.parsed = {
@@ -448,9 +498,10 @@ export class UploadRun {
 		};
 		this.usage = addUsage(this.usage, parsed.usage);
 		tier.parse = 'done';
+		return null;
 	}
 
-	private async afterParses(): Promise<void> {
+	private async afterParses(generation: number): Promise<void> {
 		const stopped = this.tiers.find(
 			(tier) =>
 				tier.parse === 'failed' &&
@@ -470,7 +521,7 @@ export class UploadRun {
 			this.phase = 'done';
 			return;
 		}
-		await this.matchTiers();
+		await this.matchTiers(generation);
 	}
 
 	/** The run is over and keeps nothing: today's fatal panel is the way back. */
@@ -490,14 +541,17 @@ export class UploadRun {
 		}
 	}
 
-	private async matchTiers(): Promise<void> {
+	private async matchTiers(generation: number): Promise<void> {
+		const signal = this.#controller?.signal;
+		if (signal === undefined) return;
 		this.phase = 'running';
 		this.match = 'running';
 		this.matchError = null;
 
 		// One silent retry: the step keeps saying "running" through both attempts.
 		for (let attempt = 0; attempt < 2; attempt++) {
-			const error = await this.attemptMatch();
+			const error = await this.attemptMatch(signal);
+			if (generation !== this.#generation) return;
 			if (error === null) return;
 			this.matchError = error;
 			// A match failure never costs a parse: both tiers are already in
@@ -516,7 +570,7 @@ export class UploadRun {
 		this.phase = 'stopped';
 	}
 
-	private async attemptMatch(): Promise<ApiFailure | null> {
+	private async attemptMatch(signal: AbortSignal): Promise<ApiFailure | null> {
 		const [first, second] = this.tiers;
 		const firstParsed = first?.parsed;
 		const secondParsed = second?.parsed;
@@ -545,7 +599,7 @@ export class UploadRun {
 
 		let response: Response;
 		try {
-			response = await fetch('/api/match', { method: 'POST', body: form });
+			response = await fetch('/api/match', { method: 'POST', body: form, signal });
 		} catch (error) {
 			return requestFailed(error, 'The matching call could not be completed.');
 		}

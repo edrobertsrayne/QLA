@@ -370,7 +370,7 @@ describe('upload page run', () => {
 		]);
 	});
 
-	it('retries only the failed tier and keeps the other tier’s parse', async () => {
+	it('retries a temporary parse failure in silence and keeps the other tier’s parse', async () => {
 		let foundationCalls = 0;
 		const api = stubApi({
 			parse: (form) => {
@@ -391,18 +391,14 @@ describe('upload page run', () => {
 		await addTierWithPaper('foundation.pdf');
 		await page.getByRole('button', { name: 'Run' }).click();
 
-		const retryTier = page.getByRole('dialog').getByRole('button', { name: 'Retry Tier 2' });
-		await expect.element(retryTier).toBeVisible();
-		await expect.element(page.getByText('Higher · 1 entry')).toBeInTheDocument();
-		await expect.element(page.getByText('Provider busy (MODEL_RETRYABLE)')).toBeInTheDocument();
-		await expect
-			.element(page.getByRole('button', { name: /Replace Tier/ }))
-			.not.toBeInTheDocument();
-
-		await retryTier.click();
-
+		// The first failure never reaches the teacher: the run retries it once
+		// and finishes with both tiers parsed.
 		await expect.element(page.getByText('Foundation · 1 entry')).toBeInTheDocument();
+		await expect.element(page.getByText('Higher · 1 entry')).toBeInTheDocument();
 		await expect.element(page.getByText('0 pairs proposed')).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Retry Tier 2' }))
+			.not.toBeInTheDocument();
 		expect(
 			api.parseCalls.filter((form) => fileIn(form, 'assessmentPaper').name === 'higher.pdf')
 		).toHaveLength(1);
@@ -465,7 +461,7 @@ describe('upload page run', () => {
 		expect(stored.tiers[1].sourceFilenames).toEqual(['foundation.pdf']);
 	});
 
-	it('abandons a persistent retryable failure back to the form, keeping the files', async () => {
+	it('abandons a persistent retryable failure after three silent retries, keeping the files', async () => {
 		const api = stubApi({
 			parse: () => apiError('MODEL_RETRYABLE', 'Provider busy', true, 502)
 		});
@@ -475,6 +471,8 @@ describe('upload page run', () => {
 		await page.getByRole('button', { name: 'Run' }).click();
 
 		await expect.element(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+		// The first try and three retries, then the failure is the teacher's to act on.
+		expect(api.parseCalls).toHaveLength(4);
 		await page.getByRole('button', { name: 'Back to upload' }).click();
 
 		await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
@@ -482,11 +480,12 @@ describe('upload page run', () => {
 		await expect.element(page.getByRole('button', { name: 'Run' })).toBeEnabled();
 		// The form is back: the options the stopped run locked are editable again.
 		await expect.element(page.getByRole('combobox', { name: 'Model override' })).toBeEnabled();
-		expect(api.parseCalls).toHaveLength(1);
 	});
 
 	it('stops the run when the server marks a model failure non-retryable', async () => {
-		stubApi({ parse: () => apiError('MODEL_ERROR', 'The model call failed.', false, 500) });
+		const api = stubApi({
+			parse: () => apiError('MODEL_ERROR', 'The model call failed.', false, 500)
+		});
 
 		render(Page);
 		await uploadPaper('higher.pdf');
@@ -500,6 +499,8 @@ describe('upload page run', () => {
 			.element(page.getByRole('button', { name: 'Retry', exact: true }))
 			.not.toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: 'Back to upload' })).toBeVisible();
+		// A failure that would fail the same way again is not retried.
+		expect(api.parseCalls).toHaveLength(1);
 	});
 
 	it('lets Escape abandon a stopped run', async () => {
@@ -688,11 +689,52 @@ describe('upload page run', () => {
 		expect(marksheetStore().matchNotice).toBe('The chosen model cannot read PDFs natively.');
 	});
 
-	it('cannot be dismissed and locks the files while it runs', async () => {
-		let release: (response: Response) => void = () => undefined;
-		const pending = new Promise<Response>((resolve) => {
-			release = resolve;
+	it('says a two-tier run can take a few minutes while parsing and while matching', async () => {
+		interface PendingParse {
+			promise: Promise<Response>;
+			resolve: (response: Response) => void;
+		}
+		const parses: PendingParse[] = [];
+		const matching = Promise.withResolvers<Response>();
+		stubApi({
+			parse: () => {
+				const pending = Promise.withResolvers<Response>();
+				parses.push(pending);
+				return pending.promise;
+			},
+			match: () => matching.promise
 		});
+
+		render(Page);
+		await uploadPaper('higher.pdf');
+		await addTierWithPaper('foundation.pdf');
+		await page.getByRole('button', { name: 'Run' }).click();
+
+		const description = page.getByText(
+			'Each tier is parsed on its own, then the two are compared. This can take a few minutes.'
+		);
+		await expect.element(description).toBeVisible();
+
+		// Each call gets its own response: a Response body is read once.
+		await vi.waitFor(() => expect(parses).toHaveLength(2));
+		for (const pending of parses) pending.resolve(json(parseBody('Higher', [question('1a')])));
+		await expect.element(page.getByText('Find common questions')).toBeInTheDocument();
+		// Matching is the same wait, and says so too.
+		await expect.element(description).toBeVisible();
+
+		matching.resolve(json({ pairs: [], usage: USAGE }));
+		await expect.element(page.getByRole('button', { name: 'Open breakdown' })).toBeVisible();
+		await expect
+			.element(
+				page.getByText('Each tier is parsed on its own, then the two are compared.', {
+					exact: true
+				})
+			)
+			.toBeVisible();
+	});
+
+	it('cannot be dismissed by Escape, says the wait, and locks the files while it runs', async () => {
+		const { promise: pending, resolve: release } = Promise.withResolvers<Response>();
 		stubApi({ parse: () => pending });
 
 		render(Page);
@@ -704,6 +746,9 @@ describe('upload page run', () => {
 		await expect.element(page.getByLabelText('Assessment paper (PDF)')).toBeDisabled();
 		await expect.element(page.getByLabelText('Markscheme (PDF)')).toBeDisabled();
 		await expect.element(page.getByText('Running…')).toBeVisible();
+		await expect
+			.element(page.getByText('The paper is parsed into a breakdown. This can take a few minutes.'))
+			.toBeVisible();
 
 		await userEvent.keyboard('{Escape}');
 
@@ -712,5 +757,34 @@ describe('upload page run', () => {
 
 		release(json(parseBody('Higher', [question('1a')])));
 		await expect.element(page.getByRole('button', { name: 'Open breakdown' })).toBeVisible();
+		// The wait is only worth saying while there is one.
+		await expect
+			.element(page.getByText('The paper is parsed into a breakdown.', { exact: true }))
+			.toBeVisible();
+	});
+
+	it('cancels a run in flight, keeping the files and storing nothing', async () => {
+		const { promise: pending, resolve: release } = Promise.withResolvers<Response>();
+		const api = stubApi({ parse: () => pending });
+
+		render(Page);
+		await uploadPaper('higher.pdf');
+		await page.getByRole('button', { name: 'Run' }).click();
+		await expect.element(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
+
+		await page.getByRole('button', { name: 'Cancel' }).click();
+
+		await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
+		await expect.element(page.getByText('higher.pdf')).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Run' })).toBeEnabled();
+		expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+		expect(marksheetStore().document).toBeNull();
+
+		// The request had already left: its answer is dropped rather than stored.
+		release(json(parseBody('Higher', [question('1a')])));
+		await vi.waitFor(() => expect(api.parseCalls).toHaveLength(1));
+		await expect.element(page.getByRole('button', { name: 'Run' })).toBeEnabled();
+		expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+		expect(marksheetStore().document).toBeNull();
 	});
 });

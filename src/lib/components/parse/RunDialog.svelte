@@ -23,13 +23,26 @@
 		open: boolean;
 		onReplaceFile: (index: number) => void;
 		onBackToUpload: () => void;
+		onCancel: () => void;
 		onOpenBreakdown: () => void;
 	}
 
-	let { run, open, onReplaceFile, onBackToUpload, onOpenBreakdown }: Props = $props();
+	let { run, open, onReplaceFile, onBackToUpload, onCancel, onOpenBreakdown }: Props = $props();
 
 	const busy = $derived(run.phase === 'running');
 	const retryIndex = $derived(run.retryIndex);
+
+	/**
+	 * What the run will do, and how long it can take. Only a run in flight says
+	 * the wait; a stopped or finished one has nothing left to wait for.
+	 */
+	const description = $derived(
+		`${
+			run.twoTiers
+				? 'Each tier is parsed on its own, then the two are compared.'
+				: 'The paper is parsed into a breakdown.'
+		}${busy ? ' This can take a few minutes.' : ''}`
+	);
 
 	type StepState = 'idle' | 'running' | 'done' | 'failed' | 'skipped';
 </script>
@@ -92,9 +105,7 @@
 				{/if}
 			</Dialog.Title>
 			<Dialog.Description>
-				{run.twoTiers
-					? 'Each tier is parsed on its own, then the two are compared.'
-					: 'The paper is parsed into a breakdown.'}
+				{description}
 			</Dialog.Description>
 		</Dialog.Header>
 
@@ -152,6 +163,10 @@
 		{#if run.fatal}
 			<Dialog.Footer>
 				<Button variant="outline" onclick={onBackToUpload}>Back to upload</Button>
+			</Dialog.Footer>
+		{:else if run.phase === 'running'}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={onCancel}>Cancel</Button>
 			</Dialog.Footer>
 		{:else if run.phase === 'stopped'}
 			<Dialog.Footer>
