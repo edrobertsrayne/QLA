@@ -50,7 +50,9 @@ import {
 	allEntries,
 	copyOfDocument,
 	dropUnreachable,
+	ENTRY_MARKS_REFUSAL,
 	entryTierOf,
+	MARK_REFUSAL,
 	marksOnEntry,
 	marksOverMax,
 	pairOfEntry,
@@ -60,6 +62,7 @@ import {
 	restingTier,
 	tierEntries,
 	tierNameProblem,
+	tierNameProblemMessage,
 	type AoDescriptions,
 	type BreakdownEntry,
 	type CommonQuestion,
@@ -260,19 +263,22 @@ export class MarksheetStore {
 	 * Name one tier as it is printed on its paper. Display data, so a confirmed
 	 * breakdown does not lock it; a blank name clears it on a single tier. Two
 	 * tiers need distinct names: a blank or the other tier's name would make the
-	 * tabs untellable apart, which is the rule that blocks confirmation.
+	 * tabs untellable apart, which is the rule that blocks confirmation. A
+	 * refused name is returned as the reason to show beside the field.
 	 */
-	setTierName(tier: TierIndex, name: string): void {
+	setTierName(tier: TierIndex, name: string): string | null {
 		const document = this.document;
-		if (!document) return;
+		if (!document) return null;
 		const stored = document.tiers[tier];
-		if (stored === undefined) return;
+		if (stored === undefined) return null;
 
 		const trimmed = trimOrNull(name);
-		if (stored.tierName === trimmed) return;
-		if (tierNameProblem(document, tier, trimmed) !== null) return;
+		if (stored.tierName === trimmed) return null;
+		const problem = tierNameProblem(document, tier, trimmed);
+		if (problem !== null) return tierNameProblemMessage(problem);
 		stored.tierName = trimmed;
 		this.#mutated();
+		return null;
 	}
 
 	/** Edit a breakdown entry's label: display only, so no marks move. */
@@ -305,13 +311,15 @@ export class MarksheetStore {
 	 * Set an entry's available marks, or null to leave it unknown. Only a
 	 * positive whole number is taken: anything else is refused outright, so a
 	 * typo cannot become a fractional or negative column. Marks already entered
-	 * by students are never clamped to the new total.
+	 * by students are never clamped to the new total. The refusal is returned
+	 * for the field beside it to show.
 	 */
-	setEntryMarks(entryId: string, marks: number | null): void {
-		if (marks !== null && (!Number.isInteger(marks) || marks < 1)) return;
+	setEntryMarks(entryId: string, marks: number | null): string | null {
+		if (marks !== null && (!Number.isInteger(marks) || marks < 1)) return ENTRY_MARKS_REFUSAL;
 		this.#editEntries([entryId], (entry) => {
 			entry.marks = marks;
 		});
+		return null;
 	}
 
 	/** Set the specification point. An empty field means none. */
@@ -590,16 +598,18 @@ export class MarksheetStore {
 	 * Record the mark one student gained on one entry. Whole numbers only, and
 	 * never clamped to the entry's available marks: a typo is stored and flagged
 	 * rather than quietly rewritten into a mark the teacher never gave. Zero is a
-	 * mark; a cell with none is not in the map at all.
+	 * mark; a cell with none is not in the map at all. A refused mark is returned
+	 * for the cell's notice to show.
 	 */
-	setMark(studentId: string, entryId: string, mark: number): void {
-		if (!Number.isInteger(mark) || mark < 0) return;
+	setMark(studentId: string, entryId: string, mark: number): string | null {
+		if (!Number.isInteger(mark) || mark < 0) return MARK_REFUSAL;
 		const document = this.#markable(studentId, entryId);
-		if (!document) return;
+		if (!document) return null;
 		// The mark already there is not a change: re-entering it must not spend the
 		// undo the teacher still wants, or bump the document's timestamp.
-		if (!putMark(document.marks, studentId, entryId, mark)) return;
+		if (!putMark(document.marks, studentId, entryId, mark)) return null;
 		this.#mutated();
+		return null;
 	}
 
 	/**

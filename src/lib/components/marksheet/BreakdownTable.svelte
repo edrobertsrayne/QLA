@@ -33,7 +33,12 @@
 		type QuestionBand
 	} from '$lib/marksheet/breakdown.js';
 	import type { BreakdownEntry, EditableField, TierIndex } from '$lib/marksheet/document.js';
-	import { isWholeNumber, specPointCodes, totalMarks } from '$lib/marksheet/document.js';
+	import {
+		ENTRY_MARKS_REFUSAL,
+		isWholeNumber,
+		specPointCodes,
+		totalMarks
+	} from '$lib/marksheet/document.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import {
 		assessmentObjectiveOf,
@@ -61,6 +66,8 @@
 	 * so a raise typed digit by digit would flash a warning on its way up.
 	 */
 	let editingMarks = $state<string | null>(null);
+	/** Why the last available-marks keystroke was refused, and the entry it was for. */
+	let marksRefusal = $state<{ entryId: string; text: string } | null>(null);
 	/**
 	 * Entries carrying marks above the available marks they now offer, and how
 	 * many: what lowering an entry's available marks leaves behind, and what no
@@ -174,14 +181,21 @@
 	}
 
 	/**
-	 * Enter a mark as it is typed. Only digits are a mark: anything else — a
-	 * decimal, a letter — is refused, leaving the entry as it was, which the cell
-	 * shows again once the teacher leaves it.
+	 * Enter a mark as it is typed. Only a whole number is taken; anything else
+	 * — a decimal, a letter, zero — is refused with the reason shown beside the
+	 * field, leaving the entry as it was, which the cell shows again once the
+	 * teacher leaves it.
 	 */
 	function onMarksInput(entry: BreakdownEntry, event: Event): void {
 		const typed = (event.currentTarget as HTMLInputElement).value.trim();
-		if (typed === '') store.setEntryMarks(entry.id, null);
-		else if (isWholeNumber(typed)) store.setEntryMarks(entry.id, Number(typed));
+		// Only digits are a mark: `1e1` and `0x5` are numbers to JavaScript but
+		// not marks to a teacher, so they never reach the store's own contract.
+		if (typed !== '' && !isWholeNumber(typed)) {
+			marksRefusal = { entryId: entry.id, text: ENTRY_MARKS_REFUSAL };
+			return;
+		}
+		const refusal = store.setEntryMarks(entry.id, typed === '' ? null : Number(typed));
+		marksRefusal = refusal === null ? null : { entryId: entry.id, text: refusal };
 	}
 
 	/** Show what the entry actually holds: a refused mark disappears as it is left. */
@@ -329,6 +343,9 @@
 			<input
 				data-field="marks"
 				aria-label={`Marks for ${entryName(entry)}`}
+				aria-describedby={marksRefusal?.entryId === entry.id
+					? `marks-refusal-${entry.id}`
+					: undefined}
 				class={fieldClass(
 					edits,
 					'marks',
@@ -340,9 +357,21 @@
 				value={entry.marks ?? ''}
 				oninput={(event) => onMarksInput(entry, event)}
 				onchange={(event) => onMarksChange(entry, event)}
-				onfocus={() => (editingMarks = entry.id)}
+				onfocus={() => {
+					editingMarks = entry.id;
+					marksRefusal = null;
+				}}
 				onblur={() => (editingMarks = null)}
 			/>
+			{#if marksRefusal?.entryId === entry.id}
+				<p
+					id={`marks-refusal-${entry.id}`}
+					role="status"
+					class="mt-0.5 text-[11px] leading-tight text-destructive"
+				>
+					{marksRefusal.text}
+				</p>
+			{/if}
 		</Table.Cell>
 		<Table.Cell class="px-1">
 			<input

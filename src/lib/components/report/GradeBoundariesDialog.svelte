@@ -10,7 +10,12 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { hasTwoTiers, tierNameProblem, type TierIndex } from '$lib/marksheet/document.js';
+	import {
+		hasTwoTiers,
+		tierNameProblem,
+		tierNameProblemMessage,
+		type TierIndex
+	} from '$lib/marksheet/document.js';
 	import { marksheetStore } from '$lib/marksheet/index.js';
 	import GradeBoundariesForm from './GradeBoundariesForm.svelte';
 
@@ -44,9 +49,7 @@
 	const issue = $derived.by(() => {
 		if (document === null) return null;
 		const problem = tierNameProblem(document, tier, value);
-		if (problem === 'blank') return 'Each tier needs a name.';
-		if (problem === 'shared') return 'The two tiers need different names.';
-		return null;
+		return problem === null ? null : tierNameProblemMessage(problem);
 	});
 
 	function saveName(): void {

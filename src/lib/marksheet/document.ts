@@ -567,6 +567,11 @@ export function tierNamesCollide(document: MarksheetDocument): boolean {
 	return tierNameProblem(document, 0, document.tiers[0]?.tierName ?? null) === 'shared';
 }
 
+/** The words a tier-name rule failure is explained in, wherever a name is edited. */
+export function tierNameProblemMessage(problem: 'blank' | 'shared'): string {
+	return problem === 'blank' ? 'Each tier needs a name.' : 'The two tiers need different names.';
+}
+
 /** One tier's entries in paper order: a tier the assessment does not have holds none. */
 export function tierEntries(document: MarksheetDocument, tier: TierIndex): BreakdownEntry[] {
 	const stored = document.tiers[tier];
@@ -715,6 +720,12 @@ export function isWholeNumber(typed: string): boolean {
 
 /** Typed or pasted cell text, read as a mark. */
 export type MarkText = { kind: 'clear' } | { kind: 'mark'; mark: number } | { kind: 'refused' };
+
+/** Why a mark is refused, wherever one is stored: a cell's text or the store's command. */
+export const MARK_REFUSAL = 'A mark must be a whole number, or empty for a cell with no mark.';
+
+/** Why an entry's available marks are refused. */
+export const ENTRY_MARKS_REFUSAL = 'Available marks must be a whole number of at least 1.';
 
 /** Typed or pasted cell text as a mark: empty clears, a whole number is a mark, anything else is refused. */
 export function readMarkText(text: string): MarkText {

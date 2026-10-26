@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { storedMarkCount } from './document.js';
+import { MARK_REFUSAL, storedMarkCount } from './document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredTier } from './document.js';
 import { entry, student, tier } from './fixtures.spec-helpers.js';
 import {
@@ -691,7 +691,7 @@ describe('marks', () => {
 		const { store } = openMarksheet({ marks: { 'student-1': { 'entry-1': 2 } } });
 
 		for (const refused of [2.5, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-			store.setMark('student-1', 'entry-1', refused);
+			expect(store.setMark('student-1', 'entry-1', refused)).toBe(MARK_REFUSAL);
 			expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 2 } });
 		}
 	});

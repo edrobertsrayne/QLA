@@ -272,6 +272,10 @@ describe('breakdown page', () => {
 			await userEvent.tab();
 
 			await expect.element(page.getByLabelText('Marks for 2bii')).toHaveValue('4');
+			// The refusal says why beside the field it belongs to.
+			await expect
+				.element(page.getByText('Available marks must be a whole number of at least 1.'))
+				.toBeVisible();
 			expect(readSeeded().tiers[0].breakdown.entries[0].marks).toBe(4);
 		}
 	});
@@ -667,6 +671,11 @@ describe('breakdown page', () => {
 		expect(page.getByTestId('tier-blocker-dot').elements()).toHaveLength(1);
 
 		await page.getByRole('radio', { name: 'Tier 2', exact: true }).click();
+		// A duplicate name is refused with its reason, and the field keeps the stored one.
+		await page.getByLabelText('Tier name, as printed on the paper').fill('higher');
+		await expect.element(page.getByText('The two tiers need different names.')).toBeVisible();
+		await expect.element(page.getByLabelText('Tier name, as printed on the paper')).toHaveValue('');
+
 		await page.getByLabelText('Tier name, as printed on the paper').fill('Foundation');
 
 		expect(page.getByTestId('tier-blocker-dot').elements()).toHaveLength(0);

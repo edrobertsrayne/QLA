@@ -198,7 +198,7 @@
 			return `“${open.value}” was not stored: a mark is a whole number, or empty for a cell with no mark.`;
 		}
 		if (read.kind === 'clear') store.clearMark(open.studentId, open.entryId);
-		else store.setMark(open.studentId, open.entryId, read.mark);
+		else return store.setMark(open.studentId, open.entryId, read.mark);
 		return null;
 	}
 

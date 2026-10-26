@@ -47,6 +47,11 @@
 	const current = $derived<TierIndex>(tab === '1' ? 1 : 0);
 	/** Whether this assessment has two papers to review together. */
 	const twoTiers = $derived(store.tierCount === 2);
+	/** Why the last tier-name keystroke was refused, and the tier it was for. */
+	let tierNameRefusal = $state<{ tier: TierIndex; text: string } | null>(null);
+	const openNameRefusal = $derived(
+		tierNameRefusal !== null && tierNameRefusal.tier === current ? tierNameRefusal.text : null
+	);
 	const entries = $derived(store.entries);
 	const openTier = $derived(store.tiers[current]);
 	const attention = $derived(store.attentionOf(current));
@@ -271,8 +276,21 @@
 							class="w-56"
 							placeholder="e.g. Higher"
 							value={openTier.tierName ?? ''}
-							oninput={(event) => store.setTierName(current, event.currentTarget.value)}
+							aria-describedby={openNameRefusal === null ? undefined : 'tier-name-problem'}
+							oninput={(event) => {
+								const input = event.currentTarget;
+								const refusal = store.setTierName(current, input.value);
+								tierNameRefusal = refusal === null ? null : { tier: current, text: refusal };
+								// A refused name is not the tier's: the field reads back
+								// what the document holds rather than the dropped text.
+								if (refusal !== null) input.value = openTier.tierName ?? '';
+							}}
 						/>
+						{#if openNameRefusal !== null}
+							<p id="tier-name-problem" role="status" class="text-xs text-destructive">
+								{openNameRefusal}
+							</p>
+						{/if}
 					</div>
 				{/if}
 				<p class="pb-2 text-xs text-muted-foreground" data-testid="tier-counts">

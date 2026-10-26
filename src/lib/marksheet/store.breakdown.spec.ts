@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { STORAGE_KEY, entryValuesOf, storedMarkCount } from './document.js';
+import { ENTRY_MARKS_REFUSAL, STORAGE_KEY, entryValuesOf, storedMarkCount } from './document.js';
 import type { BreakdownEntry, MarksheetDocument, StoredTier, StoredWarning } from './document.js';
 import { entry, parsed, student, tier } from './fixtures.spec-helpers.js';
 import { changedInputFields, generationInputFor } from './report-input.js';
@@ -98,7 +98,7 @@ describe('breakdown edits', () => {
 		const { store } = openStore();
 
 		for (const refused of [2.5, 0, -3, Number.NaN, Number.POSITIVE_INFINITY]) {
-			store.setEntryMarks('entry-1', refused);
+			expect(store.setEntryMarks('entry-1', refused)).toBe(ENTRY_MARKS_REFUSAL);
 			expect(entryOf(store, 'entry-1')?.marks).toBe(4);
 		}
 	});
@@ -704,14 +704,14 @@ describe('tier names', () => {
 	it('refuses a blank or the other tier’s name on a two-tier assessment', () => {
 		const { store } = openStore(twoTiers());
 
-		store.setTierName(0, '   ');
+		expect(store.setTierName(0, '   ')).toBe('Each tier needs a name.');
 		expect(store.tiers[0].tierName).toBe('Higher');
 
 		// Trimmed and case-insensitive, the two names would read as one.
-		store.setTierName(0, '  foundation ');
+		expect(store.setTierName(0, '  foundation ')).toBe('The two tiers need different names.');
 		expect(store.tiers[0].tierName).toBe('Higher');
 
-		store.setTierName(0, 'Higher Tier');
+		expect(store.setTierName(0, 'Higher Tier')).toBeNull();
 		expect(store.tiers[0].tierName).toBe('Higher Tier');
 	});
 
