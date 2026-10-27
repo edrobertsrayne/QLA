@@ -1,9 +1,11 @@
 <!--
-	PROTOTYPE (#159) — Variant C: each tier tab toggles between "By entry" and
-	"By topic", so the two readings of one tier swap in place. Three variants of
-	where the topic view lives, switchable via ?variant= on the real
-	/marksheet/analysis route; figures computed from real document data
-	(fixtures.ts) by the real facility arithmetic.
+	PROTOTYPE (#159) — Variant C, revised by the maintainer: each tier tab opens
+	on the class's topics and switches in place between three readings — "By
+	topic", "By questions" (today's question chart) and "By AO". Topics and
+	assessment objectives never share a list. Three placements of where the
+	topic view lives, switchable via ?variant= on the real /marksheet/analysis
+	route; figures computed from real document data (fixtures.ts) by the real
+	facility arithmetic.
 -->
 <script lang="ts">
 	import { analyseCommonQuestions, analyseTier } from '$lib/marksheet/analysis.js';
@@ -35,17 +37,20 @@
 	}
 	const tab = $derived(chosen ?? '0');
 
-	/** The tier tab's own switch: entries as questions, or as topics. */
-	let mode = $state('entry');
-	let shownMode = $state('entry');
-	function chooseMode(next: string | string[] | undefined): void {
-		if (next === 'entry' || next === 'topic') {
-			mode = next;
-			shownMode = next;
+	/** The tier tab's three readings. */
+	let view = $state('topic');
+	let shownView = $state('topic');
+	function chooseView(next: string | string[] | undefined): void {
+		if (next === 'topic' || next === 'questions' || next === 'ao') {
+			view = next;
+			shownView = next;
 			return;
 		}
-		shownMode = mode;
+		shownView = view;
 	}
+	/** The objectives' own tab exists only when the rule keeps them apart. */
+	const aoTab = $derived(proto.rules.aoRows === 'separate');
+	const openView = $derived(view === 'ao' && !aoTab ? 'topic' : view);
 
 	function shortOf(tier: TierIndex): string {
 		return tierNameOf(document, tier)?.charAt(0).toUpperCase() ?? `T${tier + 1}`;
@@ -65,12 +70,16 @@
 			`${partMarked} part-marked`
 		].join(' · ');
 	});
+
+	const headingText = $derived(
+		openView === 'topic' ? 'By topic' : openView === 'ao' ? 'By AO' : 'Question analysis'
+	);
 </script>
 
 <main class="mx-auto max-w-5xl space-y-4 p-6">
 	<header class="space-y-1">
 		<h2 class="text-xl font-semibold">
-			Question analysis{twoTiers ? ` — ${tierLabel(document, openTier)}` : ''} — {fixture.document
+			{headingText}{twoTiers ? ` — ${tierLabel(document, openTier)}` : ''} — {fixture.document
 				.label}
 			{#if fixture.document.className !== null}
 				· {fixture.document.className}
@@ -114,17 +123,20 @@
 				type="single"
 				variant="outline"
 				size="sm"
-				aria-label="Read one tier by entry or by topic"
-				bind:value={shownMode}
-				onValueChange={chooseMode}
+				aria-label="Read one tier by topic, by questions or by AO"
+				bind:value={shownView}
+				onValueChange={chooseView}
 				class="w-fit"
 			>
-				<ToggleGroup.Item value="entry" class="px-4">By entry</ToggleGroup.Item>
 				<ToggleGroup.Item value="topic" class="px-4">By topic</ToggleGroup.Item>
+				<ToggleGroup.Item value="questions" class="px-4">By questions</ToggleGroup.Item>
+				{#if aoTab}
+					<ToggleGroup.Item value="ao" class="px-4">By AO</ToggleGroup.Item>
+				{/if}
 			</ToggleGroup.Root>
 		</div>
 
-		{#if mode === 'entry'}
+		{#if openView === 'questions'}
 			<TierAnalysis
 				rows={analyseTier(document, openTier).ordered}
 				tier={openTier}
@@ -133,18 +145,16 @@
 				otherTierName={tierNameLabel(document, openTier === 0 ? 1 : 0)}
 				{pairs}
 			/>
+		{:else if openView === 'ao'}
+			<TopicTable
+				rows={aoRowsOf(document, openTier, proto.rules, proto.sort)}
+				label={`Facility by assessment objective — ${tierNameLabel(document, openTier)}`}
+			/>
 		{:else}
 			<TopicTable
 				rows={finishedRows(document, openTier, proto.rules, proto.sort)}
 				label={`Facility by topic — ${tierNameLabel(document, openTier)}`}
 			/>
-			{#if proto.rules.aoRows === 'separate' && aoRowsOf(document, openTier, proto.rules, proto.sort).length > 0}
-				<h3 class="mt-2 text-base font-semibold">Assessment objectives</h3>
-				<TopicTable
-					rows={aoRowsOf(document, openTier, proto.rules, proto.sort)}
-					label={`Facility by assessment objective — ${tierNameLabel(document, openTier)}`}
-				/>
-			{/if}
 		{/if}
 	{/if}
 </main>

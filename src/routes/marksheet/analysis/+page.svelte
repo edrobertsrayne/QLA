@@ -28,7 +28,7 @@
 	const VARIANTS = [
 		{ key: 'A', label: 'Own tab' },
 		{ key: 'B', label: 'Section in each tier' },
-		{ key: 'C', label: 'By entry / By topic toggle' }
+		{ key: 'C', label: 'Topic / Questions / AO tabs' }
 	];
 </script>
 

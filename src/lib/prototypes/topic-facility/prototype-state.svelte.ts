@@ -11,7 +11,7 @@ const model = $state({
 	fixture: 'single',
 	rules: {
 		tierScope: 'per-tier',
-		aoRows: 'mixed',
+		aoRows: 'separate',
 		multiSpec: 'each',
 		order: 'weakest'
 	} as TopicRules,
