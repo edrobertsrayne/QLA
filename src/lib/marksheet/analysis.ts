@@ -278,8 +278,8 @@ export interface TopicFacility {
 	/** Gained ÷ available, or null when no carrying entry has a figure. */
 	facility: number | null;
 	band: RagBand | null;
-	/** Breakdown entries carrying it. */
-	entries: number;
+	/** The entries carrying it, in paper order, each with its own figures. */
+	entries: EntryAnalysis[];
 	/** The figure rests on part of the class, as at least one entry's own figure does. */
 	partMarked: boolean;
 }
@@ -292,7 +292,7 @@ interface TopicTotals {
 	description: string | null;
 	gained: number;
 	available: number;
-	entries: number;
+	entries: EntryAnalysis[];
 	partMarked: boolean;
 }
 
@@ -307,8 +307,8 @@ function weakestTopicFirst(a: TopicFacility, b: TopicFacility): number {
 /**
  * One tier's figures by specification point and by assessment objective, on
  * the class as it stands. Local arithmetic over the entries' counted marks:
- * each entry counts once toward each distinct code and once toward its AO, so
- * a code written on two entries pools both. Weakest first, so the topics to
+ * each entry counts in full toward each distinct code and once toward its AO,
+ * so a code written on two entries pools both. Weakest first, so the topics to
  * reteach come before the secure ones.
  */
 export function analyseTopics(
@@ -332,12 +332,12 @@ export function analyseTopics(
 			description,
 			gained: 0,
 			available: 0,
-			entries: 0,
+			entries: [],
 			partMarked: false
 		};
 		running.gained += row.gained;
 		running.available += row.available;
-		running.entries += 1;
+		running.entries.push(row);
 		running.partMarked ||= row.coverage.partMarked;
 		totals.set(key, running);
 	};

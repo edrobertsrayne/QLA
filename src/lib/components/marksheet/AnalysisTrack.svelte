@@ -14,11 +14,16 @@
 	import type { TierIndex } from '$lib/marksheet/document.js';
 	import { cn } from '$lib/utils.js';
 
+	/** What a dot needs: an entry's figure, or a topic's pooled one. */
+	type TrackFigure = Pick<EntryAnalysis, 'facility'> & {
+		coverage: Pick<EntryAnalysis['coverage'], 'partMarked'>;
+	};
+
 	interface Props {
 		/** Tier 1's figure, always the filled dot. */
-		tier1?: EntryAnalysis | null;
+		tier1?: TrackFigure | null;
 		/** Tier 2's figure, always the hollow dot. */
-		tier2?: EntryAnalysis | null;
+		tier2?: TrackFigure | null;
 		/** Both tiers' figure; a bar, or none while one side has no counted mark. */
 		pooled?: number | null;
 		/** The other tier's dot, drawn faint because it is context rather than this view's figure. */
