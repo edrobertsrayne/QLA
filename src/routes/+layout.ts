@@ -20,6 +20,10 @@ function onMarksheetSurface(pathname: string): boolean {
 export function load({ url }: { url: URL }): void {
 	const store = marksheetStore();
 	store.load();
+	// PROTOTYPE (#159): the topic-facility variants analyse in-memory fixture
+	// documents, not the stored one, so they render whatever the stored state
+	// allows — with no class loaded included.
+	if (url.pathname === '/marksheet/analysis' && url.searchParams.has('variant')) return;
 	const route = store.route();
 	if (url.pathname === route) return;
 	// The analysis and the report flow are part of the marksheet surface: a
