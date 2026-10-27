@@ -128,8 +128,8 @@
 				onValueChange={chooseView}
 				class="w-fit"
 			>
-				<ToggleGroup.Item value="topic" class="px-4">By topic</ToggleGroup.Item>
 				<ToggleGroup.Item value="questions" class="px-4">By questions</ToggleGroup.Item>
+				<ToggleGroup.Item value="topic" class="px-4">By topic</ToggleGroup.Item>
 				{#if aoTab}
 					<ToggleGroup.Item value="ao" class="px-4">By AO</ToggleGroup.Item>
 				{/if}
