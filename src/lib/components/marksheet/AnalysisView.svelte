@@ -1,10 +1,11 @@
 <!--
 	The whole sheet at once, as track charts: one tab per tier and, when pairs
 	exist, a Common questions tab. Every figure is read from the marksheet as it
-	stands, so there is no run step and no out-of-date state. A tier tab keeps
-	today's band sections, green folded; the common tab compares each pair on
-	one track. Print and the PDF reveal the folded green rows from the same
-	markup through print styles; the CSV follows the tab.
+	stands, so there is no run step and no out-of-date state. A tier tab reads
+	by questions (today's band sections, green folded), by topic or by AO; the
+	common tab compares each pair on one track. Print and the PDF reveal the
+	folded green rows from the same markup through print styles; the CSV
+	follows the tab.
 -->
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
@@ -107,7 +108,7 @@
 	/** One tier's figures, or null while the common tab is open. */
 	const tierAnalysis = $derived(openTier === null ? null : store.analysisOf(openTier));
 	const tierRows = $derived(tierAnalysis?.ordered ?? []);
-	/** The same tier's figures by topic and AO, weakest first; the class-level view only. */
+	/** The same tier's figures by specification point and AO, weakest first. */
 	const topicRows = $derived(openTier === null ? [] : analyseTopics(store.document, openTier));
 	const commonRows = $derived(
 		sortCommonQuestions(

@@ -415,6 +415,103 @@ describe('analysis', () => {
 		expect(figureText(tierRow(screen.container, 'e-a'), 'coverage')).toBe('H 3/3');
 	});
 
+	it('reads a tier by topic or by AO in separate lists, weakest first, each row opening to its questions', async () => {
+		seed(
+			confirmed({
+				tiers: [
+					tier({
+						breakdown: {
+							entries: [
+								entry('q1', '1a', '1', { marks: 4, specPoint: '1.1, 2.2', ao: 'AO1' }),
+								entry('q2', '1b', '1', { marks: 4, specPoint: '2.2', ao: 'AO2' }),
+								entry('q3', '1c', '1', { marks: 4, specPoint: null, ao: 'AO2' })
+							],
+							warnings: []
+						}
+					})
+				],
+				students: [student('s1', 'Ada', 'Lovelace'), student('s2', 'Grace', 'Hopper')],
+				marks: { s1: { q1: 4, q2: 0, q3: 2 }, s2: { q1: 4, q2: 1, q3: 2 } },
+				topicNames: { '2.2': 'Energy' }
+			})
+		);
+		const screen = openAnalysisAt();
+		const topicRows = () => [
+			...screen.container.querySelectorAll<HTMLElement>('[data-testid="topic-row"]')
+		];
+		const topicRowOf = (code: string) => {
+			const row = topicRows().find((candidate) => candidate.dataset.topic === code);
+			if (!row) throw new Error(`no topic row for ${code}`);
+			return row;
+		};
+
+		// Opens on the question chart, with no topic rows in sight.
+		await expect.element(page.getByRole('radio', { name: 'By questions' })).toBeChecked();
+		expect(tierRow(screen.container, 'q2')).not.toBeNull();
+		expect(topicRows()).toEqual([]);
+
+		await page.getByRole('radio', { name: 'By topic' }).click();
+		await vi.waitFor(() =>
+			expect(topicRows().map((row) => row.dataset.topic)).toEqual(['2.2', '1.1'])
+		);
+		expect(screen.container.querySelector('[data-testid="analysis-row"]')).toBeNull();
+		const energy = topicRowOf('2.2');
+		// A named topic shows its name and its code; an unnamed one its code once.
+		expect(figureText(energy, 'topic-name')).toBe('Energy 2.2');
+		expect(figureText(topicRowOf('1.1'), 'topic-name')).toBe('1.1');
+		// q1 carries both codes, so its full marks count toward each: 9 of 16.
+		expect(figureText(energy, 'facility')).toBe('56%');
+		expect(figureText(energy, 'coverage')).toBe('9/16 marks · 2 questions');
+		expect(trackValue(energy, 'tier1')).toBe('56');
+		expect(figureText(topicRowOf('1.1'), 'facility')).toBe('100%');
+
+		await page.getByRole('button', { name: /Energy/ }).click();
+		await vi.waitFor(() =>
+			expect(
+				[...energy.querySelectorAll<HTMLElement>('[data-testid="topic-entry"]')].map(
+					(row) => `${row.dataset.entryId} ${figureText(row, 'facility')}`
+				)
+			).toEqual(['q1 100%', 'q2 13%'])
+		);
+
+		// The open reading recomputes when a mark or an absent flag changes.
+		marksheetStore().setMark('s1', 'q2', 4);
+		await vi.waitFor(() => expect(figureText(topicRowOf('2.2'), 'facility')).toBe('81%'));
+		marksheetStore().setStudentAbsent('s2', true);
+		await vi.waitFor(() => expect(figureText(topicRowOf('2.2'), 'facility')).toBe('100%'));
+
+		await page.getByRole('radio', { name: 'By AO' }).click();
+		await vi.waitFor(() =>
+			expect(topicRows().map((row) => row.dataset.topic)).toEqual(['AO2', 'AO1'])
+		);
+		expect(topicRows().every((row) => row.dataset.kind === 'ao')).toBe(true);
+		expect(figureText(topicRowOf('AO2'), 'coverage')).toBe('6/8 marks · 2 questions');
+	});
+
+	it('pools topics over the open tier only, on that tier’s dot', async () => {
+		seedTwoTierAnalysis();
+		const screen = openAnalysisAt();
+		const topicRow = () => {
+			const row = screen.container.querySelector<HTMLElement>('[data-testid="topic-row"]');
+			if (!row) throw new Error('no topic row');
+			return row;
+		};
+
+		await page.getByRole('radio', { name: 'By topic' }).click();
+		// Higher: 34 of 80, with Flo's off-tier mark left out.
+		await vi.waitFor(() =>
+			expect(figureText(topicRow(), 'coverage')).toBe('34/80 marks · 4 questions')
+		);
+		expect(trackValue(topicRow(), 'tier1')).toBe('43');
+		expect(trackValue(topicRow(), 'tier2')).toBe('');
+
+		await page.getByRole('radio', { name: 'Tier 2 · Foundation' }).click();
+		await vi.waitFor(() => expect(figureText(topicRow(), 'facility')).toBe('60%'));
+		expect(figureText(topicRow(), 'coverage')).toBe('36/60 marks · 4 questions');
+		expect(trackValue(topicRow(), 'tier1')).toBe('');
+		expect(trackValue(topicRow(), 'tier2')).toBe('60');
+	});
+
 	it('takes the back link to the marksheet', async () => {
 		seedSingleTierAnalysis();
 		openAnalysisAt();

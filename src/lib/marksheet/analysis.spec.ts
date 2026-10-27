@@ -738,9 +738,9 @@ describe('analyseTopics', () => {
 			available: 6,
 			facility: 0.5,
 			band: 'amber',
-			entries: 2,
 			partMarked: false
 		});
+		expect(rates?.entries.map((row) => row.entry.id)).toEqual(['entry-1', 'entry-2']);
 		// An unnamed code reads as itself rather than disappearing.
 		expect(unnamed?.name).toBe('4.1');
 		expect(unnamed?.facility).toBe(0.8);
@@ -771,21 +771,56 @@ describe('analyseTopics', () => {
 			gained: 1,
 			available: 4,
 			facility: 0.25,
-			band: 'red',
-			entries: 2
+			band: 'red'
 		});
+		expect(row.entries.map((analysed) => analysed.facility)).toEqual([0.5, 0]);
 	});
 
-	it('leaves an entry with several codes out of no row, and one with none only in its AO row', () => {
-		const document = oneTier([
-			entry('entry-1', '1a', '1', { marks: 4, specPoint: '3.2.1.4, 4.1', ao: null })
-		]);
+	it('counts an entry with several codes in full toward each, and one with none only in its AO row', () => {
+		const document = oneTier(
+			[
+				entry('entry-1', '1a', '1', { marks: 4, specPoint: '3.2.1.4, 4.1', ao: null }),
+				entry('entry-2', '1b', '1', { marks: 2, specPoint: '4.1', ao: null }),
+				entry('entry-3', '1c', '1', { marks: 5, specPoint: null, ao: 'AO3' })
+			],
+			{
+				students: [student('student-1', 'Ada', 'Lovelace')],
+				marks: { 'student-1': { 'entry-1': 3, 'entry-2': 1, 'entry-3': 2 } }
+			}
+		);
 
-		// No student has marked it, so each row exists with no figure.
+		const topics = analyseTopics(document, 0);
+		const byCode = (code: string) => topics.find((row) => row.code === code);
+
+		expect(byCode('3.2.1.4')).toMatchObject({ gained: 3, available: 4, facility: 0.75 });
+		expect(byCode('4.1')).toMatchObject({ gained: 4, available: 6 });
+		// The expansion lists exactly the entries carrying the code, in paper order.
+		expect(byCode('4.1')?.entries.map((row) => row.entry.id)).toEqual(['entry-1', 'entry-2']);
+		expect(byCode('3.2.1.4')?.entries.map((row) => row.entry.id)).toEqual(['entry-1']);
+		expect(byCode('AO3')?.entries.map((row) => row.entry.id)).toEqual(['entry-3']);
+		expect(topics.filter((row) => row.kind === 'specification')).toHaveLength(2);
+	});
+
+	it('leaves a topic with nothing counted unscored, after every scored row', () => {
+		const document = oneTier(
+			[
+				entry('entry-1', '1a', '1', { marks: 4, specPoint: '3.2.1.4', ao: null }),
+				entry('entry-2', '1b', '1', { marks: 4, specPoint: '4.1', ao: null })
+			],
+			{
+				students: [
+					student('student-1', 'Ada', 'Lovelace'),
+					student('student-2', 'Absent', 'Al', true)
+				],
+				// The absent student's mark and an over-max mark are never counted.
+				marks: { 'student-1': { 'entry-1': 9, 'entry-2': 4 }, 'student-2': { 'entry-1': 2 } }
+			}
+		);
+
 		const topics = analyseTopics(document, 0);
 
-		expect(topics.map((row) => row.code)).toEqual(['3.2.1.4', '4.1']);
-		expect(topics.every((row) => row.facility === null)).toBe(true);
+		expect(topics.map((row) => row.code)).toEqual(['4.1', '3.2.1.4']);
+		expect(topics[1]).toMatchObject({ facility: null, band: null, gained: 0, available: 0 });
 	});
 
 	it('marks a topic part-marked when any entry carrying it is', () => {
