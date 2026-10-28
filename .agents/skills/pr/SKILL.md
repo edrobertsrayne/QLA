@@ -16,7 +16,7 @@ metadata:
 3. For a UI change, capture and lay out screenshots per [SCREENSHOTS.md](SCREENSHOTS.md).
 4. Write the body to `/tmp/<branch>/body.md`, outside the repo.
 5. Post it. With no images: `gh pr create --title "..." --body-file /tmp/<branch>/body.md` (or `gh pr edit <N> --body-file ...`). With images: upload per [SCREENSHOTS.md](SCREENSHOTS.md#upload).
-6. Check the posted body: `gh pr view <N> --json body -q .body` renders every view and image, and holds no `/tmp/` paths. Fix and re-post until it does.
+6. Check the posted PR: `gh pr view <N> --json body -q .body | grep /tmp/` prints nothing, and the rendered page (`gh pr view <N> --web`) shows every view and image. Fix and re-post until both hold.
 
 ## Template
 
