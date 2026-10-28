@@ -31,7 +31,7 @@ PR body:
    - The Summary holds at least one diagram, and every Mermaid block parses (no labels with unquoted `()`, `[]` or `:`).
    - A UI change has before and after screenshots in light and dark mode, or Evidence says which capture failed and why.
    - Terms match `CONTEXT.md`.
-6. **Post** with the [`upload-screenshots`](../upload-screenshots/SKILL.md) skill when the body references images; otherwise create the PR with the body as written.
+6. **Post** per [Posting](#posting).
 
 Done when the PR's body on GitHub renders every diagram and image, and contains no `/tmp/` paths.
 
@@ -219,9 +219,11 @@ Every UI change gets screenshots of each changed screen, before and after, in li
    ```markdown
    |        | Before                                | After                                |
    | ------ | ------------------------------------- | ------------------------------------ |
-   | Light  | ![](/tmp/<branch>/before-x-light.png) | ![](/tmp/<branch>/after-x-light.png) |
-   | Dark   | ![](/tmp/<branch>/before-x-dark.png)  | ![](/tmp/<branch>/after-x-dark.png)  |
+   | Light  | ![x before, light](/tmp/<branch>/before-x-light.png) | ![x after, light](/tmp/<branch>/after-x-light.png) |
+   | Dark   | ![x before, dark](/tmp/<branch>/before-x-dark.png)   | ![x after, dark](/tmp/<branch>/after-x-dark.png)   |
    ```
+
+   The alt text in each reference is what GitHub keeps.
 
 6. Remove the worktree: `git worktree remove /tmp/<branch>/base`.
 
@@ -236,3 +238,26 @@ Show the exact test that failed before and passes after, as pseudocode, with the
 Describe whether it's a one-way or two-way door. You can walk back through two-way doors, but not one-way doors. A PR that is cheap to roll back is lower risk. Changes that involve destructive actions or hard-to-reverse decisions (a stored data shape, a `localStorage` key, a deleted file users depend on) are one-way doors.
 
 The blast radius is the potential impact or scope of the changes introduced by this PR. Consider all possibilities. Examples are layout shift, breakages for consumers, mobile responsiveness, etc.
+
+## Posting
+
+Write the body to `/tmp/<branch>/body.md`, outside the repo. With no images, post it with `gh pr create --title "..." --body-file /tmp/<branch>/body.md` (or `gh pr edit <N> --body-file ...`).
+
+With images, `gh` uploads them with `--attach`, which needs push access to the repo and a `gh` whose `gh pr create --help` lists `--attach`; upgrade `gh` if it doesn't.
+
+1. Reference each image in the body by the exact path you will pass to `--attach` (the screenshot table above does this). `gh` replaces each referenced path with the uploaded URL in place.
+2. Post with one `--attach` per file:
+
+   ```shell
+   gh pr create --title "..." --body-file /tmp/<branch>/body.md \
+     --attach /tmp/<branch>/before-x-light.png \
+     --attach /tmp/<branch>/after-x-light.png \
+     --attach /tmp/<branch>/before-x-dark.png \
+     --attach /tmp/<branch>/after-x-dark.png
+   ```
+
+   To update an existing PR, use `gh pr edit <N> --body-file /tmp/<branch>/body.md` with the same `--attach` flags.
+
+3. Check: `gh pr view <N> --json body -q .body | grep /tmp/` prints nothing. An attached file the body never references is appended to the end of the body, so an image at the bottom means a path in the body is misspelt: fix the path and re-run `gh pr edit` with every `--attach`.
+
+Only images and videos upload, and each file attaches once per command. For a video, put `![](/tmp/<branch>/demo.mp4)` alone in its own paragraph to get a player.
