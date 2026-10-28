@@ -2,6 +2,7 @@
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import AppNav from '$lib/components/shell/AppNav.svelte';
+	import BuildInfo from '$lib/components/shell/BuildInfo.svelte';
 	import StatusBar from '$lib/components/shell/StatusBar.svelte';
 	import FeedbackButton from '$lib/components/shell/FeedbackButton.svelte';
 	import { Toaster } from '$lib/components/ui/sonner';
@@ -18,6 +19,7 @@
 <AppNav />
 <div class="pb-[var(--status-bar-height)]">
 	{@render children()}
+	<BuildInfo class="py-4 text-center" />
 </div>
 <StatusBar />
 <FeedbackButton />

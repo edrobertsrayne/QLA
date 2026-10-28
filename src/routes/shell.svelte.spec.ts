@@ -106,6 +106,16 @@ describe('the breadcrumb', () => {
 	});
 });
 
+describe('the build info', () => {
+	it('shows the build sha and date even when nothing is stored', async () => {
+		openShell();
+
+		await expect
+			.element(page.getByTestId('build-info'))
+			.toHaveTextContent(/^Build \S+ · \d{4}-\d{2}-\d{2}$/);
+	});
+});
+
 describe('new upload in the nav', () => {
 	it('is there whenever a document is stored', async () => {
 		seed(parsed());

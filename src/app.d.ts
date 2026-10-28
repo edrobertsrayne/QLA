@@ -8,6 +8,10 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
+
+	// Baked in at build time by vite.config.ts.
+	const __APP_BUILD_SHA__: string;
+	const __APP_BUILD_DATE__: string;
 }
 
 export {};
