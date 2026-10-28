@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
@@ -25,7 +26,27 @@ const notFoundForNonFiles: Plugin = {
 	}
 };
 
+// The build SHA shown in the UI is baked in at build time from the git checkout. A build outside a
+// checkout keeps the 'unknown' placeholder.
+function buildInfo() {
+	let sha = 'unknown';
+	try {
+		sha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+			.toString()
+			.trim();
+	} catch {
+		// Not a git checkout; keep the 'unknown' placeholder.
+	}
+	return { sha: sha || 'unknown', date: new Date().toISOString().slice(0, 10) };
+}
+
+const { sha: BUILD_SHA, date: BUILD_DATE } = buildInfo();
+
 export default defineConfig({
+	define: {
+		__APP_BUILD_SHA__: JSON.stringify(BUILD_SHA),
+		__APP_BUILD_DATE__: JSON.stringify(BUILD_DATE)
+	},
 	plugins: [
 		tailwindcss(),
 		sveltekit({
