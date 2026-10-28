@@ -1,6 +1,6 @@
 ---
 name: pr
-description: Writes pull request bodies with a diagram of the change, before/after evidence, screenshots of UI changes, and merge danger. Use when opening or creating a PR, or writing or updating a PR description.
+description: "Use when writing a PR body."
 metadata:
   credits:
     skill: show-me
@@ -9,45 +9,17 @@ metadata:
     url: "https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md"
 ---
 
-## Workflow
-
-Copy this checklist into your response and tick it off:
-
-```
-PR body:
-- [ ] 1. Read the diff and classify it (UI or not)
-- [ ] 2. Summary: at least one diagram
-- [ ] 3. Evidence: screenshots for UI, test runs otherwise
-- [ ] 4. Merge Danger
-- [ ] 5. Check the body against the done list
-- [ ] 6. Post it
-```
-
-1. **Read the diff**: `git diff origin/main...HEAD --stat`, then the diff itself. The change is a **UI change** when it alters anything a user sees: a `.svelte` file's markup or styles, `src/app.css`, or copy. A change to a `.svelte` file's script alone is a UI change when it changes what renders.
-2. **Summary**: write it per [Summary](#summary).
-3. **Evidence**: write it per [Evidence](#evidence).
-4. **Merge Danger**: write it per [Merge Danger](#merge-danger).
-5. **Check** the body:
-   - The Summary holds at least one diagram, and every Mermaid block parses (no labels with unquoted `()`, `[]` or `:`).
-   - A UI change has before and after screenshots in light and dark mode, or Evidence says which capture failed and why.
-   - Terms match `CONTEXT.md`.
-6. **Post** per [Posting](#posting).
-
-Done when the PR's body on GitHub renders every diagram and image, and contains no `/tmp/` paths.
-
-## Template
-
-Use this template for the PR body:
+Use this template for writing the PR body:
 
 ```markdown
 ## Summary
 
-<one or two sentences, then the diagram(s)>
+<one or two sentences, then a diagram, diff-sketch, or tree only if the change is hard to follow from prose>
 
 ## Evidence
 
-**Before:** <screenshot/output/failing test run>
-**After:** <screenshot/output/passing test run>
+- **Before:** <screenshot/output/failing test run>
+  **After:** <screenshot/output/passing test run>
 
 ## Merge Danger
 
@@ -60,33 +32,13 @@ Use this template for the PR body:
 <optional: potential ramifications of merge>
 ```
 
+## Sections
+
 Skip all preambles and keep prose brief. Use the domain language in `CONTEXT.md`.
 
-## Summary
+### Summary
 
-Every Summary has at least one diagram showing how the changed code fits together. Default to a Mermaid diagram: GitHub renders it, and it shows flow between modules better than prose. Use a text view (tree, diff, pseudocode) when the point is shape rather than flow. Pick the smallest set of views that makes the change clear.
-
-- Show component interaction, control flow, or data flow with Mermaid:
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI
-    participant Daemon
-    User->>UI: choose command
-    UI->>Daemon: send expanded prompt
-    Daemon-->>UI: stream result
-```
-
-- Show module dependencies or state transitions with a Mermaid `flowchart` or `stateDiagram-v2`. Mark what the PR adds or changes with a class:
-
-```mermaid
-flowchart LR
-    page[+page.svelte] --> store[marksheet store]
-    store --> parse[parse/pdf.ts]
-    parse:::changed --> openrouter[openrouter.ts]
-    classDef changed fill:#fde68a,stroke:#b45309
-```
+Start with prose. Add a visual only when the shape of the change is hard to follow from the words alone, and then pick the smallest view that makes the key point clear. Many PRs need none.
 
 - Show logic or an algorithm as pseudocode:
 
@@ -124,6 +76,18 @@ src/
 ├── commands/       # parses user actions
 ├── sessions/       # owns session state
 └── transport/      # sends API requests
+```
+
+- Show component interaction, control flow, or data flow with Mermaid:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant Daemon
+    User->>UI: choose command
+    UI->>Daemon: send expanded prompt
+    Daemon-->>UI: stream result
 ```
 
 - Use `diff` when the point is what changes and the surrounding shape already exists. Match the diff shape to the topic.
@@ -185,13 +149,15 @@ function expandSkill(command: string): string {
 }
 ```
 
-Place each visual next to the short text it supports. Keep only the calls, files, props, states, and boundaries needed to understand the change. One or two views usually suffice.
+Place each visual next to the short text it supports. Keep only the calls, files, props, states, and boundaries needed to answer the question the change raises. One or two views usually suffice, and a diagram is never required.
 
-## Evidence
+### Evidence
 
-Concrete evidence that the change works, as a before and after.
+Concrete evidence that the change works. Show a before and after.
 
-### UI change: screenshots
+Screenshots are S-tier when the change is visual. Execution-based evidence is A-tier: test results, console output. Show the exact test that now fails and passes, using pseudocode.
+
+#### UI change: screenshots
 
 Every UI change gets screenshots of each changed screen, before and after, in light and dark mode. Capture them to `/tmp/<branch>/`, outside the repo.
 
@@ -229,17 +195,17 @@ Every UI change gets screenshots of each changed screen, before and after, in li
 
 A brand-new screen has no before; show the after alone. If capture fails, write under Evidence which screen is missing and the error, and fall back to test runs.
 
-### Other changes: test runs
+#### Other changes: test runs
 
 Show the exact test that failed before and passes after, as pseudocode, with the command output.
 
-## Merge Danger
+### Merge Danger
 
 Describe whether it's a one-way or two-way door. You can walk back through two-way doors, but not one-way doors. A PR that is cheap to roll back is lower risk. Changes that involve destructive actions or hard-to-reverse decisions (a stored data shape, a `localStorage` key, a deleted file users depend on) are one-way doors.
 
 The blast radius is the potential impact or scope of the changes introduced by this PR. Consider all possibilities. Examples are layout shift, breakages for consumers, mobile responsiveness, etc.
 
-## Posting
+### Posting
 
 Write the body to `/tmp/<branch>/body.md`, outside the repo. With no images, post it with `gh pr create --title "..." --body-file /tmp/<branch>/body.md` (or `gh pr edit <N> --body-file ...`).
 
