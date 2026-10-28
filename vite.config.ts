@@ -27,15 +27,16 @@ const notFoundForNonFiles: Plugin = {
 };
 
 // The build SHA shown in the UI is baked in at build time from the git checkout. A build outside a
-// checkout keeps the 'unknown' placeholder.
+// checkout (git exits 128, or is not installed) keeps the 'unknown' placeholder.
 function buildInfo() {
 	let sha = 'unknown';
 	try {
 		sha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
 			.toString()
 			.trim();
-	} catch {
-		// Not a git checkout; keep the 'unknown' placeholder.
+	} catch (error) {
+		const { status, code } = error as { status?: number; code?: string };
+		if (status !== 128 && code !== 'ENOENT') throw error;
 	}
 	return { sha: sha || 'unknown', date: new Date().toISOString().slice(0, 10) };
 }
