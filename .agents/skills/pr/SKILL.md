@@ -1,6 +1,6 @@
 ---
 name: pr
-description: "Use when writing a PR body."
+description: Writes pull request bodies with a diagram of the change, before/after evidence, screenshots of UI changes, and merge danger. Use when opening or creating a PR, or writing or updating a PR description.
 metadata:
   credits:
     skill: show-me
@@ -9,17 +9,45 @@ metadata:
     url: "https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md"
 ---
 
-Use this template for writing the PR body:
+## Workflow
+
+Copy this checklist into your response and tick it off:
+
+```
+PR body:
+- [ ] 1. Read the diff and classify it (UI or not)
+- [ ] 2. Summary: at least one diagram
+- [ ] 3. Evidence: screenshots for UI, test runs otherwise
+- [ ] 4. Merge Danger
+- [ ] 5. Check the body against the done list
+- [ ] 6. Post it
+```
+
+1. **Read the diff**: `git diff origin/main...HEAD --stat`, then the diff itself. The change is a **UI change** when it alters anything a user sees: a `.svelte` file's markup or styles, `src/app.css`, or copy. A change to a `.svelte` file's script alone is a UI change when it changes what renders.
+2. **Summary**: write it per [Summary](#summary).
+3. **Evidence**: write it per [Evidence](#evidence).
+4. **Merge Danger**: write it per [Merge Danger](#merge-danger).
+5. **Check** the body:
+   - The Summary holds at least one diagram, and every Mermaid block parses (no labels with unquoted `()`, `[]` or `:`).
+   - A UI change has before and after screenshots in light and dark mode, or Evidence says which capture failed and why.
+   - Terms match `CONTEXT.md`.
+6. **Post** per [Posting](#posting).
+
+Done when the PR's body on GitHub renders every diagram and image, and contains no `/tmp/` paths.
+
+## Template
+
+Use this template for the PR body:
 
 ```markdown
 ## Summary
 
-<diagram, diff-sketch, or tree>
+<one or two sentences, then the diagram(s)>
 
 ## Evidence
 
-- **Before:** <screenshot/output/failing test run>
-  **After:** <screenshot/output/passing test run>
+**Before:** <screenshot/output/failing test run>
+**After:** <screenshot/output/passing test run>
 
 ## Merge Danger
 
@@ -32,13 +60,33 @@ Use this template for writing the PR body:
 <optional: potential ramifications of merge>
 ```
 
-## Sections
+Skip all preambles and keep prose brief. Use the domain language in `CONTEXT.md`.
 
-Skip all preambles and keep prose brief. Use the user's domain language from `GLOSSARY.md`.
+## Summary
 
-### Summary
+Every Summary has at least one diagram showing how the changed code fits together. Default to a Mermaid diagram: GitHub renders it, and it shows flow between modules better than prose. Use a text view (tree, diff, pseudocode) when the point is shape rather than flow. Pick the smallest set of views that makes the change clear.
 
-Pick the smallest view that makes the key point clear.
+- Show component interaction, control flow, or data flow with Mermaid:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant Daemon
+    User->>UI: choose command
+    UI->>Daemon: send expanded prompt
+    Daemon-->>UI: stream result
+```
+
+- Show module dependencies or state transitions with a Mermaid `flowchart` or `stateDiagram-v2`. Mark what the PR adds or changes with a class:
+
+```mermaid
+flowchart LR
+    page[+page.svelte] --> store[marksheet store]
+    store --> parse[parse/pdf.ts]
+    parse:::changed --> openrouter[openrouter.ts]
+    classDef changed fill:#fde68a,stroke:#b45309
+```
 
 - Show logic or an algorithm as pseudocode:
 
@@ -76,18 +124,6 @@ src/
 ├── commands/       # parses user actions
 ├── sessions/       # owns session state
 └── transport/      # sends API requests
-```
-
-- Show component interaction, control flow, or data flow with Mermaid:
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI
-    participant Daemon
-    User->>UI: choose command
-    UI->>Daemon: send expanded prompt
-    Daemon-->>UI: stream result
 ```
 
 - Use `diff` when the point is what changes and the surrounding shape already exists. Match the diff shape to the topic.
@@ -144,27 +180,84 @@ For a state or control-flow change:
 
 ```ts
 function expandSkill(command: string): string {
-  const skillName = command.slice(1);
-  return `use the ${skillName} skill`;
+	const skillName = command.slice(1);
+	return `use the ${skillName} skill`;
 }
 ```
 
-#### Guidance
+Place each visual next to the short text it supports. Keep only the calls, files, props, states, and boundaries needed to understand the change. One or two views usually suffice.
 
-Place each visual next to the short text it supports. Keep only the calls, files, props, states, and boundaries needed to answer the user's current question or the options to resolve the current discussion point.
+## Evidence
 
-You may use one of these, you may use several, it is unlikely you will use all of them. Use your judgement and don't overwhelm the user.
+Concrete evidence that the change works, as a before and after.
 
-### Evidence
+### UI change: screenshots
 
-Concrete evidence that the change works. Show a before and after.
+Every UI change gets screenshots of each changed screen, before and after, in light and dark mode. Capture them to `/tmp/<branch>/`, outside the repo.
 
-Screenshots are S-tier - when the environment is set up for it and the change is visual. Embed them with the `upload-screenshots` skill. If the UI supports light and dark mode, show both.
+1. Serve the change: `npm run dev -- --port 5173`.
+2. Serve the base in a worktree:
 
-Execution-based evidence is A-tier. Test results, console output. Show the exact test that now fails and passes, using pseudocode.
+   ```shell
+   git worktree add /tmp/<branch>/base origin/main
+   ln -s "$PWD/node_modules" /tmp/<branch>/base/node_modules
+   (cd /tmp/<branch>/base && npx vite dev --port 5174)
+   ```
 
-### Merge Danger
+3. Run the capture script once per screen and side:
 
-Describe whether it's a one-way or two-way door. You can walk back through two-way doors, but not one-way doors. A PR that is cheap to roll back is lower risk. Changes that involve destructive actions or hard-to-reverse decisions are one-way doors.
+   ```shell
+   node .agents/skills/pr/screenshot.mjs http://localhost:5174/<path> /tmp/<branch> before-<screen>
+   node .agents/skills/pr/screenshot.mjs http://localhost:5173/<path> /tmp/<branch> after-<screen>
+   ```
+
+   Each run writes `<name>-light.png` and `<name>-dark.png`. If launch fails with `Executable doesn't exist`, run `npx playwright install chromium`, or set `CHROMIUM_PATH` to a Chromium already on the machine. A screen that needs state (an uploaded class, an open dialog) needs a Playwright script that drives the page there before capturing; reuse `screenshot.mjs` as its starting point.
+
+4. Open each PNG and confirm it shows the changed screen, not an error page or an empty state.
+5. Lay them out as a table:
+
+   ```markdown
+   |        | Before                                | After                                |
+   | ------ | ------------------------------------- | ------------------------------------ |
+   | Light  | ![x before, light](/tmp/<branch>/before-x-light.png) | ![x after, light](/tmp/<branch>/after-x-light.png) |
+   | Dark   | ![x before, dark](/tmp/<branch>/before-x-dark.png)   | ![x after, dark](/tmp/<branch>/after-x-dark.png)   |
+   ```
+
+   The alt text in each reference is what GitHub keeps.
+
+6. Remove the worktree: `git worktree remove /tmp/<branch>/base`.
+
+A brand-new screen has no before; show the after alone. If capture fails, write under Evidence which screen is missing and the error, and fall back to test runs.
+
+### Other changes: test runs
+
+Show the exact test that failed before and passes after, as pseudocode, with the command output.
+
+## Merge Danger
+
+Describe whether it's a one-way or two-way door. You can walk back through two-way doors, but not one-way doors. A PR that is cheap to roll back is lower risk. Changes that involve destructive actions or hard-to-reverse decisions (a stored data shape, a `localStorage` key, a deleted file users depend on) are one-way doors.
 
 The blast radius is the potential impact or scope of the changes introduced by this PR. Consider all possibilities. Examples are layout shift, breakages for consumers, mobile responsiveness, etc.
+
+## Posting
+
+Write the body to `/tmp/<branch>/body.md`, outside the repo. With no images, post it with `gh pr create --title "..." --body-file /tmp/<branch>/body.md` (or `gh pr edit <N> --body-file ...`).
+
+With images, `gh` uploads them with `--attach`, which needs push access to the repo and a `gh` whose `gh pr create --help` lists `--attach`; upgrade `gh` if it doesn't.
+
+1. Reference each image in the body by the exact path you will pass to `--attach` (the screenshot table above does this). `gh` replaces each referenced path with the uploaded URL in place.
+2. Post with one `--attach` per file:
+
+   ```shell
+   gh pr create --title "..." --body-file /tmp/<branch>/body.md \
+     --attach /tmp/<branch>/before-x-light.png \
+     --attach /tmp/<branch>/after-x-light.png \
+     --attach /tmp/<branch>/before-x-dark.png \
+     --attach /tmp/<branch>/after-x-dark.png
+   ```
+
+   To update an existing PR, use `gh pr edit <N> --body-file /tmp/<branch>/body.md` with the same `--attach` flags.
+
+3. Check: `gh pr view <N> --json body -q .body | grep /tmp/` prints nothing. An attached file the body never references is appended to the end of the body, so an image at the bottom means a path in the body is misspelt: fix the path and re-run `gh pr edit` with every `--attach`.
+
+Only images and videos upload, and each file attaches once per command. For a video, put `![](/tmp/<branch>/demo.mp4)` alone in its own paragraph to get a player.
