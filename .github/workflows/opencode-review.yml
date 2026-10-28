@@ -22,5 +22,3 @@ jobs:
         with:
           model: opencode-go/kimi-k3.1-pro
           use_github_token: true
-          prompt: |
-            Review this pull request against CODING_STANDARDS.md. Comment only; don't change files.

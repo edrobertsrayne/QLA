@@ -2,7 +2,7 @@
 
 ## Simplest thing that works
 
-QLA is a small personal project. YAGNI and KISS come first: build what the current task asks for, in the most boring shape that works, and leave the future to the change that needs it. DRY and single responsibility serve that aim. `CODING_STANDARDS.md` turns these into the rules code review checks; read it before writing or reviewing code.
+QLA is a small personal project. YAGNI and KISS come first: build what the current task asks for, in the most boring shape that works, and leave the future to the change that needs it. DRY and single responsibility serve that aim.
 
 ## Svelte
 
