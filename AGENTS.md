@@ -23,24 +23,6 @@ Treat what you know about any LLM (its id, generation, price, capabilities) as s
 - `DEFAULT_MODEL_ID` in `src/lib/server/parse/pdf.ts` is the one default. Every model call resolves its id with `resolveModelId(override?)`: the per-run override, else `OPENROUTER_MODEL`, else the default.
 - When the default changes, it must accept native PDF input (`supportsNativePdf`), stay first in `CURATED_MODELS`, and stay priced in `CURATED_PRICING` (`src/lib/server/parse/models.ts`).
 
-## Agent skills
-
-### Issue tracker
-
-GitHub issues in `edrobertsrayne/QLA`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-`CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
-
-## Pull requests
-
-Write every PR body with the `pr` skill (`.agents/skills/pr/SKILL.md`): a diagram only when the change needs one, and before/after screenshots of any UI change.
-
 ## Commits
 
 [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): description`, where type is one of `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `build`, `ci`. Write the description in lowercase and the imperative (`add`). Mark a breaking change with `!` or a `BREAKING CHANGE:` footer.
