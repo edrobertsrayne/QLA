@@ -11,15 +11,27 @@ Skip any question whose answer wouldn't change the plan.
 
 ## Asking a question
 
-For a decision with real tradeoffs, explain its implications, lay out the options with their advantages and disadvantages, and give your recommendation with the reasons for it. For a minor decision, one line plus your recommendation is enough.
+Ask every question as plain text in the chat. Never use a multiple-choice picker or any other question-asking tool: the user answers in their own words and may choose none of your options.
+
+Each question has three parts:
+
+1. **Options:** a short summary of the choices open to the user, with the pros and cons of each where they differ.
+2. **Recommendation:** the option you would pick.
+3. **Reasoning:** why, tied to the facts you know about this project.
+
+For a minor decision, one line per part is enough.
 
 Example:
 
-> **Where should retries live?** If the client retries, every caller gets it for free but a slow upstream blocks the request thread; if the job queue retries, callers stay fast but must handle "pending" results.
-> - Client: simpler, no new states.
-> - Queue: more moving parts, better under load.
+> **Where should retries live?**
 >
-> Recommend the client: current traffic is low and it adds no new states.
+> **Options**
+> - Client: every caller gets retries for free and there are no new states, but a slow upstream blocks the request thread.
+> - Job queue: callers stay fast, but they must handle "pending" results and it adds moving parts.
+>
+> **Recommendation:** the client.
+>
+> **Reasoning:** current traffic is low, so blocking is not a problem, and the queue adds states nothing else needs.
 
 ## Facts and decisions
 
