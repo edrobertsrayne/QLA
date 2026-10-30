@@ -12,7 +12,7 @@ in a parse tree. Teachers do not think in trees. They think in questions
 that may be broken into subquestions, and they do not care how deep the
 subdivision goes: `2a` and `2bii` are both simply parts of Question 2.
 
-`CONTEXT.md` now says exactly that. There are two levels and only two:
+`GLOSSARY.md` now says exactly that. There are two levels and only two:
 **Question** and **Subquestion**. One breakdown entry exists per undivided
 question and per marked subquestion; a subdivided question gets no entry of
 its own, and neither does an unmarked stem such as `2b` whose marks sit on
