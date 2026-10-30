@@ -28,7 +28,7 @@ specification, and the shipped code does not check the markscheme's
 Building the cache (storage location, invalidation on a spec revision,
 board/subject/tier as first-class inputs) was out of scope for getting
 Phase 1's pipeline working end to end, and no part of the shipped run flow
-depends on it existing. `CONTEXT.md` already documents the shipped,
+depends on it existing. `GLOSSARY.md` already documents the shipped,
 uncached, per-run behaviour.
 
 Separately, because the fetch target is a URL supplied by the user and
