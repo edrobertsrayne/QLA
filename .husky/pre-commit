@@ -1,3 +1,3 @@
-npx lint-staged
-npm run check
-npm run test
+# Format and lint the staged files only; CI checks the whole tree.
+# Serial, because the Prettier and ESLint globs overlap and both write files.
+npx lint-staged --concurrent false
