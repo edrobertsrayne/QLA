@@ -35,6 +35,21 @@ describe('By skill rows', () => {
 	});
 });
 
+describe('extra time on a report', () => {
+	it('carries how much of each mark and of the total was gained in extra time', () => {
+		const document = {
+			...documentWith({}),
+			extraTime: { 'student-1': { 'entry-1': 2 } }
+		};
+
+		const figures = reportFiguresFor(document, 'student-1');
+
+		expect(figures.total).toBe(4);
+		expect(figures.extraTime).toBe(2);
+		expect(figures.entries.map((row) => row.extra)).toEqual([2, 0]);
+	});
+});
+
 describe('report figures', () => {
 	it('claims no marks were dropped only for a paper that offers marks', () => {
 		const noTier = confirmed({

@@ -687,6 +687,44 @@ describe('marks', () => {
 		expect(store.document?.marks).toEqual({ 'student-1': { f1: 2 } });
 	});
 
+	it('files the extra-time part of a mark beside the mark, which still holds all of it', () => {
+		const { store } = openMarksheet();
+
+		store.setMark('student-1', 'entry-1', 3, 1);
+
+		expect(store.document?.marks).toEqual({ 'student-1': { 'entry-1': 3 } });
+		expect(store.document?.extraTime).toEqual({ 'student-1': { 'entry-1': 1 } });
+	});
+
+	it('forgets extra time when the mark is re-entered without it, or cleared', () => {
+		const { store } = openMarksheet();
+		store.setMark('student-1', 'entry-1', 3, 1);
+
+		store.setMark('student-1', 'entry-1', 3);
+		expect(store.document?.extraTime).toEqual({});
+
+		store.setMark('student-1', 'entry-1', 3, 3);
+		store.clearMark('student-1', 'entry-1');
+		expect(store.document?.marks).toEqual({});
+		expect(store.document?.extraTime).toEqual({});
+	});
+
+	it('refuses extra time that is more than the mark', () => {
+		const { store } = openMarksheet();
+
+		expect(store.setMark('student-1', 'entry-1', 2, 3)).toBe(MARK_REFUSAL);
+		expect(store.document?.marks).toEqual({});
+	});
+
+	it('takes a student’s extra time with them when they are removed', () => {
+		const { store } = openMarksheet();
+		store.setMark('student-1', 'entry-1', 3, 1);
+
+		store.removeStudent('student-1');
+
+		expect(store.document?.extraTime).toEqual({});
+	});
+
 	it('refuses a mark that is not a whole number', () => {
 		const { store } = openMarksheet({ marks: { 'student-1': { 'entry-1': 2 } } });
 

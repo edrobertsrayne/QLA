@@ -82,6 +82,7 @@ export function removeEntry(document: MarksheetDocument, entryId: string): strin
 	if (removed === undefined) return null;
 
 	for (const byEntry of Object.values(document.marks)) delete byEntry[entryId];
+	for (const byEntry of Object.values(document.extraTime)) delete byEntry[entryId];
 	document.commonQuestions = document.commonQuestions.filter(
 		(pair) => pair.tier1EntryId !== entryId && pair.tier2EntryId !== entryId
 	);

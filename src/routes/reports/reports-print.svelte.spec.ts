@@ -85,6 +85,21 @@ describe('one-page fit', () => {
 		await expect.element(page.getByText(/mm over the page/, { exact: false })).toBeInTheDocument();
 	});
 
+	it('shows the marks gained in extra time on the page, and none when there are none', async () => {
+		const withExtra = fitting();
+		withExtra.extraTime = { ada: { 'entry-0': 1, 'entry-1': 3 } };
+		seed(withExtra);
+		stubFetch();
+		await openReports();
+
+		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeInTheDocument();
+		const sheet = document.querySelector('main [data-report-id="ada"]');
+		expect(sheet?.querySelector('[data-testid="report-extra-time"]')?.textContent?.trim()).toBe(
+			'4 in extra time'
+		);
+		expect(sheet?.textContent).toContain('3/4+1');
+	});
+
 	/** Every copy of Ada's question table: screen and print alike. */
 	function layouts(): (string | null)[] {
 		return [

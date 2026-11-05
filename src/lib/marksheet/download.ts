@@ -102,20 +102,40 @@ function csvCell(value: string): string {
  * Lossy and one-way, by design: an unmarked cell is empty, an absent student is
  * flagged rather than dropped, and the total is the marks exactly as entered —
  * no band, no facility, nothing that could be read back as a marksheet.
+ *
+ * Marks include any gained in extra time. When anyone on the tier has some, the
+ * columns after the total say how much of each mark that was: first the student's
+ * extra-time total, then one column per entry. A tier with none has none of them.
  */
 export function marksCsvFile(document: MarksheetDocument, tier: TierIndex): QlaFile {
 	const entries = tierEntries(document, tier);
 	const students = document.students.filter((student) => student.tier === tier);
+	const extraOf = (studentId: string, entryId: string) =>
+		document.extraTime[studentId]?.[entryId] ?? 0;
+	const hasExtraTime = students.some((student) =>
+		entries.some((entry) => extraOf(student.id, entry.id) > 0)
+	);
 	const rows = students.map((student) => {
 		const marks = entries.map((entry) => document.marks[student.id]?.[entry.id]);
+		const extras = entries.map((entry) => extraOf(student.id, entry.id));
 		return [
 			student.surname,
 			student.firstName,
 			student.absent ? 'Y' : '',
 			...marks.map((mark) => (mark === undefined ? '' : String(mark))),
-			String(marks.reduce((sum, mark) => sum + (mark ?? 0), 0))
+			String(marks.reduce((sum, mark) => sum + (mark ?? 0), 0)),
+			...(hasExtraTime
+				? [
+						String(extras.reduce((sum, extra) => sum + extra, 0)),
+						...extras.map((extra) => (extra === 0 ? '' : String(extra)))
+					]
+				: [])
 		];
 	});
+	const extraHeads = hasExtraTime
+		? ['Extra time', ...entries.map((entry) => `${entry.label} extra time`)]
+		: [];
+	const extraMaxima = hasExtraTime ? ['', ...entries.map(() => '')] : [];
 	const maxima = entries.map((entry) => (entry.marks === null ? '' : String(entry.marks)));
 
 	return {
@@ -127,8 +147,15 @@ export function marksCsvFile(document: MarksheetDocument, tier: TierIndex): QlaF
 		].join('-'),
 		text:
 			[
-				['Surname', 'First name', 'Absent', ...entries.map((entry) => entry.label), 'Total'],
-				['Max', '', '', ...maxima, String(totalMarks(entries))],
+				[
+					'Surname',
+					'First name',
+					'Absent',
+					...entries.map((entry) => entry.label),
+					'Total',
+					...extraHeads
+				],
+				['Max', '', '', ...maxima, String(totalMarks(entries)), ...extraMaxima],
 				...rows
 			]
 				.map((row) => row.map(csvCell).join(','))

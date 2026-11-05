@@ -57,6 +57,7 @@ import {
 	marksOverMax,
 	pairOfEntry,
 	partnerIdOf,
+	putExtra,
 	putMark,
 	removeMark,
 	restingTier,
@@ -602,15 +603,19 @@ export class MarksheetStore {
 	 * never clamped to the entry's available marks: a typo is stored and flagged
 	 * rather than quietly rewritten into a mark the teacher never gave. Zero is a
 	 * mark; a cell with none is not in the map at all. A refused mark is returned
-	 * for the cell's notice to show.
+	 * for the cell's notice to show. `extra` is how much of the mark was gained in
+	 * extra time, none unless said; it is part of the mark, never on top of it.
 	 */
-	setMark(studentId: string, entryId: string, mark: number): string | null {
+	setMark(studentId: string, entryId: string, mark: number, extra = 0): string | null {
 		if (!Number.isInteger(mark) || mark < 0) return MARK_REFUSAL;
+		if (!Number.isInteger(extra) || extra < 0 || extra > mark) return MARK_REFUSAL;
 		const document = this.#markable(studentId, entryId);
 		if (!document) return null;
 		// The mark already there is not a change: re-entering it must not spend the
 		// undo the teacher still wants, or bump the document's timestamp.
-		if (!putMark(document.marks, studentId, entryId, mark)) return null;
+		const markChanged = putMark(document.marks, studentId, entryId, mark);
+		const extraChanged = putExtra(document.extraTime, studentId, entryId, extra);
+		if (!markChanged && !extraChanged) return null;
 		this.#mutated();
 		return null;
 	}
@@ -621,8 +626,10 @@ export class MarksheetStore {
 	 */
 	clearMark(studentId: string, entryId: string): void {
 		const document = this.#markable(studentId, entryId);
-		if (!document || !removeMark(document.marks, studentId, entryId)) return;
-		this.#mutated();
+		if (!document) return;
+		const markRemoved = removeMark(document.marks, studentId, entryId);
+		const extraRemoved = putExtra(document.extraTime, studentId, entryId, 0);
+		if (markRemoved || extraRemoved) this.#mutated();
 	}
 
 	/**
@@ -851,6 +858,7 @@ export class MarksheetStore {
 		if (!document || document.students.length === 0) return false;
 		document.students = [];
 		document.marks = {};
+		document.extraTime = {};
 		document.reports = {};
 		document.className = null;
 		this.#mutated();

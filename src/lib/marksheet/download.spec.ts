@@ -109,6 +109,25 @@ describe('marksCsvFile', () => {
 		expect(file.type).toBe('text/csv');
 	});
 
+	it('adds extra-time columns only when someone on the tier has extra time', () => {
+		const base = marksForSpreadsheet();
+
+		expect(marksCsvFile(base, 0).text).not.toContain('extra time');
+
+		const file = marksCsvFile({ ...base, extraTime: { 'student-1': { 'entry-2bii': 1 } } }, 0);
+
+		expect(file.text).toBe(
+			[
+				'Surname,First name,Absent,2bii,3a,Total,Extra time,2bii extra time,3a extra time',
+				'Max,,,4,2,6,,,',
+				// The mark still holds all of it: 3 in total, 1 of them in extra time.
+				'Lovelace,Ada,,3,,3,1,1,',
+				'Hopper,Grace,Y,0,2,2,0,,',
+				''
+			].join('\r\n')
+		);
+	});
+
 	it('names itself by assessment, class and tier, using the tier’s position when it has no name', () => {
 		expect(marksCsvFile(marksForSpreadsheet(), 0).filename).toBe('10x-ph1-10c1-higher-marks.csv');
 		expect(marksCsvFile(marksheet(), 0).filename).toBe('10x-ph1-10c1-tier-1-marks.csv');

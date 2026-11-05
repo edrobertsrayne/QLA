@@ -48,6 +48,7 @@ export function removeStudent(
 	const [student] = document.students.splice(index, 1);
 
 	delete document.marks[studentId];
+	delete document.extraTime[studentId];
 	delete document.reports[studentId];
 	return { kind: 'student-removal', name: studentName(student) };
 }

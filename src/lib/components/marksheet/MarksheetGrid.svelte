@@ -18,8 +18,10 @@
 	import { entryName, type QuestionBand } from '$lib/marksheet/breakdown.js';
 	import {
 		isOverMax,
+		markText,
 		otherTier,
 		readMarkText,
+		studentExtraTotal,
 		type BreakdownEntry,
 		type StoredStudent,
 		type TierIndex
@@ -42,6 +44,8 @@
 		CELL_EDITOR,
 		CELL_REVEAL,
 		COLUMN,
+		EXTRA_TIME_BG,
+		EXTRA_TIME_TEXT,
 		FROZEN_PROGRESS,
 		NAME_COLUMN,
 		PROGRESS_PIN,
@@ -88,6 +92,7 @@
 	const students = $derived(tier === null ? store.studentsWithoutTier() : store.studentsOf(tier));
 	const bands = $derived<QuestionBand[]>(tier === null ? [] : store.bandsOf(tier));
 	const marks = $derived(store.document?.marks ?? {});
+	const extraTime = $derived(store.document?.extraTime ?? {});
 	/** The open tier's parse findings: the ones its columns are flagged from. */
 	const warnings = $derived(tier === null ? [] : store.warningsOf(tier));
 	/** Grade columns beside the marks: total always, grade and to-next only with boundaries. */
@@ -164,6 +169,11 @@
 		return marks[student.id]?.[entry.id];
 	}
 
+	/** How much of a cell's mark was gained in extra time: 0 for none. */
+	function extraOf(student: StoredStudent, entry: BreakdownEntry): number {
+		return extraTime[student.id]?.[entry.id] ?? 0;
+	}
+
 	/**
 	 * Open a cell's editor holding `value`, with the caret after it. The editor is
 	 * in the DOM and has the caret before this returns: a teacher typing at speed
@@ -179,7 +189,12 @@
 
 	/** Open a cell's editor on the mark it already holds: what F2 and a double-click do. */
 	function editMark(student: StoredStudent, entry: BreakdownEntry): void {
-		startMarkEdit(student, entry, String(markOf(student, entry) ?? ''));
+		const mark = markOf(student, entry);
+		startMarkEdit(
+			student,
+			entry,
+			mark === undefined ? '' : markText(mark, extraOf(student, entry))
+		);
 	}
 
 	/**
@@ -195,10 +210,10 @@
 
 		const read = readMarkText(open.value);
 		if (read.kind === 'refused') {
-			return `“${open.value}” was not stored: a mark is a whole number, or empty for a cell with no mark.`;
+			return `“${open.value}” was not stored: a mark is a whole number, like 3, or 2+1 with extra time after the plus, or empty for a cell with no mark.`;
 		}
 		if (read.kind === 'clear') store.clearMark(open.studentId, open.entryId);
-		else return store.setMark(open.studentId, open.entryId, read.mark);
+		else return store.setMark(open.studentId, open.entryId, read.mark, read.extra);
 		return null;
 	}
 
@@ -295,11 +310,12 @@
 			return;
 		}
 
-		// A digit begins a mark, replacing whatever the cell holds. A keystroke
-		// that landed in the editor itself is the input's to take, not the grid's.
+		// A digit, or the plus of an all-extra-time mark, begins a mark, replacing
+		// whatever the cell holds. A keystroke that landed in the editor itself is
+		// the input's to take, not the grid's.
 		if (
 			key.length === 1 &&
-			/\d/.test(key) &&
+			/[\d+]/.test(key) &&
 			!event.metaKey &&
 			!event.ctrlKey &&
 			!event.altKey &&
@@ -457,7 +473,7 @@
 				{#each entries as entry (entry.id)}
 					<col style="width: {COLUMN.entry}" />
 				{/each}
-				<col style="width: 3rem" />
+				<col style="width: 4rem" />
 				{#if hasGrades}
 					<col style="width: 3rem" />
 					<col style="width: 5rem" />
@@ -523,6 +539,7 @@
 						{#each entries as entry (entry.id)}
 							{@const mark = markOf(student, entry)}
 							{@const overMax = mark !== undefined && isOverMax(mark, entry)}
+							{@const extra = extraOf(student, entry)}
 							<Table.Cell
 								role="gridcell"
 								data-testid="mark-cell"
@@ -533,6 +550,10 @@
 								style={CELL_REVEAL}
 								class={cn(
 									'border-l px-0.5 py-1 text-center tabular-nums',
+									// Marks gained in extra time, in the other pen, are tinted blue. An
+									// over-max mark keeps its red text, so only the tint is applied to it.
+									extra > 0 && EXTRA_TIME_BG,
+									extra > 0 && !overMax && EXTRA_TIME_TEXT,
 									// A mark above what the entry offers is kept and shown as the
 									// typo it is, never clamped into a mark nobody gave.
 									overMax && 'font-semibold text-destructive',
@@ -552,7 +573,6 @@
 										data-testid="mark-editor"
 										{@attach caretAtEnd}
 										aria-label={`Mark for ${name} on ${entryName(entry)}`}
-										inputmode="numeric"
 										class="m-0 block w-full min-w-0 appearance-none rounded-none border-0 bg-transparent p-0 text-center tabular-nums shadow-none outline-none ring-0"
 										value={sheet.editing.value}
 										oninput={(event) => {
@@ -561,7 +581,12 @@
 										onfocusout={onEditorFocusOut}
 									/>
 								{:else}
-									{mark ?? ''}
+									<!-- A cell with extra time reads as it is typed, standard part then the
+										     extra part: copied from here it pastes back as the same mark. -->
+									{#if mark !== undefined && extra > 0}{mark - extra}<sup
+											class="ml-px text-[10px]"
+											title="{extra} gained in extra time">+{extra}</sup
+										>{:else}{mark ?? ''}{/if}
 								{/if}
 							</Table.Cell>
 						{/each}
@@ -574,7 +599,13 @@
 								grade?.kind === 'partial' && 'text-muted-foreground italic'
 							)}
 						>
-							{#if grade?.kind === 'complete' || grade?.kind === 'partial'}{grade.total}{/if}
+							{#if grade?.kind === 'complete' || grade?.kind === 'partial'}{grade.total}{@const extraTotal =
+									document
+										? studentExtraTotal(document, student.id)
+										: 0}{#if extraTotal > 0}<!-- Worded, never `+n`: that is how a mark cell reads extra time. -->
+									<span class={cn('block text-[10px] leading-tight', EXTRA_TIME_TEXT)}
+										>{extraTotal} extra</span
+									>{/if}{/if}
 						</Table.Cell>
 						{#if hasGrades}
 							<Table.Cell

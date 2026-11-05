@@ -197,6 +197,7 @@ export function fromVersion2(document: Version2Document): MarksheetDocument {
 		],
 		students: document.students.map((student): StoredStudent => ({ ...student, tier: 0 })),
 		marks: document.marks,
+		extraTime: {},
 		commonQuestions: [],
 		topicNames: document.topicNames,
 		reports: document.reports
