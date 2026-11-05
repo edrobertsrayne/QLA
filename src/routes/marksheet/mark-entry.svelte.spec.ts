@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { confirmed, entry, seed, student, tier } from '$lib/marksheet/fixtures.spec-helpers.js';
-import { readMarkText } from '$lib/marksheet/document.js';
+import { copyOfDocument, readMarkText, type MarksheetDocument } from '$lib/marksheet/document.js';
+import { applyPaste, clipboardGrid } from '$lib/marksheet/paste.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { openPage } from '../spec-helpers.js';
 import {
@@ -83,16 +84,32 @@ describe('mark entry', () => {
 		}
 	});
 
-	it('words a total’s extra time so it cannot be pasted back as a mark', async () => {
+	it('copies a total’s extra time as one cell that pasting refuses, leaving the target alone', async () => {
 		const screen = openGrid();
 
 		await userEvent.click(markCell(screen, 'student-1', 'entry-1'));
 		await userEvent.keyboard('2+1{Enter}');
 
+		// What a copy of the total takes as plain text: the rendered text.
 		const total = document.querySelector('[data-testid="total-cell"][data-student-id="student-1"]');
-		// Rendered text, as a copy takes it: the total, then its extra time on a line below.
-		expect((total as HTMLElement).innerText.trim()).toBe('3\n1 extra');
-		expect(readMarkText('1 extra')).toEqual({ kind: 'refused' });
+		const copied = (total as HTMLElement).innerText;
+		const grid = clipboardGrid({ getData: (type) => (type === 'text/plain' ? copied : '') });
+
+		expect(grid).toHaveLength(1);
+		expect(grid[0]).toHaveLength(1);
+
+		// Pasted over a mark with extra time, it is refused and changes nothing.
+		const target = copyOfDocument(marksheetStore().document as MarksheetDocument);
+		const result = applyPaste(
+			target,
+			grid,
+			{ kind: 'marks', studentId: 'student-1', entryId: 'entry-1' },
+			0
+		);
+		expect(result.marksStored).toBe(0);
+		expect(result.refused).toHaveLength(1);
+		expect(target.marks).toEqual(marksheetStore().document?.marks);
+		expect(target.extraTime).toEqual({ 'student-1': { 'entry-1': 1 } });
 	});
 
 	it('keeps an over-max mark red when it has extra time', async () => {
