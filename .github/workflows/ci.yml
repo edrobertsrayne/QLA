@@ -24,7 +24,6 @@ jobs:
       - run: npm test
 
   review:
-    name: Review
     needs: ci
     # Forks get no secrets and a read-only token, so the review could not run or comment.
     if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
@@ -35,10 +34,8 @@ jobs:
       pull-requests: write
       issues: write
     steps:
-      - name: Get the code
-        uses: actions/checkout@v7
-      - name: Review the pull request
-        uses: anomalyco/opencode/github@latest
+      - uses: actions/checkout@v7
+      - uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
