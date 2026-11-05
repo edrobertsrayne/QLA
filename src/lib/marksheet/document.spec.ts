@@ -12,8 +12,10 @@ import {
 	hasTwoTiers,
 	marksOnEntry,
 	otherTier,
+	markText,
 	parseStoredDocument,
 	partnerIdOf,
+	readMarkText,
 	restingTier,
 	storedMarkCount,
 	studentTierName,
@@ -379,6 +381,7 @@ describe('reading a version 2 document', () => {
 				{ id: 'student-2', firstName: 'Alan', surname: 'Turing', absent: true, tier: 0 }
 			],
 			marks: { 'student-1': { 'entry-1': 3 } },
+			extraTime: {},
 			commonQuestions: [],
 			topicNames: { '3.2.1.4': 'Rates of reaction' },
 			reports: { 'student-1': REPORT }
@@ -986,5 +989,45 @@ describe('tier rules', () => {
 		expect(tierNameProblem(named('Higher', 'Foundation'), 0, 'Higher Tier')).toBeNull();
 		expect(tierNameProblem(named('Higher', null), 1, 'Foundation')).toBeNull();
 		expect(tierNameProblem(named(null, 'Foundation'), 0, 'Higher')).toBeNull();
+	});
+});
+
+describe('extra time', () => {
+	it('reads marks typed with the extra-time part after a plus', () => {
+		expect(readMarkText('3')).toEqual({ kind: 'mark', mark: 3, extra: 0 });
+		expect(readMarkText('2+1')).toEqual({ kind: 'mark', mark: 3, extra: 1 });
+		expect(readMarkText(' 2 + 2 ')).toEqual({ kind: 'mark', mark: 4, extra: 2 });
+		expect(readMarkText('+3')).toEqual({ kind: 'mark', mark: 3, extra: 3 });
+		expect(readMarkText('')).toEqual({ kind: 'clear' });
+		for (const refused of ['2+', '+', '1+1+1', '2.5', '-1', '+-1', 'x']) {
+			expect(readMarkText(refused)).toEqual({ kind: 'refused' });
+		}
+	});
+
+	it('writes a mark back as the text that reads as the same mark', () => {
+		expect(markText(3, 0)).toBe('3');
+		expect(markText(3, 1)).toBe('2+1');
+		expect(markText(3, 3)).toBe('+3');
+		for (const [mark, extra] of [
+			[3, 0],
+			[3, 1],
+			[3, 3]
+		]) {
+			expect(readMarkText(markText(mark, extra))).toEqual({ kind: 'mark', mark, extra });
+		}
+	});
+
+	it('reads a document with no extra time, and refuses extra time that is not part of a mark', () => {
+		const parse = (overrides: Record<string, unknown>) =>
+			parseStoredDocument(JSON.stringify(rawVersion3(overrides)));
+		const marks = { 'student-1': { 'entry-1': 3 } };
+
+		expect(parse({ marks })?.extraTime).toEqual({});
+		expect(parse({ marks, extraTime: { 'student-1': { 'entry-1': 2 } } })?.extraTime).toEqual({
+			'student-1': { 'entry-1': 2 }
+		});
+		expect(parse({ marks, extraTime: { 'student-1': { 'entry-1': 4 } } })).toBeNull();
+		expect(parse({ marks, extraTime: { 'student-1': { 'entry-1': 0 } } })).toBeNull();
+		expect(parse({ marks, extraTime: { 'student-1': { 'entry-2': 1 } } })).toBeNull();
 	});
 });

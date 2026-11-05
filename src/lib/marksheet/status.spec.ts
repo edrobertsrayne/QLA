@@ -29,6 +29,7 @@ function marksheet(lastExportedAt: string | null): MarksheetDocument {
 		],
 		students: [],
 		marks: {},
+		extraTime: {},
 		commonQuestions: [],
 		topicNames: {},
 		reports: {}

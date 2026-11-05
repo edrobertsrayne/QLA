@@ -116,6 +116,10 @@ _Avoid_: Score, grade
 A breakdown entry for which a student has no mark yet; excluded from analysis. Not the same as a mark of 0.
 _Avoid_: Blank, missing, N/A, zero
 
+**Extra time**:
+The part of a mark a student gained in extra time, written in a different colour pen once their standard time ended. Recorded per mark, as part of it and never on top: a mark of 3 with 1 in extra time is 2 gained in standard time. Typed `3` (none), `2+1` (the plus marks the extra-time part) or `+3` (all of it). Marks and every total, grade and analysis count all of it; only the marksheet shows the split.
+_Avoid_: Access arrangement (the reason a student has extra time is not recorded)
+
 **Absent**:
 A flag on a student, not a mark: every one of that student's marks is ignored in every denominator. Marks entered before the flag was set are kept and count again if it is cleared.
 _Avoid_: DNS, missing, zero

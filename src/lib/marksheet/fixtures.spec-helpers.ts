@@ -79,6 +79,7 @@ export function confirmed(overrides: Partial<MarksheetDocument> = {}): Marksheet
 		tiers: [tier()],
 		students: [],
 		marks: {},
+		extraTime: {},
 		commonQuestions: [],
 		topicNames: {},
 		reports: {},

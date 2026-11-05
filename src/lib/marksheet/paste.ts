@@ -8,7 +8,7 @@
 // and separate from the store, so the store's block application can be tested
 // over plain rows.
 
-import { isOverMax, putMark, readMarkText, removeMark, tierEntries } from './document.js';
+import { isOverMax, putExtra, putMark, readMarkText, removeMark, tierEntries } from './document.js';
 import type { MarksheetDocument, TierIndex } from './document.js';
 import { newStudent, readName } from './students.js';
 import { agree, count } from '$lib/prose.js';
@@ -210,7 +210,8 @@ export function applyPaste(
 			const read = readMarkText(raw);
 
 			if (read.kind === 'clear') {
-				if (!removeMark(document.marks, target.id, entry.id)) continue;
+				const removed = removeMark(document.marks, target.id, entry.id);
+				if (!(putExtra(document.extraTime, target.id, entry.id, 0) || removed)) continue;
 				result.marksCleared += 1;
 				result.changed = true;
 				continue;
@@ -225,7 +226,8 @@ export function applyPaste(
 				continue;
 			}
 
-			if (!putMark(document.marks, target.id, entry.id, read.mark)) continue;
+			const stored = putMark(document.marks, target.id, entry.id, read.mark);
+			if (!(putExtra(document.extraTime, target.id, entry.id, read.extra) || stored)) continue;
 			result.marksStored += 1;
 			result.changed = true;
 			if (isOverMax(read.mark, entry)) result.overMax += 1;

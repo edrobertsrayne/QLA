@@ -120,6 +120,25 @@ export function parseMarks(value: unknown): Record<string, Record<string, number
 	return marks;
 }
 
+/**
+ * The extra-time part of each mark. Each is a whole number of at least 1, and
+ * no more than the mark it is part of: a cell has no extra time without a mark.
+ */
+export function parseExtraTime(
+	value: unknown,
+	marks: Record<string, Record<string, number>>
+): Record<string, Record<string, number>> | null {
+	const parsed = parseMarks(value);
+	if (!parsed) return null;
+	for (const [studentId, byEntry] of Object.entries(parsed)) {
+		for (const [entryId, extra] of Object.entries(byEntry)) {
+			const mark = marks[studentId]?.[entryId];
+			if (extra < 1 || mark === undefined || extra > mark) return null;
+		}
+	}
+	return parsed;
+}
+
 function parseGradeBoundary(value: unknown): GradeBoundary | null {
 	if (!isRecord(value)) return null;
 	const { label, minimum } = value;

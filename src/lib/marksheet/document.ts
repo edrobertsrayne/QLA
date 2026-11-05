@@ -18,6 +18,7 @@ import {
 	parseAll,
 	parseAoDescriptions,
 	parseBoundaries,
+	parseExtraTime,
 	parseMarks,
 	parseReports,
 	parseStoredBreakdown,
@@ -198,6 +199,13 @@ export interface MarksheetDocument {
 	students: StoredStudent[];
 	/** Sparse: `marks[studentId][entryId]`, absent key = unmarked. */
 	marks: Record<string, Record<string, number>>;
+	/**
+	 * Sparse: `extraTime[studentId][entryId]` is how many of that mark were gained
+	 * in extra time (written in the other colour pen), from 1 up to the mark.
+	 * Absent = all of the mark, if any, was gained in standard time. The mark
+	 * itself always includes it, so no total or grade needs to know about it.
+	 */
+	extraTime: Record<string, Record<string, number>>;
 	/** Questions printed in both tiers' papers. Empty on one tier. */
 	commonQuestions: CommonQuestion[];
 	/** Student-readable name per normalised specification-point code. */
@@ -351,6 +359,10 @@ function parseVersion3Document(value: Record<string, unknown>): MarksheetDocumen
 	const marks = parseMarks(value['marks']);
 	if (!marks) return null;
 
+	// Absent in a document written before extra time was recorded: none.
+	const extraTime = parseExtraTime(value['extraTime'] ?? {}, marks);
+	if (!extraTime) return null;
+
 	const commonQuestions = parseCommonQuestions(value['commonQuestions']);
 	if (!commonQuestions) return null;
 
@@ -373,6 +385,7 @@ function parseVersion3Document(value: Record<string, unknown>): MarksheetDocumen
 		tiers,
 		students,
 		marks,
+		extraTime,
 		commonQuestions,
 		topicNames,
 		reports
@@ -429,16 +442,21 @@ export function parseStoredDocument(raw: string): MarksheetDocument | null {
 export function dropUnreachableMarks(document: MarksheetDocument): MarksheetDocument {
 	const studentIds = new Set(document.students.map((student) => student.id));
 	const entryIds = new Set(allEntries(document).map((entry) => entry.id));
-	const marks: Record<string, Record<string, number>> = {};
-	for (const [studentId, byEntry] of Object.entries(document.marks)) {
-		if (!studentIds.has(studentId)) continue;
-		const kept: Record<string, number> = {};
-		for (const [entryId, mark] of Object.entries(byEntry)) {
-			if (entryIds.has(entryId)) kept[entryId] = mark;
+	const keep = (
+		source: Record<string, Record<string, number>>
+	): Record<string, Record<string, number>> => {
+		const result: Record<string, Record<string, number>> = {};
+		for (const [studentId, byEntry] of Object.entries(source)) {
+			if (!studentIds.has(studentId)) continue;
+			const kept: Record<string, number> = {};
+			for (const [entryId, value] of Object.entries(byEntry)) {
+				if (entryIds.has(entryId)) kept[entryId] = value;
+			}
+			result[studentId] = kept;
 		}
-		marks[studentId] = kept;
-	}
-	return { ...document, marks };
+		return result;
+	};
+	return { ...document, marks: keep(document.marks), extraTime: keep(document.extraTime) };
 }
 
 /**
@@ -645,6 +663,17 @@ export function studentTotal(document: MarksheetDocument, studentId: string): nu
 	);
 }
 
+/** Marks one student gained in extra time across their own tier's entries. */
+export function studentExtraTotal(document: MarksheetDocument, studentId: string): number {
+	const student = document.students.find((candidate) => candidate.id === studentId);
+	if (student === undefined || student.tier === null) return 0;
+	const extra = document.extraTime[studentId] ?? {};
+	return entriesOfStudent(document, student).reduce(
+		(sum, entry) => sum + (extra[entry.id] ?? 0),
+		0
+	);
+}
+
 /** Same wording, item for item, in both sections. */
 export function sameProse(a: ReportProse, b: ReportProse): boolean {
 	return (
@@ -718,8 +747,18 @@ export function isWholeNumber(typed: string): boolean {
 	return /^\d+$/.test(typed.trim());
 }
 
-/** Typed or pasted cell text, read as a mark. */
-export type MarkText = { kind: 'clear' } | { kind: 'mark'; mark: number } | { kind: 'refused' };
+/**
+ * Typed or pasted cell text, read as a mark. `extra` is how much of the mark was
+ * gained in extra time: `3` is all standard time, `2+1` is two standard and one
+ * extra, `+3` is all extra time. The mark is the two added together.
+ */
+export type MarkText =
+	{ kind: 'clear' } | { kind: 'mark'; mark: number; extra: number } | { kind: 'refused' };
+
+/** A mark as it is typed back into its cell: the inverse of `readMarkText`. */
+export function markText(mark: number, extra: number): string {
+	return extra === 0 ? String(mark) : `${mark - extra === 0 ? '' : mark - extra}+${extra}`;
+}
 
 /** Why a mark is refused, wherever one is stored: a cell's text or the store's command. */
 export const MARK_REFUSAL = 'A mark must be a whole number, or empty for a cell with no mark.';
@@ -727,12 +766,15 @@ export const MARK_REFUSAL = 'A mark must be a whole number, or empty for a cell 
 /** Why an entry's available marks are refused. */
 export const ENTRY_MARKS_REFUSAL = 'Available marks must be a whole number of at least 1.';
 
-/** Typed or pasted cell text as a mark: empty clears, a whole number is a mark, anything else is refused. */
+/** Typed or pasted cell text as a mark: empty clears, `3`, `2+1` or `+3` is a mark, anything else is refused. */
 export function readMarkText(text: string): MarkText {
 	const typed = text.trim();
 	if (typed === '') return { kind: 'clear' };
-	if (!isWholeNumber(typed)) return { kind: 'refused' };
-	return { kind: 'mark', mark: Number(typed) };
+	if (isWholeNumber(typed)) return { kind: 'mark', mark: Number(typed), extra: 0 };
+	const split = /^(\d*)\s*\+\s*(\d+)$/.exec(typed);
+	if (!split) return { kind: 'refused' };
+	const extra = Number(split[2]);
+	return { kind: 'mark', mark: Number(split[1] || '0') + extra, extra };
 }
 
 /**
@@ -760,6 +802,28 @@ export function putMark(
 	if (marks[studentId]?.[entryId] === mark) return false;
 	marks[studentId] ??= {};
 	marks[studentId][entryId] = mark;
+	return true;
+}
+
+/**
+ * Record how much of a cell's mark was gained in extra time, and say whether
+ * that changed. Zero is the default and is not stored, and a student with none
+ * left leaves nothing behind.
+ */
+export function putExtra(
+	extraTime: MarksheetDocument['extraTime'],
+	studentId: string,
+	entryId: string,
+	extra: number
+): boolean {
+	if ((extraTime[studentId]?.[entryId] ?? 0) === extra) return false;
+	if (extra === 0) {
+		delete extraTime[studentId][entryId];
+		if (Object.keys(extraTime[studentId]).length === 0) delete extraTime[studentId];
+		return true;
+	}
+	extraTime[studentId] ??= {};
+	extraTime[studentId][entryId] = extra;
 	return true;
 }
 

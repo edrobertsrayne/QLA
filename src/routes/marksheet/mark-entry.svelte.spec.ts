@@ -54,6 +54,24 @@ describe('mark entry', () => {
 		expect(focusedCell()).toBe(markCell(screen, 'student-2', 'entry-1'));
 	});
 
+	it('records the part of a mark gained in extra time, and shows it', async () => {
+		const screen = openGrid();
+
+		await userEvent.click(markCell(screen, 'student-1', 'entry-1'));
+		await userEvent.keyboard('{+}1{Enter}');
+		await userEvent.keyboard('2+1{Enter}');
+
+		expect(marksheetStore().document?.marks).toEqual({
+			'student-1': { 'entry-1': 1 },
+			'student-2': { 'entry-1': 3 }
+		});
+		expect(marksheetStore().document?.extraTime).toEqual({
+			'student-1': { 'entry-1': 1 },
+			'student-2': { 'entry-1': 1 }
+		});
+		expect(cellText(screen, 'student-2', 'entry-1')).toBe('3+1');
+	});
+
 	it('counts a student’s progress as marks are entered', async () => {
 		const screen = openGrid();
 

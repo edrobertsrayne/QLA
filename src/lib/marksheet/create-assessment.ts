@@ -171,6 +171,7 @@ export function assessmentFromParses(
 		tiers,
 		students: [],
 		marks: {},
+		extraTime: {},
 		commonQuestions,
 		topicNames: {},
 		reports: {}
