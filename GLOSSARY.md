@@ -117,7 +117,7 @@ A breakdown entry for which a student has no mark yet; excluded from analysis. N
 _Avoid_: Blank, missing, N/A, zero
 
 **Extra time**:
-The part of a mark a student gained in extra time, written in a different colour pen once their standard time ended. Recorded per mark, as part of it and never on top: a mark of 3 with 1 in extra time is 2 gained in standard time. Typed `3` (none), `2+1` (the plus marks the extra-time part) or `+3` (all of it). Marks and every total, grade and analysis count all of it; only the marksheet shows the split.
+The part of a mark a student gained in extra time, written in a different colour pen once their standard time ended. Recorded per mark, as part of it and never on top: a mark of 3 with 1 in extra time is 2 gained in standard time. Typed `3` (none), `2+1` (the plus marks the extra-time part) or `+3` (all of it). Marks and every total, grade and analysis count all of it; the marksheet, a student's report and the marks export show the split, and the report model never sees it.
 _Avoid_: Access arrangement (the reason a student has extra time is not recorded)
 
 **Absent**:

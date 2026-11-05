@@ -9,7 +9,13 @@
 
 import { assessmentObjectiveOf } from '$lib/parse/assessment-objectives.js';
 import { facilityBand, type RagBand } from './analysis.js';
-import { entriesOfStudent, studentTotal, totalMarks, type MarksheetDocument } from './document.js';
+import {
+	entriesOfStudent,
+	studentExtraTotal,
+	studentTotal,
+	totalMarks,
+	type MarksheetDocument
+} from './document.js';
 import { rollupBy, topicNamesFor, type RollupTotals } from './report-rollup.js';
 
 /** One roll-up row: marks summed over the entries carrying the name. */
@@ -39,6 +45,8 @@ export interface ReportEntryFigures {
 	entryId: string;
 	label: string;
 	gained: number;
+	/** How much of `gained` was gained in extra time. Display only: never sent to the model. */
+	extra: number;
 	available: number;
 	band: RagBand;
 }
@@ -62,6 +70,8 @@ function descriptionOf(document: MarksheetDocument, name: string): string | null
 /** Every figure on one student's report, calculated locally from the document. */
 export interface StudentReportFigures {
 	total: number;
+	/** How much of `total` was gained in extra time. Display only: never sent to the model. */
+	extraTime: number;
 	available: number;
 	percent: number;
 	topics: RollupRow[];
@@ -77,6 +87,7 @@ export function reportFiguresFor(
 	const student = document.students.find((candidate) => candidate.id === studentId);
 	const entries = student ? entriesOfStudent(document, student) : [];
 	const marks = document.marks[studentId] ?? {};
+	const extraMarks = document.extraTime[studentId] ?? {};
 	const rows = entries.map((entry) => ({
 		entry,
 		gained: marks[entry.id] ?? 0,
@@ -87,6 +98,7 @@ export function reportFiguresFor(
 	const total = studentTotal(document, studentId);
 	return {
 		total,
+		extraTime: studentExtraTotal(document, studentId),
 		available,
 		percent: available === 0 ? 0 : Math.round((total / available) * 100),
 		topics: rollupBy(rows, (row) => topicNamesFor(document, row.entry.specPoint)).map(toRow),
@@ -98,6 +110,7 @@ export function reportFiguresFor(
 			entryId: entry.id,
 			label: entry.label,
 			gained,
+			extra: extraMarks[entry.id] ?? 0,
 			available,
 			band: shareOf(gained, available).band
 		}))

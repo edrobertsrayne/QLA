@@ -198,6 +198,11 @@
 						{figures.total}/{figures.available}
 					</div>
 					<div class="text-[10pt]">{figures.percent}%</div>
+					{#if figures.extraTime > 0}
+						<div class="text-[8pt] leading-tight" data-testid="report-extra-time">
+							{figures.extraTime} in extra time
+						</div>
+					{/if}
 				</div>
 				{#if grade}
 					<div
@@ -311,7 +316,7 @@
 					<colgroup>
 						<col class="w-[3.2em]" />
 						<col />
-						<col class="w-[3.4em]" />
+						<col class="w-[4.6em]" />
 						<col class="w-[1.6em]" />
 					</colgroup>
 					<thead>
@@ -328,7 +333,12 @@
 								<tr>
 									<td class="align-top font-medium">{row.label}</td>
 									<td class="max-w-0 truncate">{row.summary}</td>
-									<td class="text-right align-top tabular-nums">{row.gained}/{row.available}</td>
+									<td class="text-right align-top tabular-nums"
+										>{row.gained}/{row.available}{#if row.extra > 0}<sup
+												class="ml-px font-semibold"
+												title="{row.extra} gained in extra time">+{row.extra}</sup
+											>{/if}</td
+									>
 									<td class="pl-1 align-top"><BandMark band={row.band} /></td>
 								</tr>
 							{/each}
@@ -345,6 +355,9 @@
 				<span class="flex items-center gap-1"><BandMark band="green" /> 70% or more</span>
 				<span class="flex items-center gap-1"><BandMark band="amber" /> 40–69%</span>
 				<span class="flex items-center gap-1"><BandMark band="red" /> below 40%</span>
+				{#if figures.extraTime > 0}
+					<span><sup class="font-semibold">+n</sup> marks gained in extra time</span>
+				{/if}
 			</p>
 		</footer>
 	</div>
