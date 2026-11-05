@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { confirmed, entry, seed, student, tier } from '$lib/marksheet/fixtures.spec-helpers.js';
+import { readMarkText } from '$lib/marksheet/document.js';
 import { marksheetStore } from '$lib/marksheet/index.js';
 import { openPage } from '../spec-helpers.js';
 import {
@@ -69,7 +70,30 @@ describe('mark entry', () => {
 			'student-1': { 'entry-1': 1 },
 			'student-2': { 'entry-1': 1 }
 		});
-		expect(cellText(screen, 'student-2', 'entry-1')).toBe('3+1');
+		// A cell reads as it is typed, so copying it pastes back as the same mark.
+		expect(cellText(screen, 'student-2', 'entry-1')).toBe('2+1');
+		expect(cellText(screen, 'student-1', 'entry-1')).toBe('0+1');
+		for (const studentId of ['student-1', 'student-2']) {
+			const stored = marksheetStore().document;
+			expect(readMarkText(cellText(screen, studentId, 'entry-1'))).toEqual({
+				kind: 'mark',
+				mark: stored?.marks[studentId]['entry-1'],
+				extra: stored?.extraTime[studentId]['entry-1']
+			});
+		}
+	});
+
+	it('keeps an over-max mark red when it has extra time', async () => {
+		const screen = openGrid();
+
+		await userEvent.click(markCell(screen, 'student-1', 'entry-1'));
+		// The entry is out of 4: 4 and 1 more is over it.
+		await userEvent.keyboard('4+1{Enter}');
+
+		const cell = markCell(screen, 'student-1', 'entry-1');
+		expect(cell.getAttribute('aria-invalid')).toBe('true');
+		expect(cell.className).toContain('text-destructive');
+		expect(cell.className).not.toContain('text-sky-700');
 	});
 
 	it('counts a student’s progress as marks are entered', async () => {

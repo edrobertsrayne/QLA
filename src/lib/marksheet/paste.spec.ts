@@ -66,6 +66,29 @@ describe('applying a block', () => {
 		});
 	});
 
+	it('reads a pasted split mark back as the same mark, and drops extra time it no longer says', () => {
+		const document = pasteSheet({
+			marks: { 'student-1': { 'entry-2': 3 } },
+			extraTime: { 'student-1': { 'entry-2': 1 } }
+		});
+
+		// What a cell with extra time reads as: the standard part, then the extra part.
+		applyPaste(
+			document,
+			[['2+1', '0+3']],
+			{ kind: 'marks', studentId: 'student-1', entryId: 'entry-1' },
+			0
+		);
+
+		expect(document.marks).toEqual({ 'student-1': { 'entry-1': 3, 'entry-2': 3 } });
+		expect(document.extraTime).toEqual({ 'student-1': { 'entry-1': 1, 'entry-2': 3 } });
+
+		// A plain number overwrites the extra time the cell had.
+		applyPaste(document, [['3']], { kind: 'marks', studentId: 'student-1', entryId: 'entry-2' }, 0);
+
+		expect(document.extraTime).toEqual({ 'student-1': { 'entry-1': 1 } });
+	});
+
 	it('clears a mark when the pasted cell is empty', () => {
 		const document = pasteSheet({ marks: { 'student-1': { 'entry-1': 2 } } });
 

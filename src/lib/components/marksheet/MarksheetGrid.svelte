@@ -550,11 +550,12 @@
 								style={CELL_REVEAL}
 								class={cn(
 									'border-l px-0.5 py-1 text-center tabular-nums',
+									// Marks gained in extra time, in the other pen, are tinted. This
+									// comes first so an over-max mark's red text still wins over it.
+									extra > 0 && EXTRA_TIME_CELL,
 									// A mark above what the entry offers is kept and shown as the
 									// typo it is, never clamped into a mark nobody gave.
 									overMax && 'font-semibold text-destructive',
-									// Marks gained in extra time, in the other pen, are tinted.
-									extra > 0 && EXTRA_TIME_CELL,
 									isActiveCell(student.id, entry.id) && selectedCell,
 									student.absent && 'bg-muted/40'
 								)}
@@ -579,10 +580,12 @@
 										onfocusout={onEditorFocusOut}
 									/>
 								{:else}
-									{mark ?? ''}{#if mark !== undefined && extra > 0 && extra < mark}<sup
+									<!-- A cell with extra time reads as it is typed, standard part then the
+										     extra part: copied from here it pastes back as the same mark. -->
+									{#if mark !== undefined && extra > 0}{mark - extra}<sup
 											class="ml-px text-[10px]"
 											title="{extra} gained in extra time">+{extra}</sup
-										>{/if}
+										>{:else}{mark ?? ''}{/if}
 								{/if}
 							</Table.Cell>
 						{/each}
