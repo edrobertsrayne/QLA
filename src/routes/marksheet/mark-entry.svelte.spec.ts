@@ -83,6 +83,18 @@ describe('mark entry', () => {
 		}
 	});
 
+	it('words a total’s extra time so it cannot be pasted back as a mark', async () => {
+		const screen = openGrid();
+
+		await userEvent.click(markCell(screen, 'student-1', 'entry-1'));
+		await userEvent.keyboard('2+1{Enter}');
+
+		const total = document.querySelector('[data-testid="total-cell"][data-student-id="student-1"]');
+		// Rendered text, as a copy takes it: the total, then its extra time on a line below.
+		expect((total as HTMLElement).innerText.trim()).toBe('3\n1 extra');
+		expect(readMarkText('1 extra')).toEqual({ kind: 'refused' });
+	});
+
 	it('keeps an over-max mark red when it has extra time', async () => {
 		const screen = openGrid();
 
@@ -93,7 +105,8 @@ describe('mark entry', () => {
 		const cell = markCell(screen, 'student-1', 'entry-1');
 		expect(cell.getAttribute('aria-invalid')).toBe('true');
 		expect(cell.className).toContain('text-destructive');
-		expect(cell.className).not.toContain('text-sky-700');
+		// No blue text in either theme, or it would replace the red in dark mode.
+		expect(cell.className).not.toContain('text-sky');
 	});
 
 	it('counts a student’s progress as marks are entered', async () => {

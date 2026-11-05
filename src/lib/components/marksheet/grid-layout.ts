@@ -28,4 +28,4 @@ export const rowControl =
 	'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100';
 /** Marks gained in extra time, written in the other colour pen. */
 export const EXTRA_TIME_TEXT = 'text-sky-700 dark:text-sky-300';
-export const EXTRA_TIME_CELL = `bg-sky-100 dark:bg-sky-950 ${EXTRA_TIME_TEXT}`;
+export const EXTRA_TIME_BG = 'bg-sky-100 dark:bg-sky-950';

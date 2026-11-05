@@ -44,7 +44,7 @@
 		CELL_EDITOR,
 		CELL_REVEAL,
 		COLUMN,
-		EXTRA_TIME_CELL,
+		EXTRA_TIME_BG,
 		EXTRA_TIME_TEXT,
 		FROZEN_PROGRESS,
 		NAME_COLUMN,
@@ -550,9 +550,10 @@
 								style={CELL_REVEAL}
 								class={cn(
 									'border-l px-0.5 py-1 text-center tabular-nums',
-									// Marks gained in extra time, in the other pen, are tinted. This
-									// comes first so an over-max mark's red text still wins over it.
-									extra > 0 && EXTRA_TIME_CELL,
+									// Marks gained in extra time, in the other pen, are tinted blue. An
+									// over-max mark keeps its red text, so only the tint is applied to it.
+									extra > 0 && EXTRA_TIME_BG,
+									extra > 0 && !overMax && EXTRA_TIME_TEXT,
 									// A mark above what the entry offers is kept and shown as the
 									// typo it is, never clamped into a mark nobody gave.
 									overMax && 'font-semibold text-destructive',
@@ -599,9 +600,11 @@
 							)}
 						>
 							{#if grade?.kind === 'complete' || grade?.kind === 'partial'}{grade.total}{@const extraTotal =
-									document ? studentExtraTotal(document, student.id) : 0}{#if extraTotal > 0}<span
-										class={cn('ml-1 text-xs', EXTRA_TIME_TEXT)}
-										title="{extraTotal} gained in extra time">+{extraTotal}</span
+									document
+										? studentExtraTotal(document, student.id)
+										: 0}{#if extraTotal > 0}<!-- Worded, never `+n`: that is how a mark cell reads extra time. -->
+									<span class={cn('block text-[10px] leading-tight', EXTRA_TIME_TEXT)}
+										>{extraTotal} extra</span
 									>{/if}{/if}
 						</Table.Cell>
 						{#if hasGrades}
