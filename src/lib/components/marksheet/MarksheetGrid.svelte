@@ -602,9 +602,8 @@
 							{#if grade?.kind === 'complete' || grade?.kind === 'partial'}{grade.total}{@const extraTotal =
 									document
 										? studentExtraTotal(document, student.id)
-										: 0}{#if extraTotal > 0}<!-- Worded, never `+n`: that is how a mark cell reads extra time. -->
-									<span class={cn('block text-[10px] leading-tight', EXTRA_TIME_TEXT)}
-										>{extraTotal} extra</span
+										: 0}{#if extraTotal > 0}<!-- Worded, never `+n` (how a mark cell reads extra time) and inline, so it copies as one cell. -->
+									<span class={cn('text-[10px]', EXTRA_TIME_TEXT)}>&nbsp;{extraTotal} extra</span
 									>{/if}{/if}
 						</Table.Cell>
 						{#if hasGrades}
