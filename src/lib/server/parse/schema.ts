@@ -23,7 +23,7 @@ export interface ParseQuestion {
 	questionNumber: string;
 	/** Positive integer marks, or null when unknowable from the inputs. */
 	marks: number | null;
-	/** 3–8 word summary of what the question or subquestion asks. */
+	/** 3–8 word label naming the skill or knowledge the question or subquestion tests, not its context. */
 	summary: string;
 	/**
 	 * The exact spec reference the markscheme printed, or a proposal from the
