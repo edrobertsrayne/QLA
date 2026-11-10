@@ -2,7 +2,7 @@
 // request body) and the server (what the model receives), so both always
 // agree on what a topic row means.
 
-import { specPointCodes, topicCodesOf, type MarksheetDocument } from './document.js';
+import { specPointCodes, topicCodesOf, topicOfCode, type MarksheetDocument } from './document.js';
 import { MAX_LABEL_LENGTH } from './report-limits.js';
 
 /** Marks gained and available across the entries carrying one name. */
@@ -12,9 +12,13 @@ export interface RollupTotals {
 	available: number;
 }
 
-/** Topic names of one entry: each normalised code's name, or the bare code while unnamed. */
+/** Topic names of one entry: each code's topic name, or the bare topic while unnamed. */
 export function topicNamesFor(document: MarksheetDocument, specPoint: string | null): string[] {
-	return specPointCodes(specPoint).map((code) => document.topicNames[code]?.trim() || code);
+	const topicOf = topicOfCode(document);
+	return specPointCodes(specPoint).map((code) => {
+		const topic = topicOf(code);
+		return document.topicNames[topic]?.trim() || topic;
+	});
 }
 
 /**

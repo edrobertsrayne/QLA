@@ -1,6 +1,11 @@
 // The browser's side of `POST /api/topic-names`.
 
-import { allEntries, specPointCodes, type MarksheetDocument } from '$lib/marksheet/document.js';
+import {
+	allEntries,
+	specPointCodes,
+	topicOfCode,
+	type MarksheetDocument
+} from '$lib/marksheet/document.js';
 import { MAX_SUMMARIES_PER_CODE } from '$lib/marksheet/report-limits.js';
 import { isRecord } from '$lib/parse/is-breakdown.js';
 import { ApiFailure, failureFrom } from '$lib/api-error.js';
@@ -18,9 +23,10 @@ export async function proposeTopicNames(
 	// Every entry on either tier, Tier 1 first: a code shared by both papers
 	// carries summaries from both, so one name serves the shared set.
 	const entries = allEntries(document);
+	const topicOf = topicOfCode(document);
 	const summariesOf = (wanted: string): string[] =>
 		entries
-			.filter((entry) => specPointCodes(entry.specPoint).includes(wanted))
+			.filter((entry) => specPointCodes(entry.specPoint).map(topicOf).includes(wanted))
 			.map((entry) => entry.summary || entry.label)
 			.slice(0, MAX_SUMMARIES_PER_CODE);
 	const response = await fetch('/api/topic-names', {

@@ -24,6 +24,7 @@ import {
 	tierNameProblem,
 	tierNamesCollide,
 	topicCodesOf,
+	topicOfCode,
 	type EntryValues,
 	type MarksheetDocument,
 	type StoredReport
@@ -759,21 +760,14 @@ describe('dropping what no longer exists', () => {
 					})
 				],
 				topicNames: {
-					'5.1.1': 'Waves',
-					'5.1.2': 'Sound',
-					'5.2.1': 'Energy',
-					'5.2.2': 'Power',
-					'9.9.9': 'Gone'
+					'5.1': 'Waves',
+					'5.2': 'Energy',
+					'9.9': 'Gone'
 				}
 			})
 		);
 
-		expect(dropOrphanedTopicNames(document)).toEqual({
-			'5.1.1': 'Waves',
-			'5.1.2': 'Sound',
-			'5.2.1': 'Energy',
-			'5.2.2': 'Power'
-		});
+		expect(dropOrphanedTopicNames(document)).toEqual({ '5.1': 'Waves', '5.2': 'Energy' });
 	});
 });
 
@@ -869,6 +863,33 @@ describe('document helpers', () => {
 		);
 
 		expect(topicCodesOf(document)).toEqual(['1.1', '1.2', '2.1', '3.1']);
+	});
+
+	it('cuts codes at the first point of difference into topics', () => {
+		const document = read(
+			twoTier({
+				tiers: [
+					tier({
+						breakdown: {
+							entries: [
+								entry('a', '1a', '1', { specPoint: '4.1.1.1, 4.1.1.2' }),
+								entry('b', '2a', '2', { specPoint: '4.2.3' }),
+								entry('c', '3a', '3', { specPoint: '4.2.1.4' })
+							],
+							warnings: []
+						}
+					}),
+					tier({
+						tierName: 'Foundation',
+						sourceFilenames: ['F.pdf'],
+						breakdown: { entries: [entry('d', '1a', '1', { specPoint: 'RPA4' })], warnings: [] }
+					})
+				]
+			})
+		);
+
+		expect(topicCodesOf(document)).toEqual(['4.1', '4.2', 'RPA4']);
+		expect(topicOfCode(document)('4.2.1.4')).toBe('4.2');
 	});
 
 	it('gives an entry its partner on the other tier, and none when unpaired', () => {
