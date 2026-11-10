@@ -31,25 +31,25 @@ describe('topic names step', () => {
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		const nameFor = (code: string): HTMLInputElement | null =>
 			document.querySelector(`#topic-${CSS.escape(code)}`);
-		await vi.waitFor(() => expect(nameFor('5.1.1')?.value).toBe('Kinetic theory of gases'), {
+		await vi.waitFor(() => expect(nameFor('5.1')?.value).toBe('Kinetic theory of gases'), {
 			timeout: 5000
 		});
-		expect(nameFor('5.2.1')?.value).toBe('Internal energy stores');
+		expect(nameFor('5.3')?.value).toBe('Internal energy stores');
 		expect(stub.mock.calls.filter(([url]) => String(url) === '/api/topic-names')).toHaveLength(1);
 
-		// A typed name is never overwritten: blank 5.1.2 so only it is missing, and
+		// A typed name is never overwritten: blank 5.2 so only it is missing, and
 		// the proposal fills just that gap.
-		await page.getByLabelText('Name for 5.1.2').clear();
+		await page.getByLabelText('Name for 5.2').clear();
 		await page.getByRole('button', { name: 'Propose missing names' }).click();
-		await vi.waitFor(() => expect(nameFor('5.1.2')?.value).toBe('Gas pressure and temperature'), {
+		await vi.waitFor(() => expect(nameFor('5.2')?.value).toBe('Gas pressure and temperature'), {
 			timeout: 5000
 		});
-		expect(nameFor('5.1.1')?.value).toBe('Kinetic theory of gases');
+		expect(nameFor('5.1')?.value).toBe('Kinetic theory of gases');
 
 		// Next stays blocked by a blank name.
-		await page.getByLabelText('Name for 5.1.1').clear();
+		await page.getByLabelText('Name for 5.1').clear();
 		expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
-		await page.getByLabelText('Name for 5.1.1').fill('Kinetic theory of gases');
+		await page.getByLabelText('Name for 5.1').fill('Kinetic theory of gases');
 		await page.getByRole('button', { name: 'Next' }).click();
 		await skipGrades();
 		await expect
@@ -60,9 +60,9 @@ describe('topic names step', () => {
 	it('counts a comma-list entry toward both codes and shows the By topic strip', async () => {
 		const doc = h556();
 		doc.topicNames = {
-			'5.1.1': 'Kinetic theory of gases',
-			'5.1.2': 'Gas pressure and temperature',
-			'5.2.1': 'Internal energy stores'
+			'5.1': 'Kinetic theory of gases',
+			'5.2': 'Gas pressure and temperature',
+			'5.3': 'Internal energy stores'
 		};
 		seed(doc);
 		stubFetch(() => ok());
@@ -78,8 +78,8 @@ describe('topic names step', () => {
 		});
 		const sheet = document.querySelector('main [data-report-id="ada"]');
 		expect(sheet?.textContent).toContain('By topic');
-		// Entry 1 (4 marks, Ada gained 3) carries "5.1.1, 5.1.2": both codes gain
-		// its marks, so 5.1.1 shows 3/4 while 5.1.2 adds entry-2 (Ada 2/6) for 5/10.
+		// Entry 1 (4 marks, Ada gained 3) carries "5.1, 5.2": both codes gain
+		// its marks, so 5.1 shows 3/4 while 5.2 adds entry-2 (Ada 2/6) for 5/10.
 		const stripOf = (title: string): string => {
 			const headings = [...(sheet?.querySelectorAll('h3') ?? [])];
 			return headings.find((h) => h.textContent === title)?.parentElement?.textContent ?? '';
@@ -96,9 +96,9 @@ describe('topic names step', () => {
 	it('shows an AO description beside its code in By skill, never sending it to the model', async () => {
 		const doc = h556();
 		doc.topicNames = {
-			'5.1.1': 'Kinetic theory of gases',
-			'5.1.2': 'Gas pressure and temperature',
-			'5.2.1': 'Internal energy stores'
+			'5.1': 'Kinetic theory of gases',
+			'5.2': 'Gas pressure and temperature',
+			'5.3': 'Internal energy stores'
 		};
 		doc.aoDescriptions = { AO3: 'Analyse information to make judgements' };
 		seed(doc);
@@ -135,9 +135,9 @@ describe('topic names step', () => {
 
 		await expect.element(page.getByRole('alert')).toBeInTheDocument();
 		// Hand typing still works while the proposal fails.
-		await page.getByLabelText('Name for 5.1.1').fill('Typed by hand');
+		await page.getByLabelText('Name for 5.1').fill('Typed by hand');
 		marksheetStore().flush();
-		expect(readSeeded().topicNames['5.1.1']).toBe('Typed by hand');
+		expect(readSeeded().topicNames['5.1']).toBe('Typed by hand');
 		await page.getByRole('button', { name: 'Retry' }).click();
 		await expect.element(page.getByRole('alert')).toBeInTheDocument();
 	});
@@ -157,26 +157,26 @@ describe('topic names step', () => {
 
 	it('persists names across a reload', async () => {
 		seed(h556());
-		stubFetch(() => topicNames({ '5.1.1': 'First proposal' }));
+		stubFetch(() => topicNames({ '5.1': 'First proposal' }));
 		const first = (await openReports()).screen;
 
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		const nameFor = (code: string): HTMLInputElement | null =>
 			first.container.querySelector(`#topic-${CSS.escape(code)}`);
-		await vi.waitFor(() => expect(nameFor('5.1.1')?.value).toBe('First proposal'), {
+		await vi.waitFor(() => expect(nameFor('5.1')?.value).toBe('First proposal'), {
 			timeout: 5000
 		});
-		await page.getByLabelText('Name for 5.1.2').fill('Hand typed');
+		await page.getByLabelText('Name for 5.2').fill('Hand typed');
 		marksheetStore().flush();
-		expect(readSeeded().topicNames['5.1.2']).toBe('Hand typed');
+		expect(readSeeded().topicNames['5.2']).toBe('Hand typed');
 
 		first.unmount();
 		const second = (await openReports()).screen;
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		const again = (code: string): HTMLInputElement | null =>
 			second.container.querySelector(`#topic-${CSS.escape(code)}`);
-		expect(again('5.1.1')?.value).toBe('First proposal');
-		expect(again('5.1.2')?.value).toBe('Hand typed');
+		expect(again('5.1')?.value).toBe('First proposal');
+		expect(again('5.2')?.value).toBe('Hand typed');
 	});
 });
 
@@ -184,12 +184,12 @@ describe('review fixes', () => {
 	it('sends a paper whose topic lost its name back to Topic names', async () => {
 		const doc = h556();
 		doc.topicNames = {
-			'5.1.1': 'Kinetic theory of gases',
-			'5.1.2': 'Gas pressure and temperature',
-			'5.2.1': 'Internal energy stores'
+			'5.1': 'Kinetic theory of gases',
+			'5.2': 'Gas pressure and temperature',
+			'5.3': 'Internal energy stores'
 		};
 		writeFor(doc, ['ada']);
-		delete doc.topicNames['5.2.1'];
+		delete doc.topicNames['5.3'];
 		seed(doc);
 		// The proposal on arrival is the first call: it fails, so the name stays blank.
 		stubFetch((n) =>
@@ -205,7 +205,7 @@ describe('review fixes', () => {
 		}
 		await expect.element(page.getByRole('button', { name: 'Next' })).toBeDisabled();
 
-		await page.getByLabelText('Name for 5.2.1').fill('Internal energy stores');
+		await page.getByLabelText('Name for 5.3').fill('Internal energy stores');
 		await expect.element(page.getByRole('button', { name: /Review and print/ })).toBeEnabled();
 		await page.getByRole('button', { name: /Review and print/ }).click();
 		await expect.element(page.getByRole('button', { name: 'Print all 1' })).toBeEnabled();
@@ -214,9 +214,9 @@ describe('review fixes', () => {
 	it('gives codes that share a name one row, counting each entry once', async () => {
 		const doc = h556();
 		doc.topicNames = {
-			'5.1.1': 'Kinetic model',
-			'5.1.2': 'Kinetic model',
-			'5.2.1': 'Internal energy stores'
+			'5.1': 'Kinetic model',
+			'5.2': 'Kinetic model',
+			'5.3': 'Internal energy stores'
 		};
 		seed(doc);
 		const { stub } = stubFetch();
@@ -262,33 +262,33 @@ describe('topic names across both tiers', () => {
 		// papers' summaries and no code carries a tier.
 		expect(body.paperLabel).toBe('10X Ph1');
 		expect(body.codes).toEqual([
-			{ code: '5.1.1', summaries: ['Higher question one'] },
-			{ code: '5.1.2', summaries: ['Higher question two', 'Foundation question one'] },
-			{ code: '5.2.1', summaries: ['Foundation question two'] }
+			{ code: '5.1', summaries: ['Higher question one'] },
+			{ code: '5.2', summaries: ['Higher question two', 'Foundation question one'] },
+			{ code: '5.3', summaries: ['Foundation question two'] }
 		]);
 		for (const code of body.codes) expect(code).not.toHaveProperty('tier');
 
 		const nameFor = (code: string): HTMLInputElement | null =>
 			document.querySelector(`#topic-${CSS.escape(code)}`);
-		await vi.waitFor(() => expect(nameFor('5.1.1')?.value).toBe('Kinetic theory of gases'), {
+		await vi.waitFor(() => expect(nameFor('5.1')?.value).toBe('Kinetic theory of gases'), {
 			timeout: 5000
 		});
-		expect(nameFor('5.2.1')?.value).toBe('Internal energy stores');
+		expect(nameFor('5.3')?.value).toBe('Internal energy stores');
 
 		// A blank Tier 2 name blocks Next: the gaps are judged on the combined list.
-		await page.getByLabelText('Name for 5.2.1').clear();
+		await page.getByLabelText('Name for 5.3').clear();
 		expect(page.getByRole('button', { name: 'Next' })).toBeDisabled();
-		await page.getByLabelText('Name for 5.2.1').fill('Internal energy stores');
+		await page.getByLabelText('Name for 5.3').fill('Internal energy stores');
 		await expect.element(page.getByRole('button', { name: 'Next' })).toBeEnabled();
 	});
 
 	it('keeps a name whose code is on either tier and drops only one on neither', async () => {
 		const doc = twoTiers();
 		doc.topicNames = {
-			'5.1.1': 'Kinetic theory',
-			'5.1.2': 'Gas pressure',
+			'5.1': 'Kinetic theory',
+			'5.2': 'Gas pressure',
 			// Carried by Tier 2 only: still a live name.
-			'5.2.1': 'Internal energy',
+			'5.3': 'Internal energy',
 			'9.9.9': 'Ghost code'
 		};
 		seed(doc);
@@ -298,8 +298,8 @@ describe('topic names across both tiers', () => {
 		await expect.element(page.getByRole('heading', { name: 'Topic names' })).toBeInTheDocument();
 		const nameFor = (code: string): HTMLInputElement | null =>
 			document.querySelector(`#topic-${CSS.escape(code)}`);
-		expect(nameFor('5.2.1')?.value).toBe('Internal energy');
-		expect(marksheetStore().document?.topicNames['5.2.1']).toBe('Internal energy');
+		expect(nameFor('5.3')?.value).toBe('Internal energy');
+		expect(marksheetStore().document?.topicNames['5.3']).toBe('Internal energy');
 		expect(marksheetStore().document?.topicNames['9.9.9']).toBeUndefined();
 	});
 });

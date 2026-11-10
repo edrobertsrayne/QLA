@@ -23,9 +23,9 @@ afterEach(() => {
 function named() {
 	const doc = h556();
 	doc.topicNames = {
-		'5.1.1': 'Kinetic theory of gases',
-		'5.1.2': 'Gas pressure and temperature',
-		'5.2.1': 'Internal energy stores'
+		'5.1': 'Kinetic theory of gases',
+		'5.2': 'Gas pressure and temperature',
+		'5.3': 'Internal energy stores'
 	};
 	return doc;
 }
@@ -234,10 +234,10 @@ describe('report step routes', () => {
 		expect(router.path).toBe('/reports/topics');
 		const nameFor = (code: string): HTMLInputElement | null =>
 			document.querySelector(`#topic-${CSS.escape(code)}`);
-		await vi.waitFor(() => expect(nameFor('5.1.1')?.value).toBe('Kinetic theory of gases'), {
+		await vi.waitFor(() => expect(nameFor('5.1')?.value).toBe('Kinetic theory of gases'), {
 			timeout: 5000
 		});
-		expect(nameFor('5.2.1')?.value).toBe('Internal energy stores');
+		expect(nameFor('5.3')?.value).toBe('Internal energy stores');
 		expect(stub.mock.calls.filter(([url]) => String(url) === '/api/topic-names')).toHaveLength(1);
 		await expect
 			.element(page.getByRole('button', { name: '1. Topic names' }))

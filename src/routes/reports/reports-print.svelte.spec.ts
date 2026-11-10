@@ -133,18 +133,7 @@ describe('one-page fit', () => {
 		// one fixed-height line and roll-up rows are fixed height too, so the
 		// wording of names and summaries cannot change the layout pressure —
 		// only the counts can, and those match the sample.
-		const codes = [
-			'4.1.1',
-			'4.1.2',
-			'4.2.1',
-			'4.2.2',
-			'4.2.3',
-			'4.3.1',
-			'4.3.2',
-			'4.3.3',
-			'4.4.1',
-			'4.4.2'
-		];
+		const codes = ['4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', '4.8', '4.9', '4.10'];
 		const entries = Array.from({ length: 44 }, (_, i) =>
 			entry(`entry-${i}`, `Q${i + 1}`, `${(i % 9) + 1}`, {
 				marks: 3,
