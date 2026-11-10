@@ -12,6 +12,7 @@ import {
 	pairOfEntry,
 	specPointCodes,
 	tierEntries,
+	topicOfCode,
 	type BreakdownEntry,
 	type CommonQuestion,
 	type MarksheetDocument,
@@ -316,6 +317,7 @@ export function analyseTopics(
 	tier: TierIndex
 ): TopicFacility[] {
 	if (document === null) return [];
+	const topicOf = topicOfCode(document);
 	const totals = new Map<string, TopicTotals>();
 	const add = (
 		kind: TopicFacility['kind'],
@@ -343,7 +345,7 @@ export function analyseTopics(
 	};
 
 	for (const row of analyseTier(document, tier).entries) {
-		for (const code of new Set(specPointCodes(row.entry.specPoint))) {
+		for (const code of new Set(specPointCodes(row.entry.specPoint).map(topicOf))) {
 			add('specification', code, document.topicNames[code]?.trim() || code, null, row);
 		}
 		const ao = row.entry.ao;

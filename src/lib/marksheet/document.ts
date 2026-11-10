@@ -500,11 +500,45 @@ export function specPointCodes(specPoint: string | null): string[] {
 		.filter((code) => code !== '');
 }
 
-/** Every normalised specification-point code on either tier, in first-seen order. */
+/**
+ * Maps a specification-point code to its topic: the code cut at the first
+ * point of difference among the codes sharing its first part. 4.1.1.1, 4.1.1.2,
+ * 4.2.3 and 4.2.1.4 share "4" and first differ at the second part, so the
+ * topics are 4.1 and 4.2. Codes with another first part (RPA4) group on their
+ * own, and a code shorter than its group's depth is its own topic.
+ */
+export function topicOfCode(document: MarksheetDocument): (code: string) => string {
+	const groups = new Map<string, string[][]>();
+	for (const entry of allEntries(document)) {
+		for (const code of specPointCodes(entry.specPoint)) {
+			const parts = code.split('.');
+			groups.set(parts[0], [...(groups.get(parts[0]) ?? []), parts]);
+		}
+	}
+	const depths = new Map<string, number>();
+	for (const [head, members] of groups) {
+		const [first, ...rest] = members;
+		let shared = 0;
+		while (
+			shared < first.length &&
+			rest.every((other) => shared < other.length && other[shared] === first[shared])
+		) {
+			shared++;
+		}
+		depths.set(head, shared + 1);
+	}
+	return (code) => {
+		const parts = code.split('.');
+		return parts.slice(0, depths.get(parts[0]) ?? parts.length).join('.');
+	};
+}
+
+/** Every topic on either tier (see `topicOfCode`), in first-seen order. */
 export function topicCodesOf(document: MarksheetDocument): string[] {
+	const topicOf = topicOfCode(document);
 	const seen = new Set<string>();
 	for (const entry of allEntries(document)) {
-		for (const code of specPointCodes(entry.specPoint)) seen.add(code);
+		for (const code of specPointCodes(entry.specPoint)) seen.add(topicOf(code));
 	}
 	return [...seen];
 }

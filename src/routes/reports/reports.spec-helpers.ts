@@ -65,14 +65,14 @@ export function twoTiers(): MarksheetDocument {
 		entry('h1', 'H1', '1', {
 			marks: 4,
 			summary: 'Higher question one',
-			specPoint: '5.1.1',
+			specPoint: '5.1',
 			commandWord: null,
 			ao: 'AO1'
 		}),
 		entry('h2', 'H2', '2', {
 			marks: 6,
 			summary: 'Higher question two',
-			specPoint: '5.1.2',
+			specPoint: '5.2',
 			commandWord: null,
 			ao: 'AO2'
 		})
@@ -81,14 +81,14 @@ export function twoTiers(): MarksheetDocument {
 		entry('f1', 'F1', '1', {
 			marks: 3,
 			summary: 'Foundation question one',
-			specPoint: '5.1.2',
+			specPoint: '5.2',
 			commandWord: null,
 			ao: 'AO1'
 		}),
 		entry('f2', 'F2', '2', {
 			marks: 5,
 			summary: 'Foundation question two',
-			specPoint: '5.2.1',
+			specPoint: '5.3',
 			commandWord: null,
 			ao: 'AO2'
 		})
@@ -132,9 +132,9 @@ export function twoTiers(): MarksheetDocument {
 export function namedTwoTiers(): MarksheetDocument {
 	const doc = twoTiers();
 	doc.topicNames = {
-		'5.1.1': 'Kinetic theory',
-		'5.1.2': 'Gas pressure',
-		'5.2.1': 'Internal energy'
+		'5.1': 'Kinetic theory',
+		'5.2': 'Gas pressure',
+		'5.3': 'Internal energy'
 	};
 	return doc;
 }
@@ -149,14 +149,14 @@ export function h556(): MarksheetDocument {
 		entry('entry-1', '1', '1', {
 			marks: 4,
 			summary: 'Define the kinetic model',
-			specPoint: '5.1.1, 5.1.2',
+			specPoint: '5.1, 5.2',
 			commandWord: null,
 			ao: 'AO1'
 		}),
 		entry('entry-2', '2a', '2', {
 			marks: 6,
 			summary: 'Explain gas pressure',
-			specPoint: '5.1.2/5.2.1',
+			specPoint: '5.2/5.3',
 			commandWord: null,
 			ao: 'AO2'
 		}),
@@ -257,9 +257,9 @@ export function ok(strength = 'Careful working'): Response {
 }
 export function topicNames(names: Record<string, string> = {}): Response {
 	const entries = {
-		'5.1.1': 'Kinetic theory of gases',
-		'5.1.2': 'Gas pressure and temperature',
-		'5.2.1': 'Internal energy stores',
+		'5.1': 'Kinetic theory of gases',
+		'5.2': 'Gas pressure and temperature',
+		'5.3': 'Internal energy stores',
 		...names
 	};
 	return Response.json({ names: entries, model: 'test/model', usage: {} });
