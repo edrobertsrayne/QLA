@@ -529,6 +529,35 @@ describe('mark entry', () => {
 		expect(page.getByRole('status').query()).toBeNull();
 	});
 
+	it('Tab from a new student name adds them and takes the cursor to their first mark', async () => {
+		const screen = openGrid();
+
+		await page.getByRole('button', { name: 'Add student', exact: true }).click();
+		await page.getByLabelText('New student name').fill('Katherine Johnson');
+		await userEvent.keyboard('{Tab}');
+
+		const added = marksheetStore().document?.students.at(-1);
+		expect(added).toMatchObject({ firstName: 'Katherine', surname: 'Johnson' });
+		await vi.waitFor(() => expect(focusedCell()).toBe(markCell(screen, added!.id, 'entry-1')));
+		expect(page.getByLabelText('New student name').query()).toBeNull();
+
+		await userEvent.keyboard('2{Tab}');
+		expect(marksheetStore().document?.marks[added!.id]).toEqual({ 'entry-1': 2 });
+		expect(focusedCell()).toBe(markCell(screen, added!.id, 'entry-2'));
+	});
+
+	it('Tab from a new student name on a tier tab lands on their first mark on that tier', async () => {
+		const screen = openTwoTierGrid();
+
+		await page.getByRole('button', { name: 'Add student', exact: true }).click();
+		await page.getByLabelText('New student name').fill('Cher');
+		await userEvent.keyboard('{Tab}');
+
+		const added = marksheetStore().document?.students.at(-1);
+		expect(added).toMatchObject({ firstName: 'Cher', tier: 0 });
+		await vi.waitFor(() => expect(focusedCell()).toBe(markCell(screen, added!.id, 'higher-1')));
+	});
+
 	it('drops a half-typed new student when the tier changes', async () => {
 		const screen = openTwoTierGrid();
 

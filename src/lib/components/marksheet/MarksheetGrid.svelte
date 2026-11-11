@@ -383,25 +383,43 @@
 		sheet.adding = true;
 	}
 
-	/** Enter commits the name and opens the next; a blank Enter or Escape discards it. */
+	/**
+	 * Enter commits the name and opens the next; a blank Enter or Escape discards
+	 * it. Tab commits the name and moves to the new student's first mark, as Tab
+	 * moves along a row once marks are being entered.
+	 */
 	function onAddKeydown(event: KeyboardEvent): void {
 		if (event.key === 'Escape') {
 			event.preventDefault();
 			discardNewStudent();
 			return;
 		}
-		if (event.key !== 'Enter') return;
-		event.preventDefault();
+		// Tab is only the grid's when there is a mark to land on: the students still
+		// to be placed have no columns, so there it leaves the field as usual.
+		const tab = event.key === 'Tab' && !event.shiftKey && entries.length > 0;
+		if (event.key !== 'Enter' && !tab) return;
 		const name = readName(sheet.newName);
 		if (!name) {
+			// A blank Tab leaves the field as Tab would; its blur closes the row.
+			if (tab) return;
+			event.preventDefault();
 			discardNewStudent();
 			return;
 		}
+		event.preventDefault();
+		const before = new Set(students.map((student) => student.id));
 		// On one tier there is nowhere else to put them; on two, a name typed on a
 		// tier tab joins that tier, so the row they typed stays where they are.
 		if (tier === null || store.tierCount === 1) store.addStudent(name);
 		else store.pasteNames(sheet.newName, tier);
 		sheet.newName = '';
+		if (!tab) return;
+
+		sheet.adding = false;
+		flushSync();
+		const added = students.find((student) => !before.has(student.id));
+		const first = entries[0];
+		if (added && first) moveTo({ studentId: added.id, entryId: first.id });
 	}
 
 	function discardNewStudent(): void {
