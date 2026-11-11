@@ -484,6 +484,21 @@ describe('tiers', () => {
 		expect(rowNames(screen)).toEqual(['Ada Lovelace', 'Grace Hopper']);
 	});
 
+	it('leaves Tab to the browser when adding a student on Tier not set', async () => {
+		seed(twoTier({ students: [student('student-1', 'Ada', 'Lovelace', false, null)] }));
+		openPage(MarksheetPage);
+
+		await page.getByRole('button', { name: 'Add student', exact: true }).click();
+		const field = page.getByLabelText('New student name');
+		await field.fill('Cher');
+		const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+		field.element().dispatchEvent(event);
+
+		// No mark column to move to: Tab is not consumed and nothing is added.
+		expect(event.defaultPrevented).toBe(false);
+		expect(marksheetStore().document?.students).toHaveLength(1);
+	});
+
 	it('opens on Tier 1 once a student has a tier', async () => {
 		seed(
 			twoTier({
