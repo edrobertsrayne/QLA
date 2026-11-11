@@ -394,7 +394,9 @@
 			discardNewStudent();
 			return;
 		}
-		const tab = event.key === 'Tab' && !event.shiftKey;
+		// Tab is only the grid's when there is a mark to land on: the students still
+		// to be placed have no columns, so there it leaves the field as usual.
+		const tab = event.key === 'Tab' && !event.shiftKey && entries.length > 0;
 		if (event.key !== 'Enter' && !tab) return;
 		const name = readName(sheet.newName);
 		if (!name) {
