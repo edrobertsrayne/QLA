@@ -119,6 +119,9 @@
 	/** The grid's own element, so a cell is looked for only where it can be. */
 	let gridRoot: HTMLDivElement | undefined;
 
+	/** How tall the frozen column heads stand: what a revealed cell keeps clear of at the top. */
+	let headHeight = $state(0);
+
 	function attachGridRoot(node: HTMLDivElement): void {
 		gridRoot = node;
 	}
@@ -477,12 +480,22 @@
 	{#if store.students.length === 0}
 		<EmptyClassPanel {tier} onAddOne={startAdding} />
 	{/if}
+	<!-- The grid scrolls inside its own box, so the column heads can freeze at its
+	     top as the name column freezes at its left. The heads draw their own bottom
+	     line, as a frozen row leaves the table's collapsed border behind. The
+	     padding keeps a cell the cursor moves to clear of the frozen heads. -->
 	<div
-		class="relative overflow-hidden rounded-xl border"
+		class="relative max-h-[calc(100dvh-4rem)] overflow-auto rounded-xl border"
+		style="scroll-padding-top: {headHeight}px"
 		onpaste={onPaste}
 		{@attach attachGridRoot}
 	>
-		<Table.Root class="table-fixed w-fit" role="grid" aria-label="Marksheet grid">
+		<table
+			data-slot="table"
+			class="w-fit table-fixed caption-bottom text-sm"
+			role="grid"
+			aria-label="Marksheet grid"
+		>
 			<!-- The widths every cell obeys: narrow entry columns, a frozen name and
 			     progress column, so a paper scrolls sideways only when it must. -->
 			<colgroup>
@@ -497,7 +510,11 @@
 					<col style="width: 5rem" />
 				{/if}
 			</colgroup>
-			<Table.Header>
+			<thead
+				data-slot="table-header"
+				class="sticky top-0 z-30 bg-background shadow-[0_1px_0_var(--border)] [&_tr]:border-b"
+				bind:offsetHeight={headHeight}
+			>
 				{#if bands.length > 0}
 					<BandHeaderRow
 						{bands}
@@ -521,7 +538,7 @@
 						<Table.Head class="px-1 text-center text-xs">To next</Table.Head>
 					{/if}
 				</Table.Row>
-			</Table.Header>
+			</thead>
 			<Table.Body>
 				{#each students as student (student.id)}
 					{@const name = studentName(student)}
@@ -680,6 +697,6 @@
 				</Table.Row>
 			</Table.Body>
 			<FacilityFooter {tier} {onViewAnalysis} />
-		</Table.Root>
+		</table>
 	</div>
 {/if}
