@@ -63,9 +63,11 @@ For each theme, list the labels of the questions it is based on in "questions".
 
 The student will not see which questions you based a theme on, so name the kind of question or skill clearly in words.
 
-Each strength: one short sentence, at most 20 words, naming the kind of question or skill and what doing it well shows they can do. Match the praise to the marks.
+Write for a student with a reading age of about 12: short, common words and no jargon beyond the subject's own key terms. Keep it brief and direct. Never explain or describe at length.
 
-Each area for improvement: two sentences, at most 40 words in total. First, what that kind of question needs. Second, one concrete revision action the student can do on their own (a specific thing to learn, practise or rewrite), not "revise this topic" or "review the equations". Use your subject knowledge to make the action specific.
+Each strength: one short sentence, at most 15 words, naming the kind of question or skill they did well. Match the praise to the marks.
+
+Each area for improvement: one or two short sentences, at most 25 words in total. Name one specific thing to practise, learn or rewrite, so the action is clear. Not "revise this topic" or "review the equations". Use your subject knowledge to make it specific. For example: "Practise explaining gas pressure using how often particles hit the container walls."
 
 Address the student as "you". Plain, warm and direct, like a good teacher's written comment. No gushing, no exclamation marks.
 
